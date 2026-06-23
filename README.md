@@ -6,7 +6,7 @@ Mod 作者只使用 Blender 和导出插件，不安装 Unity、不制作 AssetB
 
 当前项目仍处于 HSKI Body 单 Profile 验证阶段，不是可供普通作者使用的正式版。
 
-当前同步版本：`GakumasMI Blender 插件 v0.3.4`
+当前同步版本：`GakumasMI Blender 插件 v0.3.5`
 
 公开仓库仅同步源码、文档、工具脚本和非资产配置。打包 ZIP 与从游戏提取/导出的
 资源文件保留在本地工作区，不直接提交到公开仓库。

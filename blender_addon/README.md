@@ -1,9 +1,16 @@
-# GakumasMI Blender 插件 0.3.4
+# GakumasMI Blender 插件 0.3.5
 
-当前状态：开发预览版。0.3.4 已将插件面板主要 UI 中文化，并补上
-`更新配置档抓帧源` 的最小能力：扫描 `FrameAnalysis-*` 抓帧目录，校验当前
-HSKI 配置档所需的 IB/VB0/VB1 与身体 t0/t1/t4 贴图资源，并生成
-`profile-capture-update-report.json`。
+当前状态：开发预览版。0.3.5 新增 `从抓帧生成配置档`：可以扫描
+`FrameAnalysis-*` 抓帧目录，自动识别任意 Body 候选 Draw、IB、VB0/VB1、stride
+和可见贴图槽位，生成 runtime-only 配置档：
+
+- `profile.json`
+- `drawcall_map.json`
+- `texture_map.json`
+- `material_map.json`
+- `extraction-report.json`
+
+同时保留 `更新配置档抓帧源`：用于校验已有配置档是否匹配当前抓帧。
 
 项目仍处于 HSKI Body 单配置档验证阶段，不是面向普通作者的一键正式版。详见
 [`research/current-status-and-roadmap.md`](../research/current-status-and-roadmap.md)。
@@ -16,7 +23,7 @@ HSKI 配置档所需的 IB/VB0/VB1 与身体 t0/t1/t4 贴图资源，并生成
 
 `编辑 > 偏好设置 > 插件 > 从磁盘安装`
 
-选择本地构建生成的 0.3.4 插件 ZIP。公开仓库不直接提交包含配置档资产的发布包。
+选择本地构建生成的 0.3.5 插件 ZIP。公开仓库不直接提交包含配置档资产的发布包。
 
 启用 **GakumasMI** 后，面板位于：
 
@@ -30,6 +37,7 @@ HSKI 配置档所需的 IB/VB0/VB1 与身体 t0/t1/t4 贴图资源，并生成
 
 - 选择 `配置档目录`；
 - 可选选择 `抓帧目录`；
+- 如果是未知 Body，先设置 `新配置档输出`，点击 `从抓帧生成配置档`；
 - 点击 `更新配置档抓帧源`；
 - 点击 `导入配置档对象` 或 `导入抓帧参考模型`。
 
@@ -60,8 +68,30 @@ HSKI 配置档所需的 IB/VB0/VB1 与身体 t0/t1/t4 贴图资源，并生成
 - 是否存在身体贴图 `t0/t1/t4`；
 - 当 3DMigoto 文件名省略 VB0 hash 时，是否能通过 draw 编号回退匹配。
 
-当前 0.3.4 只实现“更新/校验已有配置档”的最小版，还不能从未知抓帧目录自动生成
-完整新配置档。
+0.3.5 开始可以从未知抓帧目录自动生成 runtime-only 配置档。它能从帧里确认：
+
+- Body 候选 Draw；
+- IB hash、索引数；
+- VB0/VB1 文件、stride、顶点数；
+- 同一 Body 的多 pass，例如主 pass、阴影/深度 pass、描边/辅助 pass；
+- 抓帧中可见的 `ps-t*` 贴图槽位。
+
+注意：帧数据不能单独还原完整 Unity 骨架名、权重和 BindPose。插件会把这类配置档标记为
+`runtime-only-frame-extracted`；之后仍应通过 `导入原模型 / 权重参考` 绑定
+AssetStudio 导出的原模型 JSON 与骨架 JSON，作为蒙皮转权来源。
+
+命令行也可以独立生成配置档：
+
+```powershell
+python tools\extract_frame_profile.py D:\Games\gakumas\FrameAnalysis-2026-06-22-105210 `
+  D:\GIT\gakumas-modding\profiles\generated-body --component body
+```
+
+如果自动选择错了，可按 3DMigoto 顶部显示的 Draw 编号强制指定：
+
+```powershell
+python tools\extract_frame_profile.py <FrameAnalysis目录> <输出目录> --component body --draw 335
+```
 
 ### 2. 导入对象
 
@@ -136,6 +166,6 @@ HSKI Body 已验证的身体贴图语义：
 
 ## 当前版本
 
-插件源码版本：0.3.4。
+插件源码版本：0.3.5。
 
-本地已验证发布包：`dist/gakumas_mi-0.3.4-zh-20260623-204112.zip`。
+本地发布包不会提交到公开仓库；需要时从当前源码重新打包安装。

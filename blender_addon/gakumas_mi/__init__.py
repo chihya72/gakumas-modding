@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 3, 4),
+    "version": (0, 3, 5),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "导入学马仕参考模型，并导出绑定配置档的 3DMigoto 模组",
@@ -9,7 +9,7 @@ bl_info = {
 }
 
 import bpy
-from bpy.props import BoolProperty, EnumProperty, FloatProperty, StringProperty
+from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 from pathlib import Path
 
 from . import operators, ui
@@ -48,6 +48,14 @@ def register():
         name="抓帧目录", subtype="DIR_PATH",
         description="可选 FrameAnalysis 抓帧目录；留空时使用配置档中记录的抓帧路径",
     )
+    bpy.types.Scene.gmi_extract_output_dir = StringProperty(
+        name="新配置档输出", subtype="DIR_PATH",
+        description="从抓帧自动生成 runtime-only 配置档的输出目录",
+    )
+    bpy.types.Scene.gmi_extract_draw = IntProperty(
+        name="主 Draw", default=0, min=0,
+        description="0 表示自动选择；填入 3DMigoto 顶部显示的 Draw 编号可强制指定",
+    )
     bpy.types.Scene.gmi_output_dir = StringProperty(name="输出目录", subtype="DIR_PATH")
     bpy.types.Scene.gmi_component_id = StringProperty(name="组件", default="body")
     bpy.types.Scene.gmi_source_mesh_json = StringProperty(name="原模型 JSON", subtype="FILE_PATH")
@@ -78,7 +86,8 @@ def register():
 def unregister():
     for name in (
         "gmi_tool_mode",
-        "gmi_profile_dir", "gmi_capture_dir", "gmi_output_dir", "gmi_component_id",
+        "gmi_profile_dir", "gmi_capture_dir", "gmi_extract_output_dir",
+        "gmi_extract_draw", "gmi_output_dir", "gmi_component_id",
         "gmi_source_mesh_json", "gmi_skeleton_json", "gmi_bone_remap_file",
         "gmi_unmapped_bone_fallback",
         "gmi_transfer_risk_distance", "gmi_semantic_correction",

@@ -550,6 +550,41 @@ class GMI_OT_import_profile_object(Operator):
             return {"CANCELLED"}
 
 
+class GMI_OT_extract_profile_from_frame_dump(Operator):
+    bl_idname = "gmi.extract_profile_from_frame_dump"
+    bl_label = "从抓帧生成配置档"
+    bl_description = "扫描 FrameAnalysis 抓帧目录，自动识别 Body 的 Draw/VB/IB/贴图绑定并生成 runtime-only 配置档"
+
+    def execute(self, context):
+        scene = context.scene
+        capture_dir = bpy.path.abspath(scene.gmi_capture_dir)
+        output_dir = bpy.path.abspath(scene.gmi_extract_output_dir or scene.gmi_profile_dir)
+        if not capture_dir:
+            self.report({"ERROR"}, "请先选择 FrameAnalysis 抓帧目录")
+            return {"CANCELLED"}
+        if not output_dir:
+            self.report({"ERROR"}, "请先选择新配置档输出目录")
+            return {"CANCELLED"}
+        try:
+            report = core.extract_profile_from_frame_dump(
+                capture_dir,
+                output_dir,
+                component_id=scene.gmi_component_id,
+                main_draw=scene.gmi_extract_draw or None,
+            )
+            scene.gmi_profile_dir = output_dir
+            selected = report["selected"]
+            self.report(
+                {"INFO"},
+                f"已生成配置档：Draw {selected['draw']:06d}，"
+                f"{selected['vertices']} 顶点 / {selected['indices']} 索引"
+            )
+            return {"FINISHED"}
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+
+
 class GMI_OT_update_profile_from_frame_dump(Operator):
     bl_idname = "gmi.update_profile_from_frame_dump"
     bl_label = "更新配置档抓帧源"
@@ -1164,6 +1199,7 @@ class GMI_OT_export_texture_mod(Operator):
 
 
 CLASSES = (
+    GMI_OT_extract_profile_from_frame_dump,
     GMI_OT_update_profile_from_frame_dump,
     GMI_OT_import_profile_object,
     GMI_OT_import_reference,

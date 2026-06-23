@@ -10,7 +10,7 @@ class GMI_PT_main(Panel):
     bl_category = "GakumasMI"
 
     def draw_header(self, context):
-        self.layout.label(text="v0.3.4")
+        self.layout.label(text="v0.3.5")
 
     def draw(self, context):
         scene = context.scene
@@ -34,10 +34,13 @@ class GMI_PT_main(Panel):
         box.prop(scene, "gmi_profile_dir")
         box.prop(scene, "gmi_capture_dir")
         box.prop(scene, "gmi_component_id")
+        box.prop(scene, "gmi_extract_output_dir")
+        box.prop(scene, "gmi_extract_draw")
+        box.operator("gmi.extract_profile_from_frame_dump", text="从抓帧生成配置档", icon="FILE_NEW")
         box.operator("gmi.update_profile_from_frame_dump", text="更新配置档抓帧源", icon="FILE_REFRESH")
         box.operator("gmi.import_profile_object", text="导入配置档对象", icon="OUTLINER_OB_ARMATURE")
         box.operator("gmi.import_reference", text="导入抓帧参考模型", icon="IMPORT")
-        box.label(text="最小版：校验抓帧数据并写入配置档；完整自动建配置档待补", icon="INFO")
+        box.label(text="可先从 FrameAnalysis 自动生成 runtime-only 配置档，再导入参考模型", icon="INFO")
 
     def draw_import(self, layout, scene):
         box = layout.box()

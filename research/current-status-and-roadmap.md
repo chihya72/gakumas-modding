@@ -257,6 +257,25 @@ headless 测试作为历史记录保留；下一步是用真实 TTMR FBX 进行�
 - 作者界面收敛为主线出口：保留 `校验网格`、`校验并导出模组`、
   `导出带权重 GPU 模组`，移除非主线入口。
 
+0.3.5 新增：
+
+- `从抓帧生成配置档`：从任意 `FrameAnalysis-*` 目录自动扫描 drawcall、IB、VB0/VB1、
+  stride、顶点数、索引数和可见 `ps-t*` 贴图槽位；
+- 生成 runtime-only 配置档文件：`profile.json`、`drawcall_map.json`、
+  `texture_map.json`、`material_map.json`、`extraction-report.json`；
+- 自动候选评分：优先选择 IB/VB0/VB1 齐全、符合 Body 常见 `40 + 12` 双 VB 布局、
+  索引/顶点规模较大、并且在多个 pass 中重复出现的 draw 组；
+- 当同一 Body 资源组存在三个 pass 时，默认选中中间 draw 作为主 pass。真实 HSKI
+  抓帧 `FrameAnalysis-2026-06-22-105210` 已自动选中 `Draw 000335`，
+  得到 `17615` 顶点 / `74664` 索引，和人工分析一致；
+- 新增命令行工具 `tools/extract_frame_profile.py`，支持 `--draw` 强制指定主 Draw；
+- 支持 VB0 文件名缺少 hash 的情况：新配置档写入 `resourceFiles`，后续导入抓帧参考时
+  可以按文件名兜底读取。
+
+边界：帧数据只能确认运行时 GPU 资源和绑定关系，不能单独还原完整 Unity 骨架名、
+权重和 BindPose。因此 0.3.5 生成的配置档标记为 `runtime-only-frame-extracted`；
+后续蒙皮转权仍需要 AssetStudio 原模型 JSON 与骨架 JSON 作为权重源。
+
 ### P2：身体/衣服拆件与原生皮肤保留
 
 这是当前 HSKI 实验的下一优先级：

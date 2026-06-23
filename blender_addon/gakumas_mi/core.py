@@ -193,6 +193,451 @@ def update_profile_capture_from_frame_dump(profile_dir, capture_dir):
     return report
 
 
+_FRAME_RESOURCE_RE = re.compile(
+    r"^(?P<draw>\d{6})-"
+    r"(?P<binding>ib|vb\d+|(?:vs|ps)-t\d+)"
+    r"(?:=(?P<hash>[0-9a-fA-F]+))?"
+    r"(?:-vs=(?P<vs>[0-9a-fA-F]+))?"
+    r"(?:-ps=(?P<ps>[0-9a-fA-F]+))?"
+    r"\.(?P<ext>buf|dsc|dds|png|jpg|jpeg)$",
+    re.I,
+)
+
+
+def _parse_descriptor(path):
+    data = {}
+    if not path or not Path(path).is_file():
+        return data
+    for line in Path(path).read_text(encoding="utf-8", errors="ignore").splitlines():
+        for key, raw_value in re.findall(r"([A-Za-z_]+)=((?:\"[^\"]*\")|\S+)", line):
+            value = raw_value.strip('"')
+            if value.lstrip("-").isdigit():
+                value = int(value)
+            data[key] = value
+    return data
+
+
+def _scan_frame_resources(capture_dir):
+    resources = {}
+    capture = Path(capture_dir)
+    for path in capture.rglob("*"):
+        if not path.is_file():
+            continue
+        match = _FRAME_RESOURCE_RE.match(path.name)
+        if not match:
+            continue
+        info = match.groupdict()
+        draw = int(info["draw"])
+        binding = info["binding"].lower()
+        entry = resources.setdefault((draw, binding), {
+            "draw": draw,
+            "binding": binding,
+            "hash": None,
+            "vs": None,
+            "ps": None,
+            "buf": None,
+            "dsc": None,
+            "texture": None,
+            "byteWidth": None,
+        })
+        if info.get("hash"):
+            entry["hash"] = info["hash"].lower()
+        if info.get("vs"):
+            entry["vs"] = info["vs"].lower()
+        if info.get("ps"):
+            entry["ps"] = info["ps"].lower()
+        ext = info["ext"].lower()
+        if ext == "buf":
+            entry["buf"] = path
+        elif ext == "dsc":
+            entry["dsc"] = path
+        else:
+            entry["texture"] = path
+    for entry in resources.values():
+        desc = _parse_descriptor(entry.get("dsc"))
+        byte_width = desc.get("byte_width")
+        if byte_width is None and entry.get("buf") and entry["buf"].is_file():
+            byte_width = entry["buf"].stat().st_size
+        entry["descriptor"] = desc
+        entry["byteWidth"] = byte_width
+    return resources
+
+
+def _parse_frame_log(capture_dir):
+    log = Path(capture_dir) / "log.txt"
+    if not log.is_file():
+        return {}
+    current = {"vs": None, "ps": None, "ibHash": None}
+    draws = {}
+    line_re = re.compile(r"^(?P<draw>\d{6})\s+(?P<body>.*)$")
+    draw_re = re.compile(
+        r"DrawIndexed(?:Instanced)?\(IndexCountPerInstance:(?P<indices>\d+),\s*"
+        r"InstanceCount:(?P<instances>\d+),\s*StartIndexLocation:(?P<start>-?\d+),\s*"
+        r"BaseVertexLocation:(?P<base>-?\d+),\s*StartInstanceLocation:(?P<start_instance>-?\d+)\)"
+    )
+    for line in log.read_text(encoding="utf-8", errors="ignore").splitlines():
+        match = line_re.match(line)
+        if not match:
+            continue
+        draw = int(match.group("draw"))
+        body = match.group("body")
+        if "VSSetShader" in body:
+            shader = re.search(r"hash=([0-9a-fA-F]+)", body)
+            if shader:
+                current["vs"] = shader.group(1).lower()
+        elif "PSSetShader" in body:
+            shader = re.search(r"hash=([0-9a-fA-F]+)", body)
+            if shader:
+                current["ps"] = shader.group(1).lower()
+        elif "IASetIndexBuffer" in body:
+            ib_hash = re.search(r"hash=([0-9a-fA-F]+)", body)
+            if ib_hash:
+                current["ibHash"] = ib_hash.group(1).lower()
+        elif "DrawIndexed" in body:
+            draw_match = draw_re.search(body)
+            if draw_match:
+                draws[draw] = {
+                    "draw": draw,
+                    "vs": current["vs"],
+                    "ps": current["ps"],
+                    "ibHash": current["ibHash"],
+                    "indexCount": int(draw_match.group("indices")),
+                    "instanceCount": int(draw_match.group("instances")),
+                    "startIndex": int(draw_match.group("start")),
+                    "baseVertex": int(draw_match.group("base")),
+                    "startInstance": int(draw_match.group("start_instance")),
+                }
+    return draws
+
+
+def _infer_vertex_stream_layout(vb0_bytes, vb1_bytes):
+    primary = (40, 12)
+    if vb0_bytes and vb1_bytes and vb0_bytes % primary[0] == 0:
+        vertices = vb0_bytes // primary[0]
+        if vertices > 0 and vb1_bytes == vertices * primary[1]:
+            return {
+                "positionNormalTangentStride": primary[0],
+                "colorUvStride": primary[1],
+                "vertices": vertices,
+                "confidence": "known-gakumas-body-layout",
+            }
+    for vb0_stride in (40, 48, 44, 36, 32):
+        if not vb0_bytes or vb0_bytes % vb0_stride:
+            continue
+        vertices = vb0_bytes // vb0_stride
+        for vb1_stride in (12, 16, 20, 24, 28, 32):
+            if vb1_bytes == vertices * vb1_stride:
+                return {
+                    "positionNormalTangentStride": vb0_stride,
+                    "colorUvStride": vb1_stride,
+                    "vertices": vertices,
+                    "confidence": "inferred-by-matching-byte-width",
+                }
+    if vb0_bytes and vb0_bytes % 40 == 0:
+        return {
+            "positionNormalTangentStride": 40,
+            "colorUvStride": 12,
+            "vertices": vb0_bytes // 40,
+            "confidence": "partial-vb0-only-assumption",
+        }
+    return None
+
+
+def _component_resource_files(resources, draw):
+    files = {}
+    for binding in ("ib", "vb0", "vb1"):
+        entry = resources.get((draw, binding))
+        if entry and entry.get("buf"):
+            files[binding] = entry["buf"].name
+    return files
+
+
+def _build_frame_candidates(resources, draw_records):
+    candidates = []
+    for draw, record in draw_records.items():
+        ib = resources.get((draw, "ib"))
+        vb0 = resources.get((draw, "vb0"))
+        vb1 = resources.get((draw, "vb1"))
+        if not (ib and vb0):
+            continue
+        layout = _infer_vertex_stream_layout(vb0.get("byteWidth"), (vb1 or {}).get("byteWidth"))
+        if not layout:
+            continue
+        ib_indices = int((ib.get("byteWidth") or 0) // 2)
+        draw_indices = int(record.get("indexCount") or ib_indices)
+        score = 0.0
+        reasons = []
+        if ib and vb0 and vb1:
+            score += 50
+            reasons.append("ib/vb0/vb1 同 draw 齐全")
+        if layout["positionNormalTangentStride"] == 40 and layout["colorUvStride"] == 12:
+            score += 30
+            reasons.append("符合 Gakumas Body 常见 40+12 双 VB 布局")
+        score += min(draw_indices / 1000.0, 120)
+        score += min(layout["vertices"] / 1000.0, 80)
+        if record.get("instanceCount") == 1:
+            score += 5
+        candidates.append({
+            "draw": draw,
+            "score": round(score, 3),
+            "reasons": reasons,
+            "vs": record.get("vs") or (vb0 or {}).get("vs"),
+            "ps": record.get("ps") or (vb0 or {}).get("ps"),
+            "ibHash": (ib or {}).get("hash") or record.get("ibHash"),
+            "vbHashes": {
+                "positionNormalTangent": (vb0 or {}).get("hash"),
+                "colorUv": (vb1 or {}).get("hash"),
+            },
+            "resourceFiles": _component_resource_files(resources, draw),
+            "vertices": int(layout["vertices"]),
+            "indices": draw_indices,
+            "ibByteWidth": ib.get("byteWidth"),
+            "vb0ByteWidth": vb0.get("byteWidth"),
+            "vb1ByteWidth": (vb1 or {}).get("byteWidth"),
+            "layout": layout,
+            "drawCall": record,
+        })
+    repeat_counts = {}
+    for candidate in candidates:
+        key = (candidate.get("ibHash"), candidate["indices"], candidate["vertices"])
+        repeat_counts[key] = repeat_counts.get(key, 0) + 1
+    for candidate in candidates:
+        key = (candidate.get("ibHash"), candidate["indices"], candidate["vertices"])
+        repeats = repeat_counts.get(key, 1)
+        candidate["score"] = round(candidate["score"] + repeats * 8, 3)
+        if repeats > 1:
+            candidate["reasons"].append(f"同一资源组在 {repeats} 个 pass 中重复出现")
+    return sorted(candidates, key=lambda item: (item["score"], item["indices"], item["draw"]), reverse=True)
+
+
+def _select_main_candidate(candidates, requested_draw=None):
+    if not candidates:
+        raise ValueError("抓帧中没有找到可作为 Body 的 IB/VB0/VB1 候选")
+    if requested_draw is not None:
+        for candidate in candidates:
+            if candidate["draw"] == int(requested_draw):
+                return candidate
+        raise ValueError(f"指定 Draw {int(requested_draw):06d} 没有可用 Body 候选")
+    best = candidates[0]
+    group = [
+        item for item in candidates
+        if item.get("ibHash") == best.get("ibHash")
+        and item["indices"] == best["indices"]
+        and item["vertices"] == best["vertices"]
+    ]
+    if len(group) >= 3:
+        return sorted(group, key=lambda item: item["draw"])[len(group) // 2]
+    return best
+
+
+def _role_for_group(draw, main_draw, ordered_draws):
+    if draw == main_draw:
+        return "main"
+    if draw < main_draw:
+        return "shadow_or_depth"
+    if ordered_draws and draw == ordered_draws[-1]:
+        return "outline_or_aux"
+    return "aux"
+
+
+def _texture_semantic(slot):
+    return {
+        "ps-t0": "baseColor",
+        "ps-t1": "packedMask",
+        "ps-t4": "shadeColor",
+    }.get(slot, slot.replace("ps-", ""))
+
+
+def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body", main_draw=None):
+    """Generate a runtime-only Profile from a 3DMigoto FrameAnalysis directory.
+
+    Frame dumps expose runtime GPU resources, draw calls and texture bindings. They do not
+    contain full Unity skeleton names, bind poses or authoring weights, so this profile is
+    suitable for object/material discovery and GPU replacement binding, not as an AssetStudio
+    skeleton substitute.
+    """
+    capture = Path(capture_dir)
+    if not capture.is_dir():
+        raise FileNotFoundError(f"FrameAnalysis 目录不存在：{capture}")
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+
+    resources = _scan_frame_resources(capture)
+    draw_records = _parse_frame_log(capture)
+    if not draw_records:
+        # Resource file names still carry draw numbers; synthesize minimal draw records.
+        for (draw, binding), entry in resources.items():
+            if binding == "ib":
+                draw_records.setdefault(draw, {
+                    "draw": draw,
+                    "vs": entry.get("vs"),
+                    "ps": entry.get("ps"),
+                    "ibHash": entry.get("hash"),
+                    "indexCount": int((entry.get("byteWidth") or 0) // 2),
+                    "instanceCount": 1,
+                    "startIndex": 0,
+                    "baseVertex": 0,
+                    "startInstance": 0,
+                })
+    candidates = _build_frame_candidates(resources, draw_records)
+    selected = _select_main_candidate(candidates, main_draw if main_draw else None)
+    same_group = [
+        item for item in candidates
+        if item.get("ibHash") == selected.get("ibHash")
+        and item["indices"] == selected["indices"]
+        and item["vertices"] == selected["vertices"]
+    ]
+    ordered_draws = sorted(item["draw"] for item in same_group)
+
+    layout = selected["layout"]
+    vb0_hash = selected["vbHashes"].get("positionNormalTangent")
+    vb1_hash = selected["vbHashes"].get("colorUv")
+    component = {
+        "id": component_id,
+        "kind": "body",
+        "source": "frame-analysis-runtime",
+        "confidence": "auto-selected" if not main_draw else "manual-draw-selected",
+        "ibHash": selected.get("ibHash") or f"draw:{selected['draw']:06d}:ib",
+        "vbHashes": {
+            "positionNormalTangent": vb0_hash or f"draw:{selected['draw']:06d}:vb0",
+            "colorUv": vb1_hash or f"draw:{selected['draw']:06d}:vb1",
+        },
+        "resourceFiles": selected["resourceFiles"],
+        "vertices": selected["vertices"],
+        "indices": selected["indices"],
+        "draws": ordered_draws,
+        "mainDraw": selected["draw"],
+        "hashNotes": {
+            "positionNormalTangent": "filename" if vb0_hash else "missing-in-frame-filename; resourceFiles fallback required",
+            "colorUv": "filename" if vb1_hash else "missing-in-frame-filename; resourceFiles fallback required",
+        },
+    }
+    profile_id = f"frame-{capture.name}-{component_id}-{component['ibHash']}".replace(":", "-")
+    profile = {
+        "schemaVersion": 1,
+        "id": profile_id,
+        "status": "runtime-only-frame-extracted",
+        "target": {
+            "actorId": "unknown",
+            "costumeId": "unknown",
+            "bodyResource": "unknown",
+            "note": "从 FrameAnalysis 推断；如需骨骼名/BindPose/权重，请再绑定 AssetStudio 导出的原模型 JSON 与骨架 JSON。",
+        },
+        "capture": {
+            "directory": str(capture),
+            "timestamp": _capture_timestamp_from_name(capture.name),
+            "files": len([path for path in capture.rglob("*") if path.is_file()]),
+            "bytes": sum(path.stat().st_size for path in capture.rglob("*") if path.is_file()),
+            "stableSignatureCaptures": [str(capture)],
+        },
+        "layout": {
+            "topology": "trianglelist",
+            "indexFormat": "R16_UINT",
+            "positionNormalTangentStride": layout["positionNormalTangentStride"],
+            "colorUvStride": layout["colorUvStride"],
+            "inference": layout["confidence"],
+        },
+        "skinning": {
+            "drawInput": "CPU-skinned or runtime-skinned final vertex buffer",
+            "status": "runtime-only; frame dump does not include complete skeleton names, weights or bind poses",
+            "inverseSkin": {
+                "meshJson": None,
+                "skeletonJson": None,
+                "note": "稍后可由插件导入 AssetStudio JSON 作为权重源补全。",
+            },
+        },
+        "components": [component],
+    }
+
+    passes = {}
+    for item in sorted(same_group, key=lambda value: value["draw"]):
+        role = _role_for_group(item["draw"], selected["draw"], ordered_draws)
+        passes[f"draw_{item['draw']:06d}"] = {
+            "role": role,
+            "draw": item["draw"],
+            "vertexShader": item.get("vs"),
+            "pixelShader": item.get("ps"),
+            "indexCount": item["indices"],
+            "vertexCount": item["vertices"],
+            "streams": {
+                "ib": item.get("ibHash") or f"draw:{item['draw']:06d}:ib",
+                "vb0": item["vbHashes"].get("positionNormalTangent") or f"draw:{item['draw']:06d}:vb0",
+                "vb1": item["vbHashes"].get("colorUv") or f"draw:{item['draw']:06d}:vb1",
+            },
+            "streamFiles": item["resourceFiles"],
+        }
+    drawcall_map = {
+        "schemaVersion": 1,
+        "capture": str(capture),
+        "generatedFrom": capture.name,
+        "components": {
+            component_id: {
+                "mainDraw": selected["draw"],
+                "passBindings": passes,
+            }
+        },
+    }
+
+    textures = {}
+    material_slots = []
+    for (draw, binding), entry in sorted(resources.items()):
+        if draw != selected["draw"] or not binding.startswith("ps-t"):
+            continue
+        semantic = _texture_semantic(binding)
+        texture_key = f"{component_id}.{semantic}"
+        texture_file = entry.get("texture")
+        textures[texture_key] = {
+            "slot": binding,
+            "semantic": semantic,
+            "hash": entry.get("hash") or f"draw:{draw:06d}:{binding}",
+            "pixelShader": entry.get("ps") or selected.get("ps"),
+            "file": texture_file.name if texture_file else None,
+            "descriptor": entry.get("descriptor", {}),
+        }
+        material_slots.append({
+            "key": texture_key,
+            "slot": binding,
+            "semantic": semantic,
+            "hash": textures[texture_key]["hash"],
+        })
+    texture_map = {
+        "schemaVersion": 1,
+        "capture": str(capture),
+        "textures": textures,
+    }
+    material_map = {
+        "schemaVersion": 1,
+        "materials": {
+            component_id: {
+                "source": "frame-analysis-runtime",
+                "mainDraw": selected["draw"],
+                "pixelShader": selected.get("ps"),
+                "textureSlots": material_slots,
+                "note": "t0/t1/t4 语义按 Gakumas Body 模板命名；未识别槽位保留原 slot。",
+            }
+        },
+    }
+    report = {
+        "ok": True,
+        "captureDir": str(capture),
+        "outputDir": str(output),
+        "selected": selected,
+        "candidateCount": len(candidates),
+        "candidates": candidates[:32],
+        "warnings": [
+            "这是 runtime-only profile：帧数据不能单独还原完整 Unity 骨架名、权重和 BindPose。",
+            "若 VB 文件名没有 hash，已写入 resourceFiles 作为读取兜底。",
+        ],
+    }
+
+    _write_json(output / "profile.json", profile)
+    _write_json(output / "drawcall_map.json", drawcall_map)
+    _write_json(output / "texture_map.json", texture_map)
+    _write_json(output / "material_map.json", material_map)
+    _write_json(output / "extraction-report.json", report)
+    return report
+
+
 def component_by_id(profile, component_id):
     for component in profile["components"]:
         if component["id"] == component_id:
@@ -200,7 +645,20 @@ def component_by_id(profile, component_id):
     raise ValueError(f"Unknown Profile component: {component_id}")
 
 
-def _capture_file(capture_dir, binding, resource_hash):
+def _capture_file(capture_dir, binding, resource_hash, resource_file=None):
+    if resource_file:
+        file_path = Path(capture_dir) / resource_file
+        if file_path.is_file():
+            return file_path
+        matches = sorted(Path(capture_dir).rglob(resource_file))
+        if matches:
+            return matches[0]
+    if resource_hash and str(resource_hash).startswith("draw:"):
+        parts = str(resource_hash).split(":")
+        if len(parts) >= 3:
+            matches = _resource_files_by_draw(capture_dir, int(parts[1]), binding, ".buf")
+            if matches:
+                return matches[0]
     matches = sorted(Path(capture_dir).glob(f"*-{binding}={resource_hash}-*.buf"))
     if not matches:
         raise FileNotFoundError(
@@ -255,15 +713,16 @@ def read_reference(profile_dir, component_id="body", capture_dir=None):
     capture = Path(capture_dir or profile["capture"]["directory"])
     vb0_hash = component["vbHashes"]["positionNormalTangent"]
     vb1_hash = component["vbHashes"].get("colorUv")
-    vb0_path = _capture_file(capture, "vb0", vb0_hash)
-    ib_path = _capture_file(capture, "ib", component["ibHash"])
+    resource_files = component.get("resourceFiles", {})
+    vb0_path = _capture_file(capture, "vb0", vb0_hash, resource_files.get("vb0"))
+    ib_path = _capture_file(capture, "ib", component["ibHash"], resource_files.get("ib"))
     vertices, normals, tangents = _read_vb0(
         vb0_path, profile["layout"]["positionNormalTangentStride"]
     )
     colors = uv0 = uv1 = None
     vb1_path = None
     if vb1_hash:
-        vb1_path = _capture_file(capture, "vb1", vb1_hash)
+        vb1_path = _capture_file(capture, "vb1", vb1_hash, resource_files.get("vb1"))
         colors, uv0, uv1 = _read_vb1(
             vb1_path, profile["layout"]["colorUvStride"], len(vertices)
         )
