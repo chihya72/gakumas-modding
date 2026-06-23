@@ -1,0 +1,20 @@
+* text=auto
+
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.hlsl text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.ps1 text eol=crlf
+
+*.buf binary
+*.dds binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.fbx binary
+*.unity3d binary
+*.zip binary
+*.dll binary
+*.exe binary

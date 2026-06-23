@@ -1,0 +1,12 @@
+{
+  "emulation": "RecoverMatricesCS 256-lane sequential accumulation + tree reduction; SkinSourceCS float32",
+  "positionRms": 1.9209937818231992e-06,
+  "positionP95": 2.3853151560615515e-06,
+  "positionMax": 3.0170318495947868e-05,
+  "normalAngleMeanDegrees": 0.0014529320178553462,
+  "normalAngleP95Degrees": 0.01978234015405178,
+  "normalAngleMaxDegrees": 0.3140352964401245,
+  "tangentAngleMeanDegrees": 0.001452357042580843,
+  "tangentAngleP95Degrees": 0.01978234015405178,
+  "tangentAngleMaxDegrees": 0.2220563441514969
+}

@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "capture": "FrameAnalysis-2026-06-21-105931",
+  "passes": {
+    "shadowOrDepth": {
+      "vertexShader": "221c573337491c78",
+      "draws": [2, 3, 4, 5]
+    },
+    "main": {
+      "vertexShader": "fe50b7a82b0f37be",
+      "outlineVertexShader": "e0ceaa854f457e74",
+      "drawRange": [331, 354]
+    }
+  },
+  "components": {
+    "body": {
+      "ibHash": "4d5dfe7b",
+      "draws": [2, 335, 347],
+      "passBindings": {
+        "shadowOrDepth": {
+          "draw": 2,
+          "vertexShader": "221c573337491c78",
+          "pixelShader": "a04da6e49886b206",
+          "arguments": { "firstIndex": 0, "indexCount": 74664, "baseVertex": 0 },
+          "streams": { "ib": "4d5dfe7b", "vb0": "e189fd22", "vb1": "9c40798a" }
+        },
+        "main": {
+          "draw": 335,
+          "vertexShader": "fe50b7a82b0f37be",
+          "pixelShader": "9ab6fcdf2237a70a",
+          "arguments": { "firstIndex": 0, "indexCount": 74664, "baseVertex": 0 },
+          "streams": { "ib": "4d5dfe7b", "vb0": "e189fd22", "vb1": "9c40798a", "vb3": "e189fd22" }
+        },
+        "outline": {
+          "draw": 347,
+          "vertexShader": "e0ceaa854f457e74",
+          "pixelShader": "58352a72263d897c",
+          "arguments": { "firstIndex": 0, "indexCount": 74664, "baseVertex": 0 },
+          "streams": { "ib": "4d5dfe7b", "vb0": "e189fd22", "vb1": "9c40798a", "vb3": "e189fd22" }
+        }
+      },
+      "pixelShaders": [
+        "a04da6e49886b206",
+        "9ab6fcdf2237a70a",
+        "58352a72263d897c"
+      ]
+    },
+    "face": {
+      "ibHash": "298f5be3",
+      "draws": [331, 332, 333, 334, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346],
+      "submeshes": [
+        { "firstIndex": 0, "indexCount": 648 },
+        { "firstIndex": 648, "indexCount": 264 },
+        { "firstIndex": 912, "indexCount": 4482 },
+        { "firstIndex": 5394, "indexCount": 6558 },
+        { "firstIndex": 11952, "indexCount": 678 },
+        { "firstIndex": 12630, "indexCount": 3030 },
+        { "firstIndex": 15660, "indexCount": 1200 },
+        { "firstIndex": 16860, "indexCount": 1200 },
+        { "firstIndex": 18060, "indexCount": 6444 }
+      ],
+      "pixelShaders": [
+        "86c5f3d05cdbdc50",
+        "bef4cff63f43e1c3",
+        "298b7c1b6bbedf4b",
+        "260d0a2365fa970b",
+        "1f8061c28c128478",
+        "58352a72263d897c"
+      ]
+    },
+    "hair-main": {
+      "ibHash": "548ce056",
+      "draws": [4, 349, 351, 354],
+      "pixelShaders": [
+        "a04da6e49886b206",
+        "bef4cff63f43e1c3",
+        "b719c3b41b620399",
+        "58352a72263d897c"
+      ]
+    },
+    "hair-accessory": {
+      "ibHash": "672c0ca7",
+      "draws": [3, 5, 348, 350, 352, 353],
+      "submeshes": [
+        { "firstIndex": 0, "indexCount": 1704 },
+        { "firstIndex": 1704, "indexCount": 2670 }
+      ],
+      "pixelShaders": [
+        "a04da6e49886b206",
+        "df3c41c989b71f73",
+        "bef4cff63f43e1c3",
+        "ce8056917470e9ba",
+        "b719c3b41b620399",
+        "58352a72263d897c"
+      ]
+    }
+  }
+}

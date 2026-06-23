@@ -1,0 +1,664 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-06-22T22:46:48.826450+00:00",
+  "profileId": "gakumas-20260615-hski-cstm-0000",
+  "result": "pass",
+  "summary": {
+    "checks": 60,
+    "passed": 60,
+    "warnings": 0,
+    "failed": 0
+  },
+  "contract": {
+    "component": "body",
+    "geometry": {
+      "vertexCount": 17615,
+      "indexCount": 74664,
+      "maxIndex": 17614,
+      "topology": "trianglelist",
+      "indexFormat": "R16_UINT",
+      "streams": {
+        "vb0": {
+          "hash": "e189fd22",
+          "stride": 40,
+          "semantics": [
+            "POSITION.float3",
+            "NORMAL.float3",
+            "TANGENT.float4"
+          ]
+        },
+        "vb1": {
+          "hash": "9c40798a",
+          "stride": 12,
+          "semantics": [
+            "COLOR.unorm8x4",
+            "TEXCOORD0.half2",
+            "TEXCOORD1.half2"
+          ]
+        },
+        "ib": {
+          "hash": "4d5dfe7b",
+          "format": "R16_UINT"
+        }
+      }
+    },
+    "skinning": {
+      "mode": "CPU-skinned dynamic vertex buffer",
+      "bindPoseCount": 152,
+      "hierarchyNodeCount": 167,
+      "sourceActiveBoneCount": 147,
+      "sourceInactiveBones": [
+        "LeftUpLegSkin1_S",
+        "RightUpLegSkin1_S",
+        "RightLegSkin1_S",
+        "LeftLegSkin1_S",
+        "LeftSideStrap1_S"
+      ],
+      "numericallyUnobservableBones": [
+        "RightFrontRibbon1_S"
+      ],
+      "influencesPerVertex": 4,
+      "inverseOperator": {
+        "path": "D:\\GIT\\gakumas-modding\\profiles\\hski-cstm-0000\\Buffers\\InverseOperator.R32_FLOAT.buf",
+        "sha256": "25429F069261F2170498CBBA44888D7824899EE001B4029109F7D74C677EE385",
+        "layout": "608 coefficient-major rows x 17615 source vertices x float32"
+      },
+      "regionMap": {
+        "schema": "D:\\GIT\\gakumas-modding\\profiles\\hski-cstm-0000\\body-regions.json",
+        "regionCount": 387,
+        "reviewRequired": true
+      }
+    },
+    "passes": {
+      "bodyDraws": [
+        2,
+        335,
+        347
+      ],
+      "bindings": {
+        "shadowOrDepth": {
+          "draw": 2,
+          "vertexShader": "221c573337491c78",
+          "pixelShader": "a04da6e49886b206",
+          "arguments": {
+            "firstIndex": 0,
+            "indexCount": 74664,
+            "baseVertex": 0
+          },
+          "streams": {
+            "ib": "4d5dfe7b",
+            "vb0": "e189fd22",
+            "vb1": "9c40798a"
+          }
+        },
+        "main": {
+          "draw": 335,
+          "vertexShader": "fe50b7a82b0f37be",
+          "pixelShader": "9ab6fcdf2237a70a",
+          "arguments": {
+            "firstIndex": 0,
+            "indexCount": 74664,
+            "baseVertex": 0
+          },
+          "streams": {
+            "ib": "4d5dfe7b",
+            "vb0": "e189fd22",
+            "vb1": "9c40798a",
+            "vb3": "e189fd22"
+          }
+        },
+        "outline": {
+          "draw": 347,
+          "vertexShader": "e0ceaa854f457e74",
+          "pixelShader": "58352a72263d897c",
+          "arguments": {
+            "firstIndex": 0,
+            "indexCount": 74664,
+            "baseVertex": 0
+          },
+          "streams": {
+            "ib": "4d5dfe7b",
+            "vb0": "e189fd22",
+            "vb1": "9c40798a",
+            "vb3": "e189fd22"
+          }
+        }
+      },
+      "evidence": [
+        {
+          "draw": 2,
+          "pass": "shadowOrDepth",
+          "binding": "ib",
+          "hash": "4d5dfe7b",
+          "expectedBytes": 149328,
+          "actualBytes": 149328,
+          "file": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-21-105931\\000002-ib=4d5dfe7b-vs=221c573337491c78-ps=a04da6e49886b206.buf"
+        },
+        {
+          "draw": 2,
+          "pass": "shadowOrDepth",
+          "binding": "vb0",
+          "hash": "e189fd22",
+          "expectedBytes": 704600,
+          "actualBytes": 704600,
+          "file": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-21-105931\\000002-vb0=e189fd22-vs=221c573337491c78-ps=a04da6e49886b206.buf"
+        },
+        {
+          "draw": 2,
+          "pass": "shadowOrDepth",
+          "binding": "vb1",
+          "hash": "9c40798a",
+          "expectedBytes": 211380,
+          "actualBytes": 211380,
+          "file": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-21-105931\\000002-vb1=9c40798a-vs=221c573337491c78-ps=a04da6e49886b206.buf"
+        },
+        {
+          "draw": 335,
+          "pass": "main",
+          "binding": "ib",
+          "hash": "4d5dfe7b",
+          "expectedBytes": 149328,
+          "actualBytes": 149328,
+          "file": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-21-105931\\000335-ib=4d5dfe7b-vs=fe50b7a82b0f37be-ps=9ab6fcdf2237a70a.buf"
+        },
+        {
+          "draw": 335,
+          "pass": "main",
+          "binding": "vb0",
+          "hash": "e189fd22",
+          "expectedBytes": 704600,
+          "actualBytes": 704600,
+          "file": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-21-105931\\000335-vb0=e189fd22-vs=fe50b7a82b0f37be-ps=9ab6fcdf2237a70a.buf"
+        },
+        {
+          "draw": 335,
+          "pass": "main",
+          "binding": "vb1",
+          "hash": "9c40798a",
+          "expectedBytes": 211380,
+          "actualBytes": 211380,
+          "file": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-21-105931\\000335-vb1=9c40798a-vs=fe50b7a82b0f37be-ps=9ab6fcdf2237a70a.buf"
+        },
+        {
+          "draw": 347,
+          "pass": "outline",
+          "binding": "ib",
+          "hash": "4d5dfe7b",
+          "expectedBytes": 149328,
+          "actualBytes": 149328,
+          "file": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-21-105931\\000347-ib=4d5dfe7b-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf"
+        },
+        {
+          "draw": 347,
+          "pass": "outline",
+          "binding": "vb0",
+          "hash": "e189fd22",
+          "expectedBytes": 704600,
+          "actualBytes": 704600,
+          "file": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-21-105931\\000347-vb0=e189fd22-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf"
+        },
+        {
+          "draw": 347,
+          "pass": "outline",
+          "binding": "vb1",
+          "hash": "9c40798a",
+          "expectedBytes": 211380,
+          "actualBytes": 211380,
+          "file": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-21-105931\\000347-vb1=9c40798a-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf"
+        }
+      ],
+      "stableSignatureSessions": [
+        {
+          "capture": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-21-105931",
+          "passes": [
+            "shadowOrDepth",
+            "main",
+            "outline"
+          ],
+          "conforms": true
+        },
+        {
+          "capture": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-22-085440",
+          "passes": [
+            "shadowOrDepth",
+            "main",
+            "outline"
+          ],
+          "conforms": true
+        },
+        {
+          "capture": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-22-091856",
+          "passes": [
+            "shadowOrDepth",
+            "main",
+            "outline"
+          ],
+          "conforms": true
+        },
+        {
+          "capture": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-22-093546",
+          "passes": [
+            "shadowOrDepth",
+            "main",
+            "outline"
+          ],
+          "conforms": true
+        },
+        {
+          "capture": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-22-103150",
+          "passes": [
+            "shadowOrDepth",
+            "main",
+            "outline"
+          ],
+          "conforms": true
+        },
+        {
+          "capture": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-22-104227",
+          "passes": [
+            "shadowOrDepth",
+            "main",
+            "outline"
+          ],
+          "conforms": true
+        },
+        {
+          "capture": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-22-105206",
+          "passes": [
+            "shadowOrDepth",
+            "main",
+            "outline"
+          ],
+          "conforms": true
+        },
+        {
+          "capture": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-22-105210",
+          "passes": [
+            "shadowOrDepth",
+            "main",
+            "outline"
+          ],
+          "conforms": true
+        }
+      ]
+    },
+    "materials": {
+      "body": [
+        {
+          "slot": "t0",
+          "hash": "950989c5",
+          "semantic": "baseColor",
+          "confidence": "verified",
+          "descriptor": {
+            "raw": "type=Texture2D width=2048 height=2048 mips=12 array=1 format=\"BC7_UNORM_SRGB\" msaa=1 msaa_quality=0 usage=\"DEFAULT\" bind_flags=\"shader_resource\" cpu_access_flags=0 misc_flags=0",
+            "type": "Texture2D",
+            "width": 2048,
+            "height": 2048,
+            "mips": 12,
+            "array": 1,
+            "format": "BC7_UNORM_SRGB",
+            "msaa": 1,
+            "msaa_quality": 0,
+            "usage": "DEFAULT",
+            "bind_flags": "shader_resource",
+            "cpu_access_flags": 0,
+            "misc_flags": 0
+          },
+          "file": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-21-111608\\000335-ps-t0=950989c5-vs=fe50b7a82b0f37be-ps=9ab6fcdf2237a70a.dds"
+        },
+        {
+          "slot": "t1",
+          "hash": "1fefdc77",
+          "semantic": "packedMask",
+          "confidence": "verified-by-one-channel-extremes-and-shader-dataflow",
+          "descriptor": {
+            "raw": "type=Texture2D width=2048 height=2048 mips=12 array=1 format=\"BC7_UNORM\" msaa=1 msaa_quality=0 usage=\"DEFAULT\" bind_flags=\"shader_resource\" cpu_access_flags=0 misc_flags=0",
+            "type": "Texture2D",
+            "width": 2048,
+            "height": 2048,
+            "mips": 12,
+            "array": 1,
+            "format": "BC7_UNORM",
+            "msaa": 1,
+            "msaa_quality": 0,
+            "usage": "DEFAULT",
+            "bind_flags": "shader_resource",
+            "cpu_access_flags": 0,
+            "misc_flags": 0
+          },
+          "file": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-21-111608\\000335-ps-t1=1fefdc77-vs=fe50b7a82b0f37be-ps=9ab6fcdf2237a70a.dds"
+        },
+        {
+          "slot": "t4",
+          "hash": "69492ed7",
+          "semantic": "shadeColor",
+          "confidence": "verified-by-alpha-extremes-and-shader-dataflow",
+          "descriptor": {
+            "raw": "type=Texture2D width=2048 height=2048 mips=12 array=1 format=\"BC7_UNORM_SRGB\" msaa=1 msaa_quality=0 usage=\"DEFAULT\" bind_flags=\"shader_resource\" cpu_access_flags=0 misc_flags=0",
+            "type": "Texture2D",
+            "width": 2048,
+            "height": 2048,
+            "mips": 12,
+            "array": 1,
+            "format": "BC7_UNORM_SRGB",
+            "msaa": 1,
+            "msaa_quality": 0,
+            "usage": "DEFAULT",
+            "bind_flags": "shader_resource",
+            "cpu_access_flags": 0,
+            "misc_flags": 0
+          },
+          "file": "D:\\Games\\gakumas\\FrameAnalysis-2026-06-21-111608\\000335-ps-t4=69492ed7-vs=fe50b7a82b0f37be-ps=9ab6fcdf2237a70a.dds"
+        }
+      ]
+    }
+  },
+  "checks": [
+    {
+      "id": "document.profile.json",
+      "status": "pass",
+      "message": "Found profile.json"
+    },
+    {
+      "id": "document.drawcall_map.json",
+      "status": "pass",
+      "message": "Found drawcall_map.json"
+    },
+    {
+      "id": "document.material_map.json",
+      "status": "pass",
+      "message": "Found material_map.json"
+    },
+    {
+      "id": "document.texture_map.json",
+      "status": "pass",
+      "message": "Found texture_map.json"
+    },
+    {
+      "id": "profile.body",
+      "status": "pass",
+      "message": "Body component is defined"
+    },
+    {
+      "id": "source.mesh",
+      "status": "pass",
+      "message": "Found D:\\GIT\\gakumas-modding\\profiles\\hski-cstm-0000\\Reference\\Geo_Body.json"
+    },
+    {
+      "id": "source.skeleton",
+      "status": "pass",
+      "message": "Found D:\\GIT\\gakumas-modding\\profiles\\hski-cstm-0000\\Reference\\Geo_Body.skeleton.json"
+    },
+    {
+      "id": "inverse.operator",
+      "status": "pass",
+      "message": "Found D:\\GIT\\gakumas-modding\\profiles\\hski-cstm-0000\\Buffers\\InverseOperator.R32_FLOAT.buf"
+    },
+    {
+      "id": "mesh.vertexCount",
+      "status": "pass",
+      "message": "Vertex count is 17615"
+    },
+    {
+      "id": "mesh.indexCount",
+      "status": "pass",
+      "message": "Index count is 74664"
+    },
+    {
+      "id": "mesh.indexBounds",
+      "status": "pass",
+      "message": "Indices address [0, 17614]"
+    },
+    {
+      "id": "mesh.array.positions",
+      "status": "pass",
+      "message": "positions: 52845 scalar/records"
+    },
+    {
+      "id": "mesh.array.normals",
+      "status": "pass",
+      "message": "normals: 52845 scalar/records"
+    },
+    {
+      "id": "mesh.array.tangents",
+      "status": "pass",
+      "message": "tangents: 70460 scalar/records"
+    },
+    {
+      "id": "mesh.array.colors",
+      "status": "pass",
+      "message": "colors: 70460 scalar/records"
+    },
+    {
+      "id": "mesh.array.uv0",
+      "status": "pass",
+      "message": "uv0: 35230 scalar/records"
+    },
+    {
+      "id": "mesh.array.uv1",
+      "status": "pass",
+      "message": "uv1: 35230 scalar/records"
+    },
+    {
+      "id": "mesh.array.skin",
+      "status": "pass",
+      "message": "skin: 17615 scalar/records"
+    },
+    {
+      "id": "skeleton.bindPoseCount",
+      "status": "pass",
+      "message": "Bind poses: 152"
+    },
+    {
+      "id": "skeleton.weightedIndices",
+      "status": "pass",
+      "message": "Weighted indices are contiguous 0..151"
+    },
+    {
+      "id": "skeleton.nodeCount",
+      "status": "pass",
+      "message": "Hierarchy nodes: 167"
+    },
+    {
+      "id": "skin.fourInfluences",
+      "status": "pass",
+      "message": "Every source vertex has four valid influence slots"
+    },
+    {
+      "id": "skin.weightSums",
+      "status": "pass",
+      "message": "Maximum |sum(weights)-1| is 1.46e-07"
+    },
+    {
+      "id": "skin.activeBones",
+      "status": "pass",
+      "message": "Active weighted bones: 147"
+    },
+    {
+      "id": "skin.inactiveBones",
+      "status": "pass",
+      "message": "Source-inactive bones: ['LeftUpLegSkin1_S', 'RightUpLegSkin1_S', 'RightLegSkin1_S', 'LeftLegSkin1_S', 'LeftSideStrap1_S']"
+    },
+    {
+      "id": "inverse.unobservableBones",
+      "status": "pass",
+      "message": "Numerically unobservable bones are declared: ['RightFrontRibbon1_S']"
+    },
+    {
+      "id": "inverse.operatorSize",
+      "status": "pass",
+      "message": "Inverse operator is 42839680 bytes (608 x 17615 float32)"
+    },
+    {
+      "id": "regions.schema",
+      "status": "pass",
+      "message": "Found region schema D:\\GIT\\gakumas-modding\\profiles\\hski-cstm-0000\\body-regions.json"
+    },
+    {
+      "id": "regions.count",
+      "status": "pass",
+      "message": "Connected regions: 387"
+    },
+    {
+      "id": "regions.vertexMap",
+      "status": "pass",
+      "message": "Vertex region map: 17615 R16_UINT entries"
+    },
+    {
+      "id": "regions.triangleMap",
+      "status": "pass",
+      "message": "Triangle region map: 24888 R16_UINT entries"
+    },
+    {
+      "id": "capture.geometry.exists",
+      "status": "pass",
+      "message": "Found geometry capture D:\\Games\\gakumas\\FrameAnalysis-2026-06-21-105931"
+    },
+    {
+      "id": "draw.passBindings",
+      "status": "pass",
+      "message": "Body pass bindings cover draws [2, 335, 347]"
+    },
+    {
+      "id": "capture.draw2.ib",
+      "status": "pass",
+      "message": "Draw 2 ib: 149328 bytes"
+    },
+    {
+      "id": "capture.draw2.vb0",
+      "status": "pass",
+      "message": "Draw 2 vb0: 704600 bytes"
+    },
+    {
+      "id": "capture.draw2.vb1",
+      "status": "pass",
+      "message": "Draw 2 vb1: 211380 bytes"
+    },
+    {
+      "id": "capture.draw335.ib",
+      "status": "pass",
+      "message": "Draw 335 ib: 149328 bytes"
+    },
+    {
+      "id": "capture.draw335.vb0",
+      "status": "pass",
+      "message": "Draw 335 vb0: 704600 bytes"
+    },
+    {
+      "id": "capture.draw335.vb1",
+      "status": "pass",
+      "message": "Draw 335 vb1: 211380 bytes"
+    },
+    {
+      "id": "capture.draw347.ib",
+      "status": "pass",
+      "message": "Draw 347 ib: 149328 bytes"
+    },
+    {
+      "id": "capture.draw347.vb0",
+      "status": "pass",
+      "message": "Draw 347 vb0: 704600 bytes"
+    },
+    {
+      "id": "capture.draw347.vb1",
+      "status": "pass",
+      "message": "Draw 347 vb1: 211380 bytes"
+    },
+    {
+      "id": "draw.shadowOrDepth.shaders",
+      "status": "pass",
+      "message": "shadowOrDepth: VS 221c573337491c78 / PS a04da6e49886b206"
+    },
+    {
+      "id": "draw.shadowOrDepth.arguments",
+      "status": "pass",
+      "message": "shadowOrDepth: DrawIndexed(74664, 0, 0)"
+    },
+    {
+      "id": "draw.main.shaders",
+      "status": "pass",
+      "message": "main: VS fe50b7a82b0f37be / PS 9ab6fcdf2237a70a"
+    },
+    {
+      "id": "draw.main.arguments",
+      "status": "pass",
+      "message": "main: DrawIndexed(74664, 0, 0)"
+    },
+    {
+      "id": "draw.outline.shaders",
+      "status": "pass",
+      "message": "outline: VS e0ceaa854f457e74 / PS 58352a72263d897c"
+    },
+    {
+      "id": "draw.outline.arguments",
+      "status": "pass",
+      "message": "outline: DrawIndexed(74664, 0, 0)"
+    },
+    {
+      "id": "stability.FrameAnalysis-2026-06-21-105931",
+      "status": "pass",
+      "message": "Stable Body signature in FrameAnalysis-2026-06-21-105931: shadowOrDepth, main, outline"
+    },
+    {
+      "id": "stability.FrameAnalysis-2026-06-22-085440",
+      "status": "pass",
+      "message": "Stable Body signature in FrameAnalysis-2026-06-22-085440: shadowOrDepth, main, outline"
+    },
+    {
+      "id": "stability.FrameAnalysis-2026-06-22-091856",
+      "status": "pass",
+      "message": "Stable Body signature in FrameAnalysis-2026-06-22-091856: shadowOrDepth, main, outline"
+    },
+    {
+      "id": "stability.FrameAnalysis-2026-06-22-093546",
+      "status": "pass",
+      "message": "Stable Body signature in FrameAnalysis-2026-06-22-093546: shadowOrDepth, main, outline"
+    },
+    {
+      "id": "stability.FrameAnalysis-2026-06-22-103150",
+      "status": "pass",
+      "message": "Stable Body signature in FrameAnalysis-2026-06-22-103150: shadowOrDepth, main, outline"
+    },
+    {
+      "id": "stability.FrameAnalysis-2026-06-22-104227",
+      "status": "pass",
+      "message": "Stable Body signature in FrameAnalysis-2026-06-22-104227: shadowOrDepth, main, outline"
+    },
+    {
+      "id": "stability.FrameAnalysis-2026-06-22-105206",
+      "status": "pass",
+      "message": "Stable Body signature in FrameAnalysis-2026-06-22-105206: shadowOrDepth, main, outline"
+    },
+    {
+      "id": "stability.FrameAnalysis-2026-06-22-105210",
+      "status": "pass",
+      "message": "Stable Body signature in FrameAnalysis-2026-06-22-105210: shadowOrDepth, main, outline"
+    },
+    {
+      "id": "capture.material.exists",
+      "status": "pass",
+      "message": "Found material capture D:\\Games\\gakumas\\FrameAnalysis-2026-06-21-111608"
+    },
+    {
+      "id": "material.body.t0",
+      "status": "pass",
+      "message": "t0 950989c5: 2048x2048 BC7_UNORM_SRGB"
+    },
+    {
+      "id": "material.body.t1",
+      "status": "pass",
+      "message": "t1 1fefdc77: 2048x2048 BC7_UNORM"
+    },
+    {
+      "id": "material.body.t4",
+      "status": "pass",
+      "message": "t4 69492ed7: 2048x2048 BC7_UNORM_SRGB"
+    }
+  ],
+  "pendingGameResearch": [
+    "Resolve Body t1 packed-mask channel semantics and verify Body t4 by controlled channel replacements.",
+    "Record exact main/outline/shadow draw arguments and resource bindings in the Profile instead of relying on draw numbers alone.",
+    "Capture and compare a second clean scene entry to prove Body IB/VB/shader hashes are stable across sessions.",
+    "Classify native Body geometry regions (hands, neck, skin, clothing) for Blender-side retention and weight-transfer masks."
+  ]
+}

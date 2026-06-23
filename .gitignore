@@ -1,0 +1,33 @@
+# Machine-local launch credentials and other private developer state.
+.local/
+
+# Generated build/package staging directories.
+build/
+checkpoints/
+mods/
+
+# Public repository safety: keep generated release packages local for now.
+dist/
+
+# Third-party binary drop; document/download separately instead of vendoring binaries.
+3Dmigoto_v1.4.9/
+
+# Extracted or derived game assets must not be pushed to the public repository.
+research/assetstudio/input/
+research/assetstudio/export-body/
+research/assetstudio/export-body-json/
+research/body-mesh-projections.png
+research/texture-previews/*.png
+research/texture-previews/*.jpg
+research/inverse-skin/**/*.buf
+mdl_chr_ttmr-cstm-0119_body/
+profiles/**/Reference/
+profiles/**/Buffers/
+profiles/**/body-regions.json
+
+# Python/Blender caches.
+__pycache__/
+*.py[cod]
+
+# Local stale backup artifacts.
+*.stale
