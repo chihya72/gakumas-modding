@@ -73,13 +73,6 @@ class GMI_PT_main(Panel):
         mesh.operator("gmi.export_validated_mod", text="校验并导出模组", icon="EXPORT")
         mesh.operator("gmi.validate_mesh", text="校验网格", icon="CHECKMARK")
         mesh.operator("gmi.export_inverse_skin_mod", text="导出带权重 GPU 模组", icon="ARMATURE_DATA")
-        mesh.operator("gmi.export_mesh_mod", text="导出原拓扑模组", icon="EXPORT")
-        mesh.operator("gmi.export_surface_mod", text="导出表面驱动模组", icon="MOD_SHRINKWRAP")
-
-        advanced = layout.box()
-        advanced.label(text="高级")
-        advanced.prop(scene, "gmi_bone_remap_file")
-        advanced.prop(scene, "gmi_unmapped_bone_fallback")
 
     def draw_texture(self, layout, scene):
         material = layout.box()
