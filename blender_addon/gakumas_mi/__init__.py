@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 3, 5),
+    "version": (0, 4, 6),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "导入学马仕参考模型，并导出绑定配置档的 3DMigoto 模组",
@@ -23,6 +23,14 @@ def _default_profile_dir():
     if bundled.is_dir():
         return str(bundled)
     development = Path(__file__).resolve().parents[2] / "profiles" / "hski-cstm-0000"
+    return str(development) if development.is_dir() else ""
+
+
+def _default_body_json_dir():
+    bundled = Path(__file__).resolve().parent / "resources" / "assetstudio-body-json"
+    if bundled.is_dir():
+        return str(bundled)
+    development = Path(__file__).resolve().parents[2] / "build" / "assetstudio-body-json"
     return str(development) if development.is_dir() else ""
 
 
@@ -50,7 +58,11 @@ def register():
     )
     bpy.types.Scene.gmi_extract_output_dir = StringProperty(
         name="新配置档输出", subtype="DIR_PATH",
-        description="从抓帧自动生成 runtime-only 配置档的输出目录",
+        description="可选；留空时自动写入 FrameAnalysis 目录下的 GakumasMI-profile",
+    )
+    bpy.types.Scene.gmi_body_json_library_dir = StringProperty(
+        name="Body JSON资源库", subtype="DIR_PATH", default=_default_body_json_dir(),
+        description="AssetStudio 批量导出的 assetstudio-body-json 目录；插件会自动匹配 Geo_Body.json 和骨架 JSON",
     )
     bpy.types.Scene.gmi_extract_draw = IntProperty(
         name="主 Draw", default=0, min=0,
@@ -87,6 +99,7 @@ def unregister():
     for name in (
         "gmi_tool_mode",
         "gmi_profile_dir", "gmi_capture_dir", "gmi_extract_output_dir",
+        "gmi_body_json_library_dir",
         "gmi_extract_draw", "gmi_output_dir", "gmi_component_id",
         "gmi_source_mesh_json", "gmi_skeleton_json", "gmi_bone_remap_file",
         "gmi_unmapped_bone_fallback",

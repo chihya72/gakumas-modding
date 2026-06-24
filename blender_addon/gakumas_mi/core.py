@@ -521,7 +521,7 @@ def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body"
             "actorId": "unknown",
             "costumeId": "unknown",
             "bodyResource": "unknown",
-            "note": "从 FrameAnalysis 推断；如需骨骼名/BindPose/权重，请再绑定 AssetStudio 导出的原模型 JSON 与骨架 JSON。",
+            "note": "从 FrameAnalysis 推断；骨骼名/BindPose/权重由 Body JSON资源库自动匹配补全。",
         },
         "capture": {
             "directory": str(capture),
@@ -643,6 +643,338 @@ def component_by_id(profile, component_id):
         if component["id"] == component_id:
             return component
     raise ValueError(f"Unknown Profile component: {component_id}")
+
+
+def _valid_skeleton_sidecar(path):
+    if not Path(path).is_file():
+        return False
+    try:
+        skeleton = load_json(Path(path))
+    except Exception:
+        return False
+    if int(skeleton.get("weightedBoneCount") or 0) <= 0:
+        return False
+    if int(skeleton.get("nodeCount") or 0) <= 0:
+        return False
+    return any(node.get("weightedIndex") is not None for node in skeleton.get("nodes", []))
+
+
+def _mesh_summary(path):
+    import hashlib
+
+    mesh = load_json(Path(path))
+    bindpose = mesh.get("m_BindPose") or []
+    # Bind-pose signature lets us tell whether two same-topology bodies are the
+    # same rig (shared base body, only costume/texture differs) or genuinely different.
+    bindpose_sig = hashlib.md5(json.dumps(bindpose, sort_keys=True).encode("utf-8")).hexdigest()[:12]
+    return {
+        "vertexCount": int(mesh.get("m_VertexCount") or 0),
+        "indexCount": len(mesh.get("m_Indices") or []),
+        "bindPoseCount": len(bindpose),
+        "bindPoseSig": bindpose_sig,
+        "name": mesh.get("m_Name") or mesh.get("Name") or "Geo_Body",
+    }
+
+
+def _synthesize_skeleton_from_mesh(mesh_json_path):
+    """Build a skeleton sidecar from a Mesh JSON alone (no Unity SkinnedMeshRenderer).
+
+    Bone identity comes from m_BoneNameHashes (names become "bone_<hash>") and bind
+    transforms from m_BindPose (same {M00..} format the real sidecar uses). Hierarchy
+    is flat — the inverse-skin pipeline deforms by recovered matrices, not the armature
+    pose, so bones placed at their bind positions under one root are sufficient.
+    """
+    mesh = load_json(Path(mesh_json_path))
+    bind = mesh.get("m_BindPose") or []
+    hashes = mesh.get("m_BoneNameHashes") or []
+    bone_count = len(bind)
+    nodes = [{
+        "name": "Root", "parent": -1, "weightedIndex": None,
+        "localPosition": [0.0, 0.0, 0.0],
+        "localRotation": [0.0, 0.0, 0.0, 1.0],
+        "localScale": [1.0, 1.0, 1.0],
+    }]
+    for i in range(bone_count):
+        bone_hash = int(hashes[i]) if i < len(hashes) else i
+        nodes.append({
+            "name": f"bone_{bone_hash}",
+            "parent": 0,
+            "weightedIndex": i,
+            "boneNameHash": bone_hash,
+            "bindPose": bind[i],
+        })
+    return {
+        "schemaVersion": 1,
+        "synthetic": "derived from mesh m_BoneNameHashes + m_BindPose (no Unity skeleton)",
+        "weightedBoneCount": bone_count,
+        "nodeCount": bone_count + 1,
+        "nodes": nodes,
+    }
+
+
+def resolve_profile_reference(profile_dir):
+    """Return a completed profile's own Reference Mesh/Skeleton, or None.
+
+    After completion the profile is self-contained (Reference/ holds the real or
+    synthesized skeleton). Import should prefer this over re-resolving the library.
+    """
+    profile_dir = Path(profile_dir)
+    profile_path = profile_dir / "profile.json"
+    if not profile_path.is_file():
+        return None
+    profile = load_json(profile_path)
+    config = (profile.get("skinning", {}) or {}).get("inverseSkin") or {}
+    mesh_rel, skel_rel = config.get("meshJson"), config.get("skeletonJson")
+    if not mesh_rel or not skel_rel:
+        return None
+    mesh_path, skel_path = profile_dir / mesh_rel, profile_dir / skel_rel
+    if not (mesh_path.is_file() and skel_path.is_file()):
+        return None
+    return {
+        "meshJson": str(mesh_path.resolve()),
+        "skeletonJson": str(skel_path.resolve()),
+        "body": profile.get("target", {}).get("bodyResource", ""),
+        "match": "profile-reference",
+    }
+
+
+def scan_body_json_library(json_dir):
+    """Scan an AssetStudio body JSON library. Includes mesh-only entries.
+
+    Entries without a valid skeleton sidecar are still returned (skeletonJson=None,
+    hasSkeleton=False); completion synthesizes a skeleton from the mesh for them.
+    """
+    root = Path(json_dir)
+    if not root.is_dir():
+        raise FileNotFoundError(f"Body JSON 资源库目录不存在：{root}")
+
+    entries = []
+    for body_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        mesh_json = body_dir / "Geo_Body.json"
+        if not mesh_json.is_file():
+            continue
+        try:
+            summary = _mesh_summary(mesh_json)
+        except Exception:
+            continue
+        skeleton_json = body_dir / "Geo_Body.skeleton.json"
+        has_skeleton = _valid_skeleton_sidecar(skeleton_json)
+        entries.append({
+            "body": body_dir.name,
+            "meshJson": str(mesh_json.resolve()),
+            "skeletonJson": str(skeleton_json.resolve()) if has_skeleton else None,
+            "hasSkeleton": has_skeleton,
+            **summary,
+        })
+    return entries
+
+
+def resolve_body_json_resource(profile_dir, json_dir, component_id="body"):
+    """Resolve profile body Mesh/Skeleton JSON from a shared body JSON library."""
+    profile_set = load_profile_set(profile_dir)
+    profile = profile_set["profile"]
+    component = component_by_id(profile, component_id)
+    body_resource = profile.get("target", {}).get("bodyResource")
+    entries = scan_body_json_library(json_dir)
+    if not entries:
+        raise ValueError(f"Body JSON 资源库没有严格可用样本：{json_dir}")
+
+    if body_resource and body_resource != "unknown":
+        exact = [entry for entry in entries if entry["body"] == body_resource]
+        if exact:
+            result = dict(exact[0])
+            result["match"] = "bodyResource"
+            return result
+        raise ValueError(
+            f"当前模型 {body_resource} 不在 Body JSON资源库的 {len(entries)} 个严格可用样本中。"
+            "请换用已支持的 body，或先把该 body 导出为严格可用的 Geo_Body.json + Geo_Body.skeleton.json。"
+        )
+
+    vertex_count = int(component.get("vertices") or 0)
+    index_count = int(component.get("indices") or 0)
+    matches = [
+        entry for entry in entries
+        if entry["vertexCount"] == vertex_count and entry["indexCount"] == index_count
+    ]
+    if len(matches) == 1:
+        result = dict(matches[0])
+        result["match"] = "vertex+index"
+        return result
+    if len(matches) > 1:
+        # 同拓扑且 bind pose 一致 = 同一套身体（仅服装/贴图不同），逆算子完全相同，任取其一。
+        if len({entry.get("bindPoseSig") for entry in matches}) == 1:
+            result = dict(matches[0])
+            result["match"] = "vertex+index(equivalent)"
+            return result
+        names = ", ".join(entry["body"] for entry in matches[:8])
+        suffix = " ..." if len(matches) > 8 else ""
+        raise ValueError(
+            f"按顶点/索引匹配到多个不等价候选：{names}{suffix}。"
+            "请在配置档 target.bodyResource 指定具体 Body 后重试。"
+        )
+    raise ValueError(
+        f"配置档未记录 bodyResource，资源库中也没有 "
+        f"{vertex_count} 顶点 / {index_count} 索引的唯一候选"
+    )
+
+
+def build_inverse_operator(mesh_json_path, output_buf, ridge=1e-8):
+    """Build the fixed inverse-skin operator P from a body Mesh JSON.
+
+    P maps one posed source-position VB (40-byte stride) to boneCount*4 effective
+    skinning-matrix rows. It depends only on bind positions + four-influence
+    weights, so it is built once per costume and reused every animation frame.
+    Writes a coefficient-major R32_FLOAT buffer to output_buf; returns metadata.
+    """
+    import numpy as np  # Blender ships numpy; import lazily so other paths don't require it.
+
+    mesh = load_json(Path(mesh_json_path))
+    vertex_count = int(mesh["m_VertexCount"])
+    bone_count = len(mesh["m_BindPose"])
+    positions = np.asarray(mesh["m_Vertices"], dtype=np.float64).reshape(-1, 3)
+    if positions.shape[0] != vertex_count:
+        raise ValueError("Mesh m_Vertices 与 m_VertexCount 不一致")
+
+    # design[v, b*4:b*4+4] = sum of weight * [x y z 1] for each influence on vertex v.
+    source_h = np.column_stack((positions, np.ones(vertex_count)))
+    design = np.zeros((vertex_count, bone_count * 4), dtype=np.float64)
+    active = np.zeros(bone_count, dtype=bool)
+    bone_weight_total = np.zeros(bone_count, dtype=np.float64)
+    for vertex, influence in enumerate(mesh["m_Skin"]):
+        for bone, weight in zip(influence["boneIndex"], influence["weight"]):
+            bone, weight = int(bone), float(weight)
+            if weight <= 0.0:
+                continue
+            active[bone] = True
+            bone_weight_total[bone] += weight
+            design[vertex, bone * 4 : bone * 4 + 4] += weight * source_h[vertex]
+
+    active_bones = np.flatnonzero(active)
+    if active_bones.size == 0:
+        raise ValueError("Mesh 没有任何加权骨骼，无法构建逆算子")
+    # Solve only the active columns; ill-conditioning is regularized by a ridge term.
+    active_columns = np.concatenate([np.arange(b * 4, b * 4 + 4) for b in active_bones])
+    a = design[:, active_columns]
+    gram = a.T @ a
+    scale = float(np.trace(gram) / gram.shape[0])
+    regularizer = ridge * max(scale, 1.0)
+    operator_active = np.linalg.solve(gram + np.eye(gram.shape[0]) * regularizer, a.T)
+    operator = np.zeros((bone_count * 4, vertex_count), dtype=np.float32)
+    operator[active_columns] = operator_active.astype(np.float32)
+
+    output_buf = Path(output_buf)
+    output_buf.parent.mkdir(parents=True, exist_ok=True)
+    operator.tofile(str(output_buf))
+    return {
+        "vertexCount": vertex_count,
+        "boneCount": bone_count,
+        "coefficientCount": bone_count * 4,
+        "activeBoneCount": int(active_bones.size),
+        "regularizer": regularizer,
+        "boneWeightTotal": bone_weight_total.tolist(),
+        "operatorBytes": int(operator.nbytes),
+    }
+
+
+def _parse_body_target(body_name):
+    """mdl_chr_hski-cstm-0000_body -> (actorId, costumeId)."""
+    core_name = body_name
+    if core_name.startswith("mdl_chr_"):
+        core_name = core_name[len("mdl_chr_"):]
+    if core_name.endswith("_body"):
+        core_name = core_name[: -len("_body")]
+    actor, _, costume = core_name.partition("-")
+    return actor, costume
+
+
+def complete_inverse_skin_profile(profile_dir, library_dir, component_id="body",
+                                  ridge=1e-8, unobservable_weight_threshold=0.1):
+    """Upgrade a runtime-only frame profile into a complete inverse-skin profile.
+
+    Matches the body Mesh/Skeleton JSON from the library (by recorded bodyResource
+    or by vertex+index count), copies them into the profile, builds the inverse
+    operator and writes skinning.inverseSkin. Afterwards the profile carries
+    (1) injection info, (2) structural data and (3) the operator.
+    """
+    profile_dir = Path(profile_dir)
+    profile_path = profile_dir / "profile.json"
+    profile = load_json(profile_path)
+    component_by_id(profile, component_id)  # validate component exists
+
+    resolved = resolve_body_json_resource(profile_dir, library_dir, component_id)
+
+    # (2) Structural data: copy matched Mesh + Skeleton into the profile.
+    reference_dir = profile_dir / "Reference"
+    reference_dir.mkdir(parents=True, exist_ok=True)
+    mesh_dst = reference_dir / "Geo_Body.json"
+    skeleton_dst = reference_dir / "Geo_Body.skeleton.json"
+    shutil.copy2(Path(resolved["meshJson"]), mesh_dst)
+    skeleton_src = resolved.get("skeletonJson")
+    if skeleton_src and Path(skeleton_src).is_file():
+        shutil.copy2(Path(skeleton_src), skeleton_dst)
+        bone_naming = "skeleton"
+    else:
+        # mesh-only：从 mesh 的 m_BoneNameHashes + m_BindPose 合成骨架。
+        synthetic = _synthesize_skeleton_from_mesh(mesh_dst)
+        skeleton_dst.write_text(
+            json.dumps(synthetic, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        bone_naming = "boneNameHash"
+
+    # (3) Inverse operator from the bind mesh.
+    operator_rel = "Buffers/InverseOperator.R32_FLOAT.buf"
+    operator_meta = build_inverse_operator(mesh_dst, profile_dir / operator_rel, ridge=ridge)
+
+    # Skeleton weighted-bone count must agree with the mesh bone count.
+    skeleton = load_json(skeleton_dst)
+    weighted_nodes = [n for n in skeleton.get("nodes", []) if n.get("weightedIndex") is not None]
+    weighted_bone_count = int(skeleton.get("weightedBoneCount") or len(weighted_nodes))
+    if weighted_bone_count != operator_meta["boneCount"]:
+        raise ValueError(
+            f"Mesh 骨骼数 {operator_meta['boneCount']} 与骨架加权骨骼数 "
+            f"{weighted_bone_count} 不一致，无法构建一致的逆解配置"
+        )
+
+    # Flag low-total-weight bones as unobservable (their recovered matrix is noisy).
+    index_to_name = {int(n["weightedIndex"]): n.get("name", f"bone{n['weightedIndex']}")
+                     for n in weighted_nodes}
+    unobservable = sorted(
+        index_to_name.get(i, f"bone{i}")
+        for i, total in enumerate(operator_meta["boneWeightTotal"])
+        if 0.0 < total < unobservable_weight_threshold
+    )
+
+    stride = int(profile.get("layout", {}).get("positionNormalTangentStride") or 40)
+    actor, costume = _parse_body_target(resolved["body"])
+    profile.setdefault("target", {})
+    profile["target"].update({"actorId": actor, "costumeId": costume, "bodyResource": resolved["body"]})
+    profile["target"].pop("note", None)
+    profile["status"] = "complete-inverse-skin"
+    skinning = profile.setdefault("skinning", {})
+    skinning["status"] = "inverse-skin operator built from matched library Mesh"
+    skinning["inverseSkin"] = {
+        "sourceVertexCount": operator_meta["vertexCount"],
+        "weightedBoneCount": weighted_bone_count,
+        "coefficientCount": operator_meta["coefficientCount"],
+        "posedVertexStride": stride,
+        "inverseOperator": operator_rel,
+        "meshJson": "Reference/Geo_Body.json",
+        "skeletonJson": "Reference/Geo_Body.skeleton.json",
+        "boneNaming": bone_naming,
+        "unobservableBones": unobservable,
+    }
+    profile_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    return {
+        "body": resolved["body"],
+        "match": resolved.get("match"),
+        "boneNaming": bone_naming,
+        "vertexCount": operator_meta["vertexCount"],
+        "weightedBoneCount": weighted_bone_count,
+        "activeBoneCount": operator_meta["activeBoneCount"],
+        "unobservableBones": unobservable,
+        "operatorBytes": operator_meta["operatorBytes"],
+    }
 
 
 def _capture_file(capture_dir, binding, resource_hash, resource_file=None):
@@ -955,158 +1287,6 @@ filename = Textures\\{texture_name}
 def _to_unity(vector):
     """Blender Z-up/-Y-forward to Unity Y-up/Z-forward."""
     return float(vector[0]), float(vector[2]), float(-vector[1])
-
-
-def _pack_surface_buffers(vertices, normals, uv0, uv1, colors, faces, mappings,
-                          expected_indices):
-    count = len(vertices)
-    if not all(len(values) == count for values in (normals, uv0, uv1, colors, mappings)):
-        raise ValueError("Surface-mapped vertex arrays have different lengths")
-    if count > 65535:
-        raise ValueError("R16_UINT surface mesh cannot exceed 65535 vertices")
-    if any(len(face) != 3 for face in faces):
-        raise ValueError("Surface mesh must be triangulated before export")
-    flat_indices = [int(index) for face in faces for index in face]
-    if len(flat_indices) > expected_indices:
-        raise ValueError(
-            f"Surface mesh has {len(flat_indices)} indices; draw capacity is {expected_indices}"
-        )
-    if any(index < 0 or index >= count for index in flat_indices):
-        raise ValueError("Surface mesh index is outside the exported vertex range")
-
-    vb0 = bytearray()
-    vb1 = bytearray()
-    mapping_buffer = bytearray()
-    for vertex, normal, tex0, tex1, color, mapping in zip(
-        vertices, normals, uv0, uv1, colors, mappings
-    ):
-        indices = mapping["indices"]
-        barycentric = mapping["barycentric"]
-        if len(indices) != 3 or len(barycentric) != 3:
-            raise ValueError("Each surface mapping requires three indices and weights")
-        # Preserve the game's exact IA signature. POSITION/NORMAL/TANGENT carry
-        # the surface-drive record, then the custom VS replaces them with the
-        # animated position/normal read from t120. Float32 represents every
-        # valid source vertex index exactly (the source is far below 2^24).
-        vb0.extend(struct.pack(
-            "<3f3f4f",
-            float(indices[0]), float(indices[1]), float(indices[2]),
-            float(barycentric[0]), float(barycentric[1]), float(barycentric[2]),
-            float(mapping.get("normal_offset", 0.0)), 0.0, 0.0, 0.0,
-        ))
-        rgba = [max(0, min(255, round(float(channel) * 255.0))) for channel in color]
-        vb1.extend(struct.pack("<4B4e", *rgba, float(tex0[0]), 1.0 - float(tex0[1]),
-                               float(tex1[0]), 1.0 - float(tex1[1])))
-        mapping_buffer.extend(struct.pack(
-            "<3I4fI", int(indices[0]), int(indices[1]), int(indices[2]),
-            float(barycentric[0]), float(barycentric[1]), float(barycentric[2]),
-            float(mapping.get("normal_offset", 0.0)), 0,
-        ))
-    flat_indices.extend([0] * (expected_indices - len(flat_indices)))
-    ib = struct.pack(f"<{len(flat_indices)}H", *flat_indices)
-    return bytes(vb0), bytes(vb1), ib, bytes(mapping_buffer)
-
-
-def write_surface_package(
-    profile_dir, output_root, package_id, name, author, component_id,
-    vertices, normals, uv0, uv1, colors, faces, mappings,
-):
-    """Write an arbitrary-topology mesh driven by the game's animated source surface."""
-    _validate_package_id(package_id)
-    profile_set = load_profile_set(profile_dir)
-    profile = profile_set["profile"]
-    component = component_by_id(profile, component_id)
-    drawcalls = profile_set["drawcalls"]
-    expected_indices = int(component["indices"])
-    vb0, vb1, ib, mapping_buffer = _pack_surface_buffers(
-        vertices, normals, uv0, uv1, colors, faces, mappings, expected_indices
-    )
-
-    package_dir = Path(output_root) / package_id
-    buffer_dir = package_dir / "Buffers"
-    shader_dir = package_dir / "Shaders"
-    buffer_dir.mkdir(parents=True, exist_ok=True)
-    shader_dir.mkdir(parents=True, exist_ok=True)
-    (buffer_dir / "Body.VB0.buf").write_bytes(vb0)
-    (buffer_dir / "Body.VB1.buf").write_bytes(vb1)
-    (buffer_dir / "Body.IB.R16_UINT.buf").write_bytes(ib)
-    (buffer_dir / "Body.SurfaceMap.buf").write_bytes(mapping_buffer)
-    shutil.copy2(
-        Path(__file__).parent / "shaders" / "SurfaceMappedBody.hlsl",
-        shader_dir / "SurfaceMappedBody.hlsl",
-    )
-
-    target = profile["target"]
-    conflict = f"{target['actorId']}.{target['costumeId']}.{component_id}.mesh"
-    manifest = {
-        "schemaVersion": 1,
-        "id": package_id,
-        "name": name,
-        "version": "0.1.0",
-        "author": author,
-        "type": "mesh-replacement",
-        "profile": profile["id"],
-        "targets": [f"{component_id}.surfaceMappedMesh"],
-        "dependencies": [],
-        "conflicts": [conflict],
-        "runtime": ">=0.1.0",
-        "status": "draft",
-    }
-    _write_json(package_dir / "manifest.json", manifest)
-    section = _safe_section(package_id)
-    passes = drawcalls["passes"]
-    ini = f"""; Generated by GakumasMI Blender Add-on (surface mapped mesh)
-
-[Constants]
-global $enable_{section} = 1
-
-[ShaderOverride{section}Main]
-hash = {passes['main']['vertexShader']}
-checktextureoverride = ib
-
-[TextureOverride{section}{component_id.title()}]
-hash = {component['ibHash']}
-if $enable_{section}
-    Resource{section}AnimatedSource = copy vb0
-    vb0 = Resource{section}VB0
-    vb1 = Resource{section}VB1
-    vb3 = Resource{section}VB0
-    ib = Resource{section}IB
-    run = CustomShader{section}SurfaceDrive
-endif
-
-[CustomShader{section}SurfaceDrive]
-vs = Mods\\{package_id}\\Shaders\\SurfaceMappedBody.hlsl
-vs-t120 = Resource{section}AnimatedSource
-draw = from_caller
-handling = skip
-post vs-t120 = null
-
-[Resource{section}AnimatedSource]
-
-[Resource{section}VB0]
-type = Buffer
-stride = 40
-filename = Buffers\\Body.VB0.buf
-
-[Resource{section}VB1]
-type = Buffer
-stride = 12
-filename = Buffers\\Body.VB1.buf
-
-[Resource{section}IB]
-type = Buffer
-format = DXGI_FORMAT_R16_UINT
-filename = Buffers\\Body.IB.R16_UINT.buf
-
-"""
-    (package_dir / "mod.ini").write_text(ini, encoding="utf-8")
-    (package_dir / "README.md").write_text(
-        f"# {name}\n\nSurface-mapped Body mesh for Profile `{profile['id']}`.\n"
-        "Install this directory under `Mods` without renaming it.\n",
-        encoding="utf-8",
-    )
-    return package_dir
 
 
 def inverse_skin_bone_map(profile_dir, skeleton_json=None):

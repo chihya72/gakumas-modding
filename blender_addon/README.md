@@ -1,16 +1,16 @@
-# GakumasMI Blender 插件 0.3.5
+# GakumasMI Blender 插件 0.4.6
 
-当前状态：开发预览版。0.3.5 新增 `从抓帧生成配置档`：可以扫描
-`FrameAnalysis-*` 抓帧目录，自动识别任意 Body 候选 Draw、IB、VB0/VB1、stride
-和可见贴图槽位，生成 runtime-only 配置档：
+当前状态：开发预览版。0.4.6 把建配置档收敛为**一键流程**：填「抓帧目录」+
+「Body JSON资源库」，点 `一键生成完整配置档（注入+结构+逆算子）` 即可一次产出
+**①注入信息 + ②结构数据 + ③逆算子** 的完整配置档。
 
-- `profile.json`
-- `drawcall_map.json`
-- `texture_map.json`
-- `material_map.json`
-- `extraction-report.json`
+- 自动按顶点+索引数从资源库匹配 `Geo_Body.json`，同拓扑服装按 bind pose 自动判等价；
+- 仅有 Mesh、没有 Unity 骨架的 body：从 `m_BoneNameHashes` + `m_BindPose`
+  **合成骨架**，因此资源库里 500+ 套都能一键匹配（不再只限有骨架的样本）；
+- 自动构建逆算子并标出不可观测骨；
+- 移除了手/颈拆件等已排除路线；`从配置档传递权重` 增加了对齐守卫。
 
-同时保留 `更新配置档抓帧源`：用于校验已有配置档是否匹配当前抓帧。
+底层仍保留分步入口(`仅生成注入信息` 等)与 `更新配置档抓帧源` 校验。
 
 项目仍处于 HSKI Body 单配置档验证阶段，不是面向普通作者的一键正式版。详见
 [`research/current-status-and-roadmap.md`](../research/current-status-and-roadmap.md)。
@@ -23,7 +23,7 @@
 
 `编辑 > 偏好设置 > 插件 > 从磁盘安装`
 
-选择本地构建生成的 0.3.5 插件 ZIP。公开仓库不直接提交包含配置档资产的发布包。
+选择本地构建生成的 0.4.6 插件 ZIP。公开仓库不直接提交包含配置档资产的发布包。
 
 启用 **GakumasMI** 后，面板位于：
 
@@ -33,13 +33,29 @@
 
 ## 当前主要工作流
 
-### 1. 提取对象
+### 1. 提取对象（一键生成完整配置档）
 
-- 选择 `配置档目录`；
-- 可选选择 `抓帧目录`；
-- 如果是未知 Body，先设置 `新配置档输出`，点击 `从抓帧生成配置档`；
-- 点击 `更新配置档抓帧源`；
-- 点击 `导入配置档对象` 或 `导入抓帧参考模型`。
+主流程只要两个输入 + 一个按钮：
+
+- 选项 1：填 `抓帧目录`（FrameAnalysis-*）；
+- 选项 2：填 `Body JSON资源库`（AssetStudio 导出的 geo.json 资源包）；
+- 点击 **`一键生成完整配置档（注入+结构+逆算子）`**。
+
+它会一次完成：
+
+1. **① 注入信息**：扫描抓帧，识别 Body 的 Draw / IB·VB hash / stride / 贴图槽；
+2. **② 结构数据**：按顶点+索引数从资源库匹配到对应 `Geo_Body.json` + 骨架，复制进配置档 `Reference/`；
+3. **③ 逆算子**：由 bind pose + 四权重构建 `Buffers/InverseOperator.R32_FLOAT.buf`，并写入
+   `skinning.inverseSkin`（含自动标出的不可观测骨）。
+
+完成后 `配置档目录` 自动指向新配置档，可直接进入「导入对象 → 蒙皮转权 → 导出」。
+
+> 同拓扑的多套服装（同一基础身体、仅贴图不同）会按 bind pose 自动判定为等价并任取其一；
+> 若匹配到 bind pose 不一致的多个候选，会提示在 `target.bodyResource` 指定具体 Body。
+> 仅有 Mesh、没有骨架的条目也支持：缺骨架时从 `m_BoneNameHashes` + `m_BindPose` 合成骨架。
+
+`高级 / 分步` 折叠区保留了 `仅生成注入信息`、`匹配资源库`、`更新抓帧源`、`导入配置档对象`
+等单步按钮，供排错使用。
 
 #### 配置档目录是什么？
 
@@ -52,7 +68,6 @@
 - 游戏内 drawcall、IB hash、VB hash、顶点数、索引数和 stride；
 - 贴图槽位，例如身体 `t0/t1/t4`；
 - 原始网格、骨架、BindPose 和权重来源；
-- 手部、颈部等原生身体保留区域；
 - 导出 3DMigoto 模组时需要生成的配置。
 
 因此，没有配置档时，插件不知道应该替换哪个游戏对象，也不知道导出的 buffer
@@ -77,8 +92,8 @@
 - 抓帧中可见的 `ps-t*` 贴图槽位。
 
 注意：帧数据不能单独还原完整 Unity 骨架名、权重和 BindPose。插件会把这类配置档标记为
-`runtime-only-frame-extracted`；之后仍应通过 `导入原模型 / 权重参考` 绑定
-AssetStudio 导出的原模型 JSON 与骨架 JSON，作为蒙皮转权来源。
+`runtime-only-frame-extracted`；之后会通过 `Body JSON资源库` 自动匹配 AssetStudio
+导出的原模型 JSON 与骨架 JSON，作为蒙皮转权来源。
 
 命令行也可以独立生成配置档：
 
@@ -93,12 +108,63 @@ python tools\extract_frame_profile.py D:\Games\gakumas\FrameAnalysis-2026-06-22-
 python tools\extract_frame_profile.py <FrameAnalysis目录> <输出目录> --component body --draw 335
 ```
 
+#### 批量导出所有 Body 的原模型 JSON / 骨架 JSON
+
+把游戏缓存里的 body AB 文件放到仓库根目录 `all_body/` 后，可以用：
+
+```powershell
+python tools\export_all_body_json.py
+```
+
+默认参数：
+
+- 输入目录：`all_body/`
+- 输出目录：`build/assetstudio-body-json/`
+- AssetStudio CLI：`D:\GIT\AssetStudio-net10.0-win\AssetStudio.CLI.exe`
+- Unity 版本：`6000.0.67f1`
+
+输出会按 body 资源名分目录，避免所有 Mesh 都叫 `Geo_Body.json` 时互相覆盖。
+这些目录整体就是插件使用的 `Body JSON资源库`：
+
+```text
+build/assetstudio-body-json/
+  mdl_chr_hski-cstm-0000_body/
+    Geo_Body.json
+    Geo_Body.skeleton.json
+```
+
+只导出 Mesh JSON：
+
+```powershell
+python tools\export_all_body_json.py
+```
+
+同时生成骨架 JSON：
+
+```powershell
+python tools\export_all_body_json.py --skeleton
+```
+
+注意：`Geo_Body.json`（Mesh，含 bind pose / 权重 / bindpose / 骨骼 hash）会**始终保留**，
+作为对外发布的资源包；逆解链不依赖骨架层级。`Geo_Body.skeleton.json` 只在严格可读时
+生成（`m_Bones` 为空或骨骼 Transform 指向未加载依赖时跳过，状态记为 `mesh-only`，但 Mesh 保留）。
+**仅 Mesh 的条目也能一键匹配**：缺骨架时从 `m_BoneNameHashes` + `m_BindPose` 合成骨架，
+因此 500+ 套全部可用。
+
+`Body JSON资源库`（约数 GB）作为**单独资源包**发布，不打进插件 zip。开发环境默认指向
+`build/assetstudio-body-json/`；实际使用时把资源包目录路径填进插件「选项2」即可。
+
+调试前几个文件：
+
+```powershell
+python tools\export_all_body_json.py --limit 5 --force --skeleton
+```
+
 ### 2. 导入对象
 
-- 导入原始 Unity 网格 JSON；
-- 导入骨架 JSON；
-- 点击 `导入带权重参考模型`；
-- 可生成 `原生手部 / 颈部选择集` 供后续保留和复核。
+- 选择或使用内置 `Body JSON资源库`；
+- 点击 `匹配 Body JSON资源库`；
+- 点击 `导入带权重参考模型`。
 
 #### 原模型 JSON 和骨架 JSON 的区别
 
@@ -129,10 +195,22 @@ python tools\extract_frame_profile.py <FrameAnalysis目录> <输出目录> --com
 
 ### 3. 蒙皮转权
 
+**前提：作者模型必须先和参考身体空间对齐。** 逆解矩阵与逆算子都工作在参考身体的
+bind 空间，导出又会烘焙 `matrix_world @ co`，所以作者模型必须：
+
+- 摆到参考身体所在的位置、保持接近的尺寸（同为 T-pose）；
+- 按 `Ctrl+A` 应用缩放 / 旋转；
+- **不要去映射 / retarget 作者模型自带的骨架**——只保留几何，靠空间对齐 + 最近表面
+  把参考身体的权重传过来。
+
+操作：
+
 - 选择作者模型；
 - 点击 `从配置档传递权重`；
+  - 如果模型未对齐 / 尺寸相差过大，插件会直接报错并提示如何修正；
+  - 存在未应用变换时会给出警告。
 - 检查 `GMI_WEIGHT_RISK` 和 `GMI_REVIEW_HIGH_RISK`；
-- 手指、颈部、宽袖、裙摆等区域仍需要人工复核或精修。
+- 手指、宽袖、裙摆等区域仍需要人工复核或精修。
 
 ### 4. 导出模组
 
@@ -166,6 +244,7 @@ HSKI Body 已验证的身体贴图语义：
 
 ## 当前版本
 
-插件源码版本：0.3.5。
+插件源码版本：0.4.6。
 
-本地发布包不会提交到公开仓库；需要时从当前源码重新打包安装。
+发布包用 `python tools/package_blender_addon.py -o dist/gakumas_mi-0.4.6.zip` 生成
+（代码版，不含资源库；加 `--with-body-lib` 可一并打包）。本地包不提交到公开仓库。

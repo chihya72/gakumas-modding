@@ -10,7 +10,7 @@ class GMI_PT_main(Panel):
     bl_category = "GakumasMI"
 
     def draw_header(self, context):
-        self.layout.label(text="v0.3.5")
+        self.layout.label(text="v0.4.6")
 
     def draw(self, context):
         scene = context.scene
@@ -30,29 +30,36 @@ class GMI_PT_main(Panel):
 
     def draw_extract(self, layout, scene):
         box = layout.box()
-        box.label(text="从抓帧提取对象")
-        box.prop(scene, "gmi_profile_dir")
-        box.prop(scene, "gmi_capture_dir")
-        box.prop(scene, "gmi_component_id")
-        box.prop(scene, "gmi_extract_output_dir")
-        box.prop(scene, "gmi_extract_draw")
-        box.operator("gmi.extract_profile_from_frame_dump", text="从抓帧生成配置档", icon="FILE_NEW")
-        box.operator("gmi.update_profile_from_frame_dump", text="更新配置档抓帧源", icon="FILE_REFRESH")
-        box.operator("gmi.import_profile_object", text="导入配置档对象", icon="OUTLINER_OB_ARMATURE")
-        box.operator("gmi.import_reference", text="导入抓帧参考模型", icon="IMPORT")
-        box.label(text="可先从 FrameAnalysis 自动生成 runtime-only 配置档，再导入参考模型", icon="INFO")
+        box.label(text="① 抓帧 + ② 资源库 → 完整配置档")
+        box.prop(scene, "gmi_capture_dir")             # 选项1：抓帧文件夹
+        box.prop(scene, "gmi_body_json_library_dir")   # 选项2：Body JSON 资源库
+        row = box.row()
+        row.scale_y = 1.5
+        row.operator("gmi.build_full_profile", text="一键生成完整配置档（注入+结构+逆算子）", icon="AUTO")
+        box.label(text="只需填这两个目录，点上面一个按钮，自动生成 ①②③", icon="INFO")
+
+        adv = layout.box()
+        adv.label(text="高级 / 分步")
+        adv.prop(scene, "gmi_component_id")
+        adv.prop(scene, "gmi_extract_output_dir")
+        adv.prop(scene, "gmi_extract_draw")
+        adv.operator("gmi.extract_profile_from_frame_dump", text="仅生成注入信息(runtime-only)", icon="FILE_NEW")
+        adv.operator("gmi.resolve_body_json_library", text="匹配 Body JSON资源库", icon="VIEWZOOM")
+        adv.operator("gmi.update_profile_from_frame_dump", text="更新配置档抓帧源", icon="FILE_REFRESH")
+        adv.operator("gmi.import_profile_object", text="导入配置档对象", icon="OUTLINER_OB_ARMATURE")
+        adv.operator("gmi.import_reference", text="导入抓帧参考模型", icon="IMPORT")
+
+        fallback = layout.box()
+        fallback.label(text="已有配置档 / 复核")
+        fallback.prop(scene, "gmi_profile_dir")
 
     def draw_import(self, layout, scene):
         box = layout.box()
         box.label(text="导入原模型 / 权重参考")
-        box.prop(scene, "gmi_source_mesh_json")
-        box.prop(scene, "gmi_skeleton_json")
+        box.prop(scene, "gmi_body_json_library_dir")
+        box.operator("gmi.resolve_body_json_library", text="匹配 Body JSON资源库", icon="VIEWZOOM")
         box.operator("gmi.import_weighted_reference", text="导入带权重参考模型", icon="ARMATURE_DATA")
-        box.operator("gmi.create_native_body_sets", text="生成原生手部 / 颈部选择集", icon="GROUP_VERTEX")
-        row = box.row(align=True)
-        row.operator("gmi.select_native_hand_vertices", text="选择原生手部", icon="VIEW_PAN")
-        row.operator("gmi.select_native_neck_vertices", text="选择原生颈部", icon="MOD_SKIN")
-        box.label(text="通常先导入权重参考，再处理作者模型", icon="INFO")
+        box.label(text="必须先匹配 Body JSON资源库；不支持散文件模式", icon="INFO")
 
     def draw_skinning(self, layout, scene):
         box = layout.box()

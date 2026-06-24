@@ -648,9 +648,10 @@ Profile 更新可以修复：
 - [x] 完成 Blender 插件 `0.1.0`（Blender 4.2 LTS：参考 Mesh 导入、索引 Mesh 验证/导出、DDS 贴图包导出）
 - [x] 定位上游 Bone Index / Bone Weight / Bind Pose（`Geo_Body`：152 根加权骨骼，Blender 插件 0.2 已支持加权参考导入）
 - [x] 对照 EFMI / GIMI / WWMI / SRMI 的真实蒙皮切入点（见 `research/reference-framework-comparison.md`；EFMI 官方同样不支持 CPU-posed 组件 VB 换模）
-- [ ] 判定 Body Draw 前是否存在 GPU 可见的骨骼矩阵或 Compute Skinning 输入
-- [ ] 若存在则移植 SRMI/WWMI 类 GPU skinning bridge；若不存在则实现 Unity Runtime Mesh override/骨骼矩阵上传，使 Blender 新增顶点进入动画路径
-- [ ] Native Runtime 诊断链路（D3D11 转发与本地 WARP 测试已通过，已部署，等待游戏重启验证 IL2CPP API）
+- [x] 判定 Body Draw 前是否存在 GPU 可见的骨骼矩阵或 Compute Skinning 输入：**不存在**
+- [x] 既然不存在 GPU 骨骼矩阵，放弃 GPU skinning bridge 与进程内 Runtime override，
+  改用「逆解每帧矩阵 + 重蒙皮」（路线 C）。已实机验证，并于 2026-06-24 删除
+  `runtime/native` 与表面驱动相关代码（可从 git 历史恢复）。
 
 建议按以下顺序推进：
 

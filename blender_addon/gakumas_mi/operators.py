@@ -1,5 +1,4 @@
 import json
-import struct
 from pathlib import Path
 
 import bpy
@@ -16,6 +15,24 @@ def _scene_paths(scene):
     capture_dir = bpy.path.abspath(scene.gmi_capture_dir) if scene.gmi_capture_dir else None
     output_dir = bpy.path.abspath(scene.gmi_output_dir)
     return profile_dir, capture_dir, output_dir
+
+
+def _resolve_body_json_library(scene):
+    profile_dir = bpy.path.abspath(scene.gmi_profile_dir)
+    # 已补全的配置档自带 Reference（真实或合成骨架），优先用它，与资源库解耦。
+    if profile_dir:
+        ref = core.resolve_profile_reference(profile_dir)
+        if ref:
+            scene.gmi_source_mesh_json = ref["meshJson"]
+            scene.gmi_skeleton_json = ref["skeletonJson"]
+            return ref
+    library_dir = bpy.path.abspath(scene.gmi_body_json_library_dir)
+    if not library_dir:
+        raise ValueError("请先选择 Body JSON资源库目录")
+    result = core.resolve_body_json_resource(profile_dir, library_dir, scene.gmi_component_id)
+    scene.gmi_source_mesh_json = result["meshJson"]
+    scene.gmi_skeleton_json = result.get("skeletonJson") or ""
+    return result
 
 
 def _create_mesh(context, name, data):
@@ -126,6 +143,58 @@ def _profile_weight_reference(context):
     if len(references) > 1:
         raise ValueError("场景中存在多个带权重参考模型，请只保留一个")
     return references[0]
+
+
+def _world_bounds(obj):
+    """Return world-space AABB (min, max), center and diagonal length for an object."""
+    corners = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
+    lo = Vector((min(c.x for c in corners), min(c.y for c in corners), min(c.z for c in corners)))
+    hi = Vector((max(c.x for c in corners), max(c.y for c in corners), max(c.z for c in corners)))
+    return lo, hi, (lo + hi) * 0.5, (hi - lo).length
+
+
+def _check_transfer_alignment(target, reference):
+    """Guard the one-click weight transfer against a misaligned author mesh.
+
+    The inverse-skin operator and the per-frame recovered matrices live in the
+    reference body's bind space. If the author mesh does not overlap the reference
+    at a comparable size, both the nearest-surface weights and the exported bind
+    positions (export bakes ``matrix_world @ co``) will be wrong. So a clear hard
+    error here is far better than silently producing a broken Mod.
+
+    Returns a list of soft warnings; raises ValueError on a hard misalignment.
+    """
+    ref_lo, ref_hi, ref_center, ref_diag = _world_bounds(reference)
+    tgt_lo, tgt_hi, tgt_center, tgt_diag = _world_bounds(target)
+    if ref_diag <= 1e-6 or tgt_diag <= 1e-6:
+        raise ValueError("参考身体或作者模型的包围盒为空，无法判断对齐情况")
+
+    # 1. Size: HSKI body and the author body should be roughly the same scale.
+    ratio = tgt_diag / ref_diag
+    if ratio < 0.5 or ratio > 2.0:
+        raise ValueError(
+            f"作者模型尺寸与参考身体相差过大（比例 {ratio:.2f}，应在 0.5~2.0 之间）。"
+            "请把模型缩放到与参考身体接近，并按 Ctrl+A 应用缩放后再传权。"
+        )
+
+    # 2. Position: centers must be close and the bounding boxes must overlap.
+    center_offset = (tgt_center - ref_center).length
+    if center_offset > 0.5 * ref_diag:
+        raise ValueError(
+            f"作者模型与参考身体未对齐（中心偏移 {center_offset:.3f} m，"
+            f"参考身体对角线 {ref_diag:.3f} m）。请把模型移动到与参考身体重合后再传权。"
+        )
+    if any(tgt_hi[i] < ref_lo[i] or tgt_lo[i] > ref_hi[i] for i in range(3)):
+        raise ValueError("作者模型的包围盒与参考身体没有重叠，请先对齐后再传权。")
+
+    # 3. Soft warning: unapplied transform is the most common cause of the above.
+    warnings = []
+    _, rotation, scale = target.matrix_basis.decompose()
+    if any(abs(component - 1.0) > 1e-3 for component in scale) or rotation.angle > 1e-3:
+        warnings.append(
+            "作者模型存在未应用的缩放/旋转，建议先按 Ctrl+A 应用变换，避免法线翻转和尺寸误差"
+        )
+    return warnings
 
 
 def _select_vertex_group(context, obj, group_name):
@@ -451,38 +520,6 @@ def _create_armature(context, mesh_obj, data):
     return armature_obj
 
 
-def _create_native_sets_for_obj(obj):
-    profile_root = Path(obj["gmi_profile_dir"])
-    profile = core.load_profile_set(profile_root)["profile"]
-    region_config = profile["skinning"]["regionMap"]
-    schema = core.load_json(profile_root / region_config["schema"])
-    vertex_map = (profile_root / region_config["vertexMap"]).read_bytes()
-    if len(vertex_map) != len(obj.data.vertices) * 2:
-        raise ValueError("配置档顶点区域映射尺寸不正确")
-    region_ids = struct.unpack(f"<{len(obj.data.vertices)}H", vertex_map)
-    suggestions = {
-        "GMI_NATIVE_HAND": {
-            region["id"] for region in schema["regions"]
-            if "native-hand-candidate" in region.get("suggestions", [])
-        },
-        "GMI_NATIVE_NECK": {
-            region["id"] for region in schema["regions"]
-            if "native-neck-candidate" in region.get("suggestions", [])
-        },
-    }
-    counts = {}
-    for name, selected_regions in suggestions.items():
-        group = obj.vertex_groups.get(name)
-        if group:
-            obj.vertex_groups.remove(group)
-        group = obj.vertex_groups.new(name=name)
-        indices = [i for i, region_id in enumerate(region_ids) if region_id in selected_regions]
-        if indices:
-            group.add(indices, 1.0, "REPLACE")
-        counts[name] = len(indices)
-    return counts
-
-
 class GMI_OT_import_profile_object(Operator):
     bl_idname = "gmi.import_profile_object"
     bl_label = "导入配置档对象"
@@ -495,12 +532,10 @@ class GMI_OT_import_profile_object(Operator):
         try:
             profile_set = core.load_profile_set(profile_dir)
             profile = profile_set["profile"]
-            inverse = profile["skinning"]["inverseSkin"]
             component = core.component_by_id(profile, scene.gmi_component_id)
-            mesh_path = (profile_set["root"] / inverse["meshJson"]).resolve()
-            skeleton_path = (profile_set["root"] / inverse["skeletonJson"]).resolve()
-            scene.gmi_source_mesh_json = str(mesh_path)
-            scene.gmi_skeleton_json = str(skeleton_path)
+            resolved = _resolve_body_json_library(scene)
+            mesh_path = Path(resolved["meshJson"])
+            skeleton_path = Path(resolved["skeletonJson"])
 
             reference_collection = _collection(context, "GMI_配置档参考")
             author_collection = _collection(context, "GMI_作者模型")
@@ -532,7 +567,6 @@ class GMI_OT_import_profile_object(Operator):
             weighted_obj["gmi_source_ib_hash"] = component["ibHash"]
             weighted_obj["gmi_weighted_reference"] = True
             weighted_obj["gmi_blend_shape_data_present"] = bool(weighted_data.get("shapes"))
-            counts = _create_native_sets_for_obj(weighted_obj)
             _link_only_to_collection(weighted_obj, reference_collection)
             _link_only_to_collection(armature, reference_collection)
 
@@ -541,8 +575,27 @@ class GMI_OT_import_profile_object(Operator):
             self.report(
                 {"INFO"},
                 f"已导入配置档对象：参考 {len(reference_data['vertices'])} 顶点，"
-                f"权重 {weighted_data['vertex_count']} 顶点，手部 {counts['GMI_NATIVE_HAND']}，"
-                f"颈部 {counts['GMI_NATIVE_NECK']}",
+                f"权重 {weighted_data['vertex_count']} 顶点",
+            )
+            return {"FINISHED"}
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+
+
+class GMI_OT_resolve_body_json_library(Operator):
+    bl_idname = "gmi.resolve_body_json_library"
+    bl_label = "解析 Body JSON资源库"
+    bl_description = "根据当前配置档自动匹配 assetstudio-body-json 中的原模型 JSON 和骨架 JSON"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        try:
+            result = _resolve_body_json_library(context.scene)
+            self.report(
+                {"INFO"},
+                f"已匹配 {result['body']}（{result['match']}，"
+                f"{result['vertexCount']} 顶点 / {result['indexCount']} 索引）",
             )
             return {"FINISHED"}
         except Exception as exc:
@@ -558,14 +611,16 @@ class GMI_OT_extract_profile_from_frame_dump(Operator):
     def execute(self, context):
         scene = context.scene
         capture_dir = bpy.path.abspath(scene.gmi_capture_dir)
-        output_dir = bpy.path.abspath(scene.gmi_extract_output_dir or scene.gmi_profile_dir)
+        output_dir = bpy.path.abspath(scene.gmi_extract_output_dir)
         if not capture_dir:
             self.report({"ERROR"}, "请先选择 FrameAnalysis 抓帧目录")
             return {"CANCELLED"}
-        if not output_dir:
-            self.report({"ERROR"}, "请先选择新配置档输出目录")
+        if not scene.gmi_body_json_library_dir:
+            self.report({"ERROR"}, "请先选择 Body JSON资源库目录")
             return {"CANCELLED"}
         try:
+            if not output_dir:
+                output_dir = str(Path(capture_dir) / "GakumasMI-profile")
             report = core.extract_profile_from_frame_dump(
                 capture_dir,
                 output_dir,
@@ -574,10 +629,54 @@ class GMI_OT_extract_profile_from_frame_dump(Operator):
             )
             scene.gmi_profile_dir = output_dir
             selected = report["selected"]
+            resource = _resolve_body_json_library(scene)
             self.report(
                 {"INFO"},
                 f"已生成配置档：Draw {selected['draw']:06d}，"
                 f"{selected['vertices']} 顶点 / {selected['indices']} 索引"
+                f"，已匹配 {resource['body']}"
+            )
+            return {"FINISHED"}
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+
+
+class GMI_OT_build_full_profile(Operator):
+    bl_idname = "gmi.build_full_profile"
+    bl_label = "一键生成完整配置档"
+    bl_description = "从抓帧目录 + Body JSON资源库 一次生成 ①注入信息 ②结构数据 ③逆算子 的完整配置档"
+
+    def execute(self, context):
+        scene = context.scene
+        capture_dir = bpy.path.abspath(scene.gmi_capture_dir)
+        library_dir = bpy.path.abspath(scene.gmi_body_json_library_dir)
+        if not capture_dir:
+            self.report({"ERROR"}, "请先填写抓帧目录")
+            return {"CANCELLED"}
+        if not library_dir:
+            self.report({"ERROR"}, "请先填写 Body JSON资源库目录")
+            return {"CANCELLED"}
+        try:
+            output_dir = bpy.path.abspath(scene.gmi_extract_output_dir)
+            if not output_dir:
+                output_dir = str(Path(capture_dir) / "GakumasMI-profile")
+            component_id = scene.gmi_component_id
+            # ① 注入信息
+            core.extract_profile_from_frame_dump(
+                capture_dir, output_dir,
+                component_id=component_id,
+                main_draw=scene.gmi_extract_draw or None,
+            )
+            # ②结构数据 + ③逆算子
+            report = core.complete_inverse_skin_profile(output_dir, library_dir, component_id)
+            scene.gmi_profile_dir = output_dir
+            naming = "骨架名" if report["boneNaming"] == "skeleton" else "骨骼hash(合成骨架)"
+            self.report(
+                {"INFO"},
+                f"完整配置档已生成 → {output_dir}；匹配 {report['body']}（{report['match']}，{naming}），"
+                f"{report['vertexCount']} 顶点 / {report['weightedBoneCount']} 骨骼，"
+                f"逆算子 {report['operatorBytes'] // 1024} KB，不可观测骨 {len(report['unobservableBones'])} 根",
             )
             return {"FINISHED"}
         except Exception as exc:
@@ -654,19 +753,9 @@ class GMI_OT_import_weighted_reference(Operator):
         scene = context.scene
         try:
             profile_set = core.load_profile_set(bpy.path.abspath(scene.gmi_profile_dir))
-            inverse = profile_set["profile"]["skinning"]["inverseSkin"]
-            mesh_path = (
-                Path(bpy.path.abspath(scene.gmi_source_mesh_json))
-                if scene.gmi_source_mesh_json
-                else (profile_set["root"] / inverse["meshJson"]).resolve()
-            )
-            skeleton_path = (
-                Path(bpy.path.abspath(scene.gmi_skeleton_json))
-                if scene.gmi_skeleton_json
-                else (profile_set["root"] / inverse["skeletonJson"]).resolve()
-            )
-            scene.gmi_source_mesh_json = str(mesh_path)
-            scene.gmi_skeleton_json = str(skeleton_path)
+            resolved = _resolve_body_json_library(scene)
+            mesh_path = Path(resolved["meshJson"])
+            skeleton_path = Path(resolved["skeletonJson"])
             data = core.read_weighted_reference(
                 mesh_path, skeleton_path,
             )
@@ -704,6 +793,7 @@ class GMI_OT_transfer_profile_weights(Operator):
             reference = _profile_weight_reference(context)
             if target == reference:
                 raise ValueError("请选择作者模型网格，不要选择配置档参考模型本身")
+            alignment_warnings = _check_transfer_alignment(target, reference)
             old_names = {group.index: group.name for group in target.vertex_groups}
             old_dominant = []
             for vertex in target.data.vertices:
@@ -756,35 +846,19 @@ class GMI_OT_transfer_profile_weights(Operator):
                 "zeroWeightVertices": zero,
                 "truncatedWeightTotal": truncated,
                 "semanticCorrections": corrected,
+                "alignmentWarnings": alignment_warnings,
                 **risk,
             }
             target["gmi_weight_report"] = json.dumps(report, separators=(",", ":"))
             if zero:
                 raise ValueError(f"仍有 {len(zero)} 个顶点没有权重")
-            self.report(
-                {"WARNING"} if risk["reviewVertices"] else {"INFO"},
+            messages = [
                 f"已传递配置档权重；需复核 {risk['reviewVertices']} 个顶点，"
-                f"p95 {risk['p95Distance']:.4f} m，最大 {risk['maxDistance']:.4f} m",
-            )
-            return {"FINISHED"}
-        except Exception as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-
-
-class GMI_OT_create_native_body_sets(Operator):
-    bl_idname = "gmi.create_native_body_sets"
-    bl_label = "生成原生手/颈选择集"
-    bl_description = "根据配置档连通区域映射生成可复核的手部和颈部顶点组"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context):
-        try:
-            obj = _profile_weight_reference(context)
-            counts = _create_native_sets_for_obj(obj)
-            context.view_layer.objects.active = obj
-            obj.select_set(True)
-            self.report({"INFO"}, f"已生成复核顶点组：手部 {counts['GMI_NATIVE_HAND']}，颈部 {counts['GMI_NATIVE_NECK']}")
+                f"p95 {risk['p95Distance']:.4f} m，最大 {risk['maxDistance']:.4f} m"
+            ]
+            messages.extend(alignment_warnings)
+            level = {"WARNING"} if (risk["reviewVertices"] or alignment_warnings) else {"INFO"}
+            self.report(level, "；".join(messages))
             return {"FINISHED"}
         except Exception as exc:
             self.report({"ERROR"}, str(exc))
@@ -805,40 +879,6 @@ class GMI_OT_select_high_risk_vertices(Operator):
         try:
             count = _select_vertex_group(context, obj, "GMI_REVIEW_HIGH_RISK")
             self.report({"WARNING"} if count else {"INFO"}, f"已选择 {count} 个高风险顶点")
-            return {"FINISHED"}
-        except Exception as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-
-
-class GMI_OT_select_native_hand_vertices(Operator):
-    bl_idname = "gmi.select_native_hand_vertices"
-    bl_label = "选择原生手部"
-    bl_description = "在带权重参考模型上选择候选 HSKI 原生手部顶点"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context):
-        try:
-            obj = _profile_weight_reference(context)
-            count = _select_vertex_group(context, obj, "GMI_NATIVE_HAND")
-            self.report({"INFO"}, f"已选择 {count} 个原生手部候选顶点")
-            return {"FINISHED"}
-        except Exception as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-
-
-class GMI_OT_select_native_neck_vertices(Operator):
-    bl_idname = "gmi.select_native_neck_vertices"
-    bl_label = "选择原生颈部"
-    bl_description = "在带权重参考模型上选择候选 HSKI 原生颈部顶点"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context):
-        try:
-            obj = _profile_weight_reference(context)
-            count = _select_vertex_group(context, obj, "GMI_NATIVE_NECK")
-            self.report({"INFO"}, f"已选择 {count} 个原生颈部候选顶点")
             return {"FINISHED"}
         except Exception as exc:
             self.report({"ERROR"}, str(exc))
@@ -958,84 +998,6 @@ class GMI_OT_export_mesh_mod(Operator):
             return {"CANCELLED"}
 
 
-class GMI_OT_export_surface_mod(Operator):
-    bl_idname = "gmi.export_surface_mod"
-    bl_label = "导出表面驱动模组"
-    bl_description = "导出由原身体动画表面驱动的任意拓扑模组"
-
-    def execute(self, context):
-        obj = context.active_object
-        scene = context.scene
-        if not obj or obj.type != "MESH":
-            self.report({"ERROR"}, "请选择要导出的网格")
-            return {"CANCELLED"}
-        faces = [tuple(poly.vertices) for poly in obj.data.polygons]
-        if any(len(face) != 3 for face in faces):
-            self.report({"ERROR"}, "表面驱动导出前请先三角化网格")
-            return {"CANCELLED"}
-        try:
-            source = core.read_weighted_reference(
-                bpy.path.abspath(scene.gmi_source_mesh_json),
-                bpy.path.abspath(scene.gmi_skeleton_json),
-            )
-            source_vertices = [Vector(value) for value in source["vertices"]]
-            tree = BVHTree.FromPolygons(source_vertices, source["faces"], all_triangles=True)
-            reference_obj = next(
-                (candidate for candidate in context.scene.objects
-                 if candidate.type == "MESH" and candidate.get("gmi_weighted_reference")),
-                None,
-            )
-            reference_world = reference_obj.matrix_world if reference_obj else Matrix.Identity(4)
-            to_source = reference_world.inverted() @ obj.matrix_world
-            normal_matrix = to_source.to_3x3().inverted().transposed()
-            vertices = [tuple(to_source @ vertex.co) for vertex in obj.data.vertices]
-            normals = [tuple((normal_matrix @ vertex.normal).normalized()) for vertex in obj.data.vertices]
-            mappings = []
-            max_distance = 0.0
-            identity_source = (
-                len(vertices) == len(source_vertices)
-                and all((Vector(value) - source_vertices[index]).length < 1e-6
-                        for index, value in enumerate(vertices))
-            )
-            if identity_source:
-                # Preserve duplicate/seam vertex identity. Coincident vertices can
-                # carry different weights and separate after CPU skinning.
-                mappings = [{
-                    "indices": (index, index, index),
-                    "barycentric": (1.0, 0.0, 0.0),
-                    "normal_offset": 0.0,
-                } for index in range(len(vertices))]
-            else:
-                for coordinates in vertices:
-                    point = Vector(coordinates)
-                    location, surface_normal, triangle_index, distance = tree.find_nearest(point)
-                    if triangle_index is None:
-                        raise ValueError("有顶点无法映射到原身体表面")
-                    indices = source["faces"][triangle_index]
-                    a, b, c = (source_vertices[index] for index in indices)
-                    weights = _barycentric(location, a, b, c)
-                    normal_offset = (point - location).dot(surface_normal.normalized())
-                    mappings.append({
-                        "indices": indices,
-                        "barycentric": weights,
-                        "normal_offset": normal_offset,
-                    })
-                    max_distance = max(max_distance, float(distance))
-            _, _, output_dir = _scene_paths(scene)
-            package = core.write_surface_package(
-                bpy.path.abspath(scene.gmi_profile_dir), output_dir,
-                scene.gmi_package_id, scene.gmi_package_name, scene.gmi_author,
-                scene.gmi_component_id, vertices, normals,
-                _vertex_uv(obj.data, "UV0"), _vertex_uv(obj.data, "UV1"),
-                _vertex_colors(obj.data), faces, mappings,
-            )
-            self.report({"INFO"}, f"已导出 {package}；最大表面距离 {max_distance:.4f} m")
-            return {"FINISHED"}
-        except Exception as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-
-
 class GMI_OT_export_inverse_skin_mod(Operator):
     bl_idname = "gmi.export_inverse_skin_mod"
     bl_label = "导出带权重 GPU 模组"
@@ -1050,12 +1012,8 @@ class GMI_OT_export_inverse_skin_mod(Operator):
         try:
             profile_dir = bpy.path.abspath(scene.gmi_profile_dir)
             profile_set = core.load_profile_set(profile_dir)
-            inverse_config = profile_set["profile"]["skinning"]["inverseSkin"]
-            skeleton_path = (
-                Path(bpy.path.abspath(scene.gmi_skeleton_json))
-                if scene.gmi_skeleton_json
-                else (profile_set["root"] / inverse_config["skeletonJson"]).resolve()
-            )
+            resolved = _resolve_body_json_library(scene)
+            skeleton_path = Path(resolved["skeletonJson"])
             bone_map = core.inverse_skin_bone_map(
                 profile_dir, skeleton_path
             )
@@ -1200,18 +1158,16 @@ class GMI_OT_export_texture_mod(Operator):
 
 CLASSES = (
     GMI_OT_extract_profile_from_frame_dump,
+    GMI_OT_build_full_profile,
     GMI_OT_update_profile_from_frame_dump,
+    GMI_OT_resolve_body_json_library,
     GMI_OT_import_profile_object,
     GMI_OT_import_reference,
     GMI_OT_import_weighted_reference,
     GMI_OT_transfer_profile_weights,
-    GMI_OT_create_native_body_sets,
     GMI_OT_select_high_risk_vertices,
-    GMI_OT_select_native_hand_vertices,
-    GMI_OT_select_native_neck_vertices,
     GMI_OT_validate_mesh,
     GMI_OT_export_mesh_mod,
-    GMI_OT_export_surface_mod,
     GMI_OT_export_inverse_skin_mod,
     GMI_OT_export_validated_mod,
     GMI_OT_create_body_material_template,

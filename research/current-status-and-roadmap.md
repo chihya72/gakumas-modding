@@ -1,7 +1,27 @@
 # GakumasMI 当前进度、同类工具对比与后续计划
 
-更新时间：2026-06-23  
+更新时间：2026-06-24  
 当前目标：`hski-cstm-0000 / Body` 形成 Blender → 3DMigoto Mod → 游戏动画的完整闭环。
+
+> **2026-06-24 架构锁定与清理**：项目已锁定为「**AssetStudio 静态结构 + 逆解每帧
+> 矩阵（C）+ 3DMigoto 注入**」这一条主线（即路线 B+C）。本次清理从代码树移除了
+> 以下已排除路线（均可从 git 历史恢复）：
+>
+> - **表面驱动 / SurfaceMap 路线**：删除 `core.write_surface_package`、
+>   `_pack_surface_buffers`、`GMI_OT_export_surface_mod`、`shaders/SurfaceMappedBody.hlsl`、
+>   `shaders/SurfaceDriveCS.hlsl`、`tools/build-tpose-vb0.ps1`。
+> - **进程内 IL2CPP Runtime 路线**：删除 `runtime/native/`、`tools/inject-runtime.ps1`。
+>   注意这是「进程内替换 Mesh」的运行时，**与玩家侧 3DMigoto Mod Runtime（路线第
+>   5 阶段）不是一回事**，后者继续保留。
+>
+> - **手/颈拆件保留路线（原 P2）**：删除 `GMI_OT_create_native_body_sets` 与
+>   `select_native_hand/neck` 操作器、`_create_native_sets_for_obj`、相关 UI 按钮、
+>   `tools/build_mesh_region_map.py`。配置档里的 `skinning.regionMap` 字段与
+>   `body-regions.json` 成为无用残留，可在下次整理时移除。
+>
+> 保留的核心：`RecoverMatricesCS`（恢复每帧矩阵）、`SkinCustomCS`（重蒙皮）、
+> 逆算子构建与配置档 / 结构数据管线。`Geo_Body.json` 是骨骼 / 权重 / bind pose 的
+> 唯一来源；抓帧只用于「取实时 `VB0`」和「取注入 hash」。
 
 ## 1. 产品目标与固定边界
 
@@ -145,6 +165,9 @@ TTMR FBX 本身是从外部模型制作后蒙皮到 TTMR 骨架的作者资产�
 | 按同名手指分区取最近 HSKI 顶点 | 手指更严重拉长 | 两套手部 bind 几何位置不一致，不能继续自动猜 |
 | 只替换 BaseColor | HSKI 图案仍参与着色 | 必须处理 t1/t4 和材质语义 |
 | BaseColor 直接复制为 ShadeColor | 整体粉色色偏 | t4 Alpha/通道有专用含义，不能直接复用 |
+| 表面驱动 / SurfaceMap 自定义 VS | 几何可见但材质退化 | 应保留游戏原 VS/PS，用逆解矩阵重蒙皮；相关代码已于 2026-06-24 删除 |
+| 进程内 IL2CPP Runtime 替换 Mesh | 启动崩溃 / 进程保护 / 违反产品边界 | 改用逆解矩阵；`runtime/native` 已于 2026-06-24 删除 |
+| 抓帧反解 T-pose 几何 / 重建骨骼权重 | 数学病态、无中生有 | 结构数据全部来自 `Geo_Body.json` |
 
 ## 5. 与主流 Model Importer 工具的差距
 
