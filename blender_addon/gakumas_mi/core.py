@@ -28,6 +28,39 @@ def inspect_dds(path):
     return {"width": width, "height": height, "format": formats.get(dxgi_format, f"DXGI_{dxgi_format}")}
 
 
+def write_rgba8_dds(path, width, height, rgba_bytes, srgb=True):
+    """Write an uncompressed R8G8B8A8 DDS with a DX10 header (top-down, 1 mip).
+
+    Used to turn a PNG into a 3Dmigoto-loadable texture without an external BC7
+    encoder. inspect_dds() requires a DX10 header, so we always emit one.
+    """
+    if len(rgba_bytes) != width * height * 4:
+        raise ValueError("RGBA 数据长度与 width*height*4 不一致")
+    flags = 0x1 | 0x2 | 0x4 | 0x8 | 0x1000  # caps|height|width|pitch|pixelformat
+    header = struct.pack(
+        "<7I", 124, flags, height, width, width * 4, 0, 1
+    ) + b"\x00" * 44  # dwReserved1[11]
+    header += struct.pack("<2I", 32, 0x4) + b"DX10" + struct.pack("<5I", 0, 0, 0, 0, 0)  # pixelformat
+    header += struct.pack("<5I", 0x1000, 0, 0, 0, 0)  # caps + caps2/3/4 + reserved2
+    dxgi_format = 29 if srgb else 28  # R8G8B8A8_UNORM_SRGB / R8G8B8A8_UNORM
+    dxt10 = struct.pack("<5I", dxgi_format, 3, 0, 1, 0)  # format, dim=Texture2D, misc, arraySize, misc2
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_bytes(b"DDS " + header + dxt10 + bytes(rgba_bytes))
+
+
+# 中性材质常量:盖掉游戏原版 t1/t4 对新贴图的光照/阴影干扰。
+# t1 PackedMask: R=阴影阈值(亮) G=光滑度0(哑光) B=金属度0 A=AO255(不压暗)
+NEUTRAL_PACKED_MASK = (255, 0, 0, 255)
+# t4 ShadeColor: A=0 → 阴影叠加强度为 0,不再叠加原版阴影色
+NEUTRAL_SHADE_COLOR = (128, 128, 128, 0)
+
+
+def write_solid_rgba8_dds(path, rgba, size=4, srgb=False):
+    """Write a tiny solid-color RGBA8 DDS (for neutral t1/t4 material textures)."""
+    r, g, b, a = (int(max(0, min(255, channel))) for channel in rgba)
+    write_rgba8_dds(path, size, size, bytes([r, g, b, a]) * (size * size), srgb=srgb)
+
+
 def load_profile_set(profile_dir):
     root = Path(profile_dir)
     required = ("profile.json", "drawcall_map.json", "texture_map.json")
@@ -418,9 +451,16 @@ def _select_main_candidate(candidates, requested_draw=None):
             if candidate["draw"] == int(requested_draw):
                 return candidate
         raise ValueError(f"指定 Draw {int(requested_draw):06d} 没有可用 Body 候选")
-    best = candidates[0]
-    group = [
+    complete = [
         item for item in candidates
+        if item.get("vb1ByteWidth") and item["vertices"] >= 1000
+    ]
+    # Tiny repeated helper meshes can outscore the real body by pass count alone.
+    # Body draws have both streams; if such candidates exist, choose only among them.
+    pool = complete or candidates
+    best = pool[0]
+    group = [
+        item for item in pool
         if item.get("ibHash") == best.get("ibHash")
         and item["indices"] == best["indices"]
         and item["vertices"] == best["vertices"]
@@ -676,37 +716,104 @@ def _mesh_summary(path):
     }
 
 
-def _synthesize_skeleton_from_mesh(mesh_json_path):
+def build_bone_name_hierarchy_template(json_dir):
+    """Scan library skeleton sidecars → {boneNameHash: {"name", "parentHash"}}.
+
+    Real Unity skeletons (from bodies that exported one) carry bone names + parent
+    links keyed by a stable boneNameHash that is shared across characters for the
+    common humanoid bones. Merging all available skeletons lets us give mesh-only
+    bodies real bone names and a connected hierarchy for the bones they share.
+    """
+    template = {}
+    root = Path(json_dir)
+    if not root.is_dir():
+        return template
+    for body_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+        skel_path = body_dir / "Geo_Body.skeleton.json"
+        if not skel_path.is_file():
+            continue
+        try:
+            nodes = load_json(skel_path).get("nodes", [])
+        except Exception:
+            continue
+        for node in nodes:
+            bone_hash = node.get("boneNameHash")
+            if bone_hash is None or int(bone_hash) in template:
+                continue
+            # Nearest ancestor that is itself a hashed bone becomes the parent hash.
+            parent_hash = None
+            pidx = node.get("parent", -1)
+            guard = 0
+            while isinstance(pidx, int) and 0 <= pidx < len(nodes) and guard < 512:
+                ph = nodes[pidx].get("boneNameHash")
+                if ph is not None:
+                    parent_hash = int(ph)
+                    break
+                pidx = nodes[pidx].get("parent", -1)
+                guard += 1
+            template[int(bone_hash)] = {
+                "name": node.get("name") or f"bone_{int(bone_hash)}",
+                "parentHash": parent_hash,
+            }
+    return template
+
+
+def _synthesize_skeleton_from_mesh(mesh_json_path, template=None):
     """Build a skeleton sidecar from a Mesh JSON alone (no Unity SkinnedMeshRenderer).
 
-    Bone identity comes from m_BoneNameHashes (names become "bone_<hash>") and bind
-    transforms from m_BindPose (same {M00..} format the real sidecar uses). Hierarchy
-    is flat — the inverse-skin pipeline deforms by recovered matrices, not the armature
-    pose, so bones placed at their bind positions under one root are sufficient.
+    Bind transforms come from m_BindPose; bone identity from m_BoneNameHashes. If a
+    hierarchy template is given (see build_bone_name_hierarchy_template), shared bones
+    get their real name + parent so they form a connected standard skeleton; bones not
+    in the template (costume-specific cloth bones) fall back to "bone_<hash>" under root.
     """
     mesh = load_json(Path(mesh_json_path))
     bind = mesh.get("m_BindPose") or []
     hashes = mesh.get("m_BoneNameHashes") or []
     bone_count = len(bind)
+    template = template or {}
+
+    # Our bone hash -> node list index (bones start at 1; root is node 0).
+    hash_to_index = {}
+    for i in range(bone_count):
+        if i < len(hashes):
+            hash_to_index[int(hashes[i])] = i + 1
+
     nodes = [{
         "name": "Root", "parent": -1, "weightedIndex": None,
         "localPosition": [0.0, 0.0, 0.0],
         "localRotation": [0.0, 0.0, 0.0, 1.0],
         "localScale": [1.0, 1.0, 1.0],
     }]
+    named = 0
     for i in range(bone_count):
         bone_hash = int(hashes[i]) if i < len(hashes) else i
+        info = template.get(bone_hash)
+        name = info["name"] if info else f"bone_{bone_hash}"
+        if info:
+            named += 1
+        # Climb template ancestors until one is also one of our bones → real parent.
+        parent_index = 0
+        ancestor = info.get("parentHash") if info else None
+        guard = 0
+        while ancestor is not None and guard < 512:
+            if ancestor in hash_to_index:
+                parent_index = hash_to_index[ancestor]
+                break
+            ancestor_info = template.get(ancestor)
+            ancestor = ancestor_info.get("parentHash") if ancestor_info else None
+            guard += 1
         nodes.append({
-            "name": f"bone_{bone_hash}",
-            "parent": 0,
+            "name": name,
+            "parent": parent_index,
             "weightedIndex": i,
             "boneNameHash": bone_hash,
             "bindPose": bind[i],
         })
     return {
         "schemaVersion": 1,
-        "synthetic": "derived from mesh m_BoneNameHashes + m_BindPose (no Unity skeleton)",
+        "synthetic": "mesh m_BindPose + m_BoneNameHashes; names/hierarchy from library skeletons by hash",
         "weightedBoneCount": bone_count,
+        "namedBoneCount": named,
         "nodeCount": bone_count + 1,
         "nodes": nodes,
     }
@@ -730,16 +837,26 @@ def resolve_profile_reference(profile_dir):
     mesh_path, skel_path = profile_dir / mesh_rel, profile_dir / skel_rel
     if not (mesh_path.is_file() and skel_path.is_file()):
         return None
-    return {
+    result = {
         "meshJson": str(mesh_path.resolve()),
         "skeletonJson": str(skel_path.resolve()),
         "body": profile.get("target", {}).get("bodyResource", ""),
         "match": "profile-reference",
     }
+    try:
+        result.update(_mesh_summary(mesh_path))
+        result["body"] = result["body"] or profile.get("target", {}).get("bodyResource", "")
+    except Exception:
+        pass
+    return result
 
 
-def scan_body_json_library(json_dir):
+def scan_body_json_library(json_dir, name_filter=None):
     """Scan an AssetStudio body JSON library. Includes mesh-only entries.
+
+    name_filter: optional case-insensitive substring (e.g. a character code like
+    "hmsz"); only folders whose name contains it are loaded. This both narrows
+    matching to one character and avoids parsing the whole 500+ library every call.
 
     Entries without a valid skeleton sidecar are still returned (skeletonJson=None,
     hasSkeleton=False); completion synthesizes a skeleton from the mesh for them.
@@ -748,8 +865,11 @@ def scan_body_json_library(json_dir):
     if not root.is_dir():
         raise FileNotFoundError(f"Body JSON 资源库目录不存在：{root}")
 
+    filter_lower = name_filter.lower() if name_filter else None
     entries = []
     for body_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        if filter_lower and filter_lower not in body_dir.name.lower():
+            continue
         mesh_json = body_dir / "Geo_Body.json"
         if not mesh_json.is_file():
             continue
@@ -774,47 +894,62 @@ def resolve_body_json_resource(profile_dir, json_dir, component_id="body"):
     profile_set = load_profile_set(profile_dir)
     profile = profile_set["profile"]
     component = component_by_id(profile, component_id)
-    body_resource = profile.get("target", {}).get("bodyResource")
-    entries = scan_body_json_library(json_dir)
-    if not entries:
-        raise ValueError(f"Body JSON 资源库没有严格可用样本：{json_dir}")
 
-    if body_resource and body_resource != "unknown":
+    # body_resource 既可填完整 body 名，也可只填角色代号(如 "hmsz")。它同时用作
+    # 扫描过滤器：只加载名称含它的文件夹 —— 既消歧又避免每次解析整个 500+ 资源库。
+    body_resource = (profile.get("target", {}) or {}).get("bodyResource") or ""
+    if body_resource == "unknown":
+        body_resource = ""
+    name_filter = body_resource or None
+
+    entries = scan_body_json_library(json_dir, name_filter=name_filter)
+    if not entries:
+        if name_filter:
+            raise ValueError(f"资源库里没有名称含「{name_filter}」的 body，请检查角色代号或资源库目录。")
+        raise ValueError(f"Body JSON 资源库没有可用样本：{json_dir}")
+
+    # 顶点数 = 身体网格的可靠标识(整个 VB);索引数只作软偏好——游戏内主体 Draw 常
+    # 不含次网格(牙齿/舌头等),其索引数会比 mesh 的 m_Indices 略少,所以不能要求相等。
+    vertex_count = int(component.get("vertices") or 0)
+    index_count = int(component.get("indices") or 0)
+
+    # 完整 body 名精确命中优先。
+    if body_resource:
         exact = [entry for entry in entries if entry["body"] == body_resource]
-        if exact:
+        if len(exact) == 1:
+            if vertex_count and int(exact[0].get("vertexCount") or 0) != vertex_count:
+                raise ValueError(
+                    f"指定 Body {body_resource} 是 {exact[0].get('vertexCount')} 顶点，"
+                    f"但抓帧主 Body 是 {vertex_count} 顶点。"
+                    "请确认抓帧角色/服装与 Body JSON资源库对应，或清空「指定 Body」后按顶点数自动匹配。"
+                )
             result = dict(exact[0])
             result["match"] = "bodyResource"
             return result
-        raise ValueError(
-            f"当前模型 {body_resource} 不在 Body JSON资源库的 {len(entries)} 个严格可用样本中。"
-            "请换用已支持的 body，或先把该 body 导出为严格可用的 Geo_Body.json + Geo_Body.skeleton.json。"
-        )
 
-    vertex_count = int(component.get("vertices") or 0)
-    index_count = int(component.get("indices") or 0)
-    matches = [
-        entry for entry in entries
-        if entry["vertexCount"] == vertex_count and entry["indexCount"] == index_count
-    ]
-    if len(matches) == 1:
-        result = dict(matches[0])
-        result["match"] = "vertex+index"
+    vmatches = [entry for entry in entries if entry["vertexCount"] == vertex_count]
+    if not vmatches:
+        scope = f"(已按「{name_filter}」过滤)" if name_filter else ""
+        raise ValueError(f"资源库{scope}里没有 {vertex_count} 顶点的 body。请确认抓帧/角色/资源库是否对应。")
+
+    imatches = [entry for entry in vmatches if entry["indexCount"] == index_count]
+    pool = imatches if imatches else vmatches
+    label = ("char+" if name_filter else "") + ("vertex+index" if imatches else "vertex")
+
+    if len(pool) == 1:
+        result = dict(pool[0])
+        result["match"] = label
         return result
-    if len(matches) > 1:
-        # 同拓扑且 bind pose 一致 = 同一套身体（仅服装/贴图不同），逆算子完全相同，任取其一。
-        if len({entry.get("bindPoseSig") for entry in matches}) == 1:
-            result = dict(matches[0])
-            result["match"] = "vertex+index(equivalent)"
-            return result
-        names = ", ".join(entry["body"] for entry in matches[:8])
-        suffix = " ..." if len(matches) > 8 else ""
-        raise ValueError(
-            f"按顶点/索引匹配到多个不等价候选：{names}{suffix}。"
-            "请在配置档 target.bodyResource 指定具体 Body 后重试。"
-        )
+    # 多个候选:bind pose 一致即等价(同款同体型),任取其一;否则需要更精确的名字。
+    if len({entry.get("bindPoseSig") for entry in pool}) == 1:
+        result = dict(pool[0])
+        result["match"] = label + "(equivalent)"
+        return result
+    names = ", ".join(entry["body"] for entry in pool[:12])
+    suffix = " ..." if len(pool) > 12 else ""
     raise ValueError(
-        f"配置档未记录 bodyResource，资源库中也没有 "
-        f"{vertex_count} 顶点 / {index_count} 索引的唯一候选"
+        f"{vertex_count} 顶点仍匹配到多个候选:\n{names}{suffix}\n"
+        "请在「指定 Body」填更精确的名字(角色代号不够时填完整 body 名)。"
     )
 
 
@@ -888,18 +1023,27 @@ def _parse_body_target(body_name):
 
 
 def complete_inverse_skin_profile(profile_dir, library_dir, component_id="body",
-                                  ridge=1e-8, unobservable_weight_threshold=0.1):
+                                  ridge=1e-8, unobservable_weight_threshold=0.1,
+                                  body_resource=None):
     """Upgrade a runtime-only frame profile into a complete inverse-skin profile.
 
-    Matches the body Mesh/Skeleton JSON from the library (by recorded bodyResource
-    or by vertex+index count), copies them into the profile, builds the inverse
-    operator and writes skinning.inverseSkin. Afterwards the profile carries
+    Matches the body Mesh/Skeleton JSON from the library (by recorded/overridden
+    bodyResource, else by vertex count), copies them into the profile, builds the
+    inverse operator and writes skinning.inverseSkin. Afterwards the profile carries
     (1) injection info, (2) structural data and (3) the operator.
+
+    body_resource: optional exact library body name to disambiguate when several
+    same-topology costumes (same vertex count, different idol) match.
     """
     profile_dir = Path(profile_dir)
     profile_path = profile_dir / "profile.json"
     profile = load_json(profile_path)
     component_by_id(profile, component_id)  # validate component exists
+
+    # Caller-supplied override wins; written before resolve so exact-name match is used.
+    if body_resource:
+        profile.setdefault("target", {})["bodyResource"] = body_resource
+        profile_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     resolved = resolve_body_json_resource(profile_dir, library_dir, component_id)
 
@@ -914,12 +1058,15 @@ def complete_inverse_skin_profile(profile_dir, library_dir, component_id="body",
         shutil.copy2(Path(skeleton_src), skeleton_dst)
         bone_naming = "skeleton"
     else:
-        # mesh-only：从 mesh 的 m_BoneNameHashes + m_BindPose 合成骨架。
-        synthetic = _synthesize_skeleton_from_mesh(mesh_dst)
+        # mesh-only：合成骨架；用资源库里有骨架的 body 按 hash 补真名+层级。
+        template = build_bone_name_hierarchy_template(library_dir)
+        synthetic = _synthesize_skeleton_from_mesh(mesh_dst, template=template)
         skeleton_dst.write_text(
             json.dumps(synthetic, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
-        bone_naming = "boneNameHash"
+        named = synthetic.get("namedBoneCount", 0)
+        total = synthetic.get("weightedBoneCount", 0)
+        bone_naming = f"boneNameHash(命名 {named}/{total})"
 
     # (3) Inverse operator from the bind mesh.
     operator_rel = "Buffers/InverseOperator.R32_FLOAT.buf"
@@ -1145,9 +1292,19 @@ def _safe_section(value):
     return re.sub(r"[^A-Za-z0-9]", "", value.title()) or "GakumasMI"
 
 
-def _validate_package_id(value):
-    if not re.fullmatch(r"[a-z0-9]+(?:[.-][a-z0-9-]+)+", value):
-        raise ValueError("Mod 标识只能使用小写字母、数字、点和连字符")
+def _sanitize_package_id(value):
+    """把用户填的模组标识规整成文件名/ini 安全的 token。
+
+    自动小写、空格/下划线转连字符、去掉其它非法字符。纯单词(如 ppmmpp)即可，
+    不强制带分隔符。
+    """
+    text = str(value or "").strip().lower()
+    text = re.sub(r"[\s_]+", "-", text)
+    text = re.sub(r"[^a-z0-9.-]+", "-", text)
+    text = re.sub(r"-{2,}", "-", text).strip(".-")
+    if not text:
+        raise ValueError("模组标识为空或全是非法字符，请用英文/数字命名（如 ppmmpp 或 test.hmsz）")
+    return text
 
 
 def _write_json(path, value):
@@ -1158,7 +1315,7 @@ def write_index_package(
     profile_dir, output_root, package_id, name, author, component_id, faces,
     vertex_count=None,
 ):
-    _validate_package_id(package_id)
+    package_id = _sanitize_package_id(package_id)
     profile_set = load_profile_set(profile_dir)
     profile = profile_set["profile"]
     drawcalls = profile_set["drawcalls"]
@@ -1197,20 +1354,9 @@ def write_index_package(
     }
     _write_json(package_dir / "manifest.json", manifest)
     section = _safe_section(package_id)
-    passes = drawcalls["passes"]
+    # IB-only 触发：只按本服装唯一的 IB hash 匹配，不注册共享的 ShaderOverride，
+    # 这样多个 body mod 共存也不会重复(IB hash 各不相同),且自动覆盖所有 pass。
     ini = f"""; Generated by GakumasMI Blender Add-on
-
-[ShaderOverride{section}Shadow]
-hash = {passes['shadowOrDepth']['vertexShader']}
-checktextureoverride = ib
-
-[ShaderOverride{section}Main]
-hash = {passes['main']['vertexShader']}
-checktextureoverride = ib
-
-[ShaderOverride{section}Outline]
-hash = {passes['main']['outlineVertexShader']}
-checktextureoverride = ib
 
 [TextureOverride{section}{component_id.title()}]
 hash = {component['ibHash']}
@@ -1229,7 +1375,7 @@ filename = Buffers\\{buffer_name}
 
 
 def write_texture_package(profile_dir, output_root, package_id, name, author, texture_key, source_file):
-    _validate_package_id(package_id)
+    package_id = _sanitize_package_id(package_id)
     profile_set = load_profile_set(profile_dir)
     profile = profile_set["profile"]
     entry = profile_set["textures"]["textures"].get(texture_key)
@@ -1308,6 +1454,23 @@ def inverse_skin_bone_map(profile_dir, skeleton_json=None):
     return result
 
 
+_FP16_MAX = 65504.0
+
+
+def _safe_half(value):
+    """Clamp a float into the fp16-representable range so struct 'e' packing never
+    overflows. Game VB1 UVs are fp16; out-of-range or non-finite values (corrupt /
+    extra UV channels) are clamped instead of crashing the export."""
+    v = float(value)
+    if v != v:  # NaN
+        return 0.0
+    if v > _FP16_MAX:
+        return _FP16_MAX
+    if v < -_FP16_MAX:
+        return -_FP16_MAX
+    return v
+
+
 def _pack_inverse_skin_buffers(vertices, normals, tangents, uv0, uv1, colors,
                                faces, skin, expected_indices):
     count = len(vertices)
@@ -1351,8 +1514,9 @@ def _pack_inverse_skin_buffers(vertices, normals, tangents, uv0, uv1, colors,
         ))
         rgba = [max(0, min(255, round(float(channel) * 255.0))) for channel in color]
         vb1.extend(struct.pack(
-            "<4B4e", *rgba, float(tex0[0]), 1.0 - float(tex0[1]),
-            float(tex1[0]), 1.0 - float(tex1[1])
+            "<4B4e", *rgba,
+            _safe_half(tex0[0]), _safe_half(1.0 - float(tex0[1])),
+            _safe_half(tex1[0]), _safe_half(1.0 - float(tex1[1])),
         ))
     flat_indices.extend([0] * (expected_indices - len(flat_indices)))
     ib = struct.pack(f"<{len(flat_indices)}H", *flat_indices)
@@ -1365,7 +1529,7 @@ def write_inverse_skin_package(
     material_textures=None,
 ):
     """Write an arbitrary-topology, bone-weighted 3Dmigoto package."""
-    _validate_package_id(package_id)
+    package_id = _sanitize_package_id(package_id)
     profile_set = load_profile_set(profile_dir)
     profile = profile_set["profile"]
     component = component_by_id(profile, component_id)
@@ -1400,7 +1564,18 @@ def write_inverse_skin_package(
         raise FileNotFoundError(f"Inverse operator not found: {operator_source}")
     shutil.copy2(operator_source, buffer_dir / "InverseOperator.R32_FLOAT.buf")
     shader_root = Path(__file__).parent / "shaders"
-    shutil.copy2(shader_root / "RecoverMatricesCS.hlsl", shader_dir / "RecoverMatricesCS.hlsl")
+    # RecoverMatricesCS 的 SOURCE_VERTEX_COUNT / COEFFICIENT_COUNT 必须按本配置档替换，
+    # 否则会沿用 hski 的 17615/608，导致非 hski body 读错逆算子→恢复矩阵爆炸。
+    recover_shader = (shader_root / "RecoverMatricesCS.hlsl").read_text(encoding="utf-8")
+    recover_shader = recover_shader.replace(
+        "#define SOURCE_VERTEX_COUNT 17615", f"#define SOURCE_VERTEX_COUNT {source_vertex_count}"
+    ).replace(
+        "#define COEFFICIENT_COUNT 608", f"#define COEFFICIENT_COUNT {coefficient_count}"
+    )
+    if f"SOURCE_VERTEX_COUNT {source_vertex_count}" not in recover_shader \
+            or f"COEFFICIENT_COUNT {coefficient_count}" not in recover_shader:
+        raise ValueError("RecoverMatricesCS 顶点数/系数替换失败，请检查着色器模板")
+    (shader_dir / "RecoverMatricesCS.hlsl").write_text(recover_shader, encoding="utf-8")
     skin_shader = (shader_root / "SkinCustomCS.hlsl").read_text(encoding="utf-8")
     skin_shader = skin_shader.replace(
         "#define TARGET_VERTEX_COUNT 1", f"#define TARGET_VERTEX_COUNT {vertex_count}"
@@ -1445,25 +1620,14 @@ def write_inverse_skin_package(
             "slot": entry["slot"], "hash": entry["hash"], "file": f"Textures/{filename}"
         }
 
-    passes = drawcalls["passes"]
     dispatch_matrices = coefficient_count
     dispatch_vertices = (vertex_count + 63) // 64
+    # IB-only 触发：只按本服装唯一的 IB hash 匹配，不注册共享的 ShaderOverride，
+    # 避免多个 body mod 共存时重复警告；同一 IB 在主/阴影/描边各 pass 都会命中。
     ini = f"""; Generated by GakumasMI Blender Add-on (inverse-skin weighted mesh)
 
 [Constants]
 global $enable_{section} = 1
-
-[ShaderOverride{section}Shadow]
-hash = {passes['shadowOrDepth']['vertexShader']}
-checktextureoverride = ib
-
-[ShaderOverride{section}Main]
-hash = {passes['main']['vertexShader']}
-checktextureoverride = ib
-
-[ShaderOverride{section}Outline]
-hash = {passes['main']['outlineVertexShader']}
-checktextureoverride = ib
 
 [TextureOverride{section}{component_id.title()}]
 hash = {component['ibHash']}

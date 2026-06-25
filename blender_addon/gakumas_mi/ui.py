@@ -10,7 +10,7 @@ class GMI_PT_main(Panel):
     bl_category = "GakumasMI"
 
     def draw_header(self, context):
-        self.layout.label(text="v0.4.6")
+        self.layout.label(text="v0.4.8")
 
     def draw(self, context):
         scene = context.scene
@@ -19,8 +19,6 @@ class GMI_PT_main(Panel):
 
         if scene.gmi_tool_mode == "EXTRACT":
             self.draw_extract(layout, scene)
-        elif scene.gmi_tool_mode == "IMPORT":
-            self.draw_import(layout, scene)
         elif scene.gmi_tool_mode == "SKINNING":
             self.draw_skinning(layout, scene)
         elif scene.gmi_tool_mode == "EXPORT":
@@ -33,10 +31,14 @@ class GMI_PT_main(Panel):
         box.label(text="① 抓帧 + ② 资源库 → 完整配置档")
         box.prop(scene, "gmi_capture_dir")             # 选项1：抓帧文件夹
         box.prop(scene, "gmi_body_json_library_dir")   # 选项2：Body JSON 资源库
+        box.prop(scene, "gmi_body_resource")           # 可选：同款多角色时指定 body
         row = box.row()
         row.scale_y = 1.5
-        row.operator("gmi.build_full_profile", text="一键生成完整配置档（注入+结构+逆算子）", icon="AUTO")
-        box.label(text="只需填这两个目录，点上面一个按钮，自动生成 ①②③", icon="INFO")
+        row.operator("gmi.build_full_profile", text="① 一键生成完整配置档（注入+结构+逆算子）", icon="AUTO")
+        row2 = box.row()
+        row2.scale_y = 1.3
+        row2.operator("gmi.import_weighted_reference", text="② 导入带权重参考模型", icon="ARMATURE_DATA")
+        box.label(text="先点①生成配置档，再点②导入；然后切到「蒙皮转权」", icon="INFO")
 
         adv = layout.box()
         adv.label(text="高级 / 分步")
@@ -52,14 +54,6 @@ class GMI_PT_main(Panel):
         fallback = layout.box()
         fallback.label(text="已有配置档 / 复核")
         fallback.prop(scene, "gmi_profile_dir")
-
-    def draw_import(self, layout, scene):
-        box = layout.box()
-        box.label(text="导入原模型 / 权重参考")
-        box.prop(scene, "gmi_body_json_library_dir")
-        box.operator("gmi.resolve_body_json_library", text="匹配 Body JSON资源库", icon="VIEWZOOM")
-        box.operator("gmi.import_weighted_reference", text="导入带权重参考模型", icon="ARMATURE_DATA")
-        box.label(text="必须先匹配 Body JSON资源库；不支持散文件模式", icon="INFO")
 
     def draw_skinning(self, layout, scene):
         box = layout.box()
@@ -86,10 +80,12 @@ class GMI_PT_main(Panel):
 
     def draw_texture(self, layout, scene):
         material = layout.box()
-        material.label(text="身体材质模板（可选 DDS）")
+        material.label(text="身体材质（贴图可填 PNG 或 DDS）")
         material.prop(scene, "gmi_base_color_file")
         material.prop(scene, "gmi_packed_mask_file")
         material.prop(scene, "gmi_shade_color_file")
+        material.prop(scene, "gmi_neutral_material")
+        material.label(text="只有基础色时勾「中性 t1/t4」：盖掉原版遮罩/阴影，避免叠在新贴图上", icon="INFO")
         material.label(text="遮罩通道：R 阴影 / G 光滑度 / B 金属度 / A 环境光遮蔽")
         material.operator("gmi.create_body_material_template", text="创建身体材质模板", icon="MATERIAL")
 

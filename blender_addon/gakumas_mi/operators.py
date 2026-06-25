@@ -1,8 +1,45 @@
 import json
+import tempfile
 from pathlib import Path
 
 import bpy
 from bpy.types import Operator
+
+
+def _png_to_dds(image_path):
+    """把 PNG/其它图像转成未压缩 RGBA8_UNORM_SRGB 的 DDS（DX10 头），返回临时 DDS 路径。
+
+    用 Blender 自带图像 API 读取(无需外部工具);设为 Non-Color，让存储的 sRGB 字节
+    原样写入 DDS，再以 _SRGB 格式标记，使游戏采样结果与原 BC7_UNORM_SRGB 一致。
+    """
+    import numpy as np
+
+    image = bpy.data.images.load(image_path, check_existing=False)
+    try:
+        try:
+            image.colorspace_settings.name = "Non-Color"
+        except Exception:
+            pass
+        width, height = int(image.size[0]), int(image.size[1])
+        if width <= 0 or height <= 0:
+            raise ValueError(f"无法读取图像尺寸：{image_path}")
+        buffer = np.empty(width * height * 4, dtype=np.float32)
+        image.pixels.foreach_get(buffer)
+        rgba = buffer.reshape(height, width, 4)[::-1]  # Blender 自下而上 → DDS 自上而下
+        rgba8 = np.clip(rgba * 255.0 + 0.5, 0.0, 255.0).astype(np.uint8)
+        output = Path(tempfile.gettempdir()) / f"gmi_{Path(image_path).stem}.dds"
+        core.write_rgba8_dds(output, width, height, rgba8.tobytes(), srgb=True)
+        return str(output)
+    finally:
+        bpy.data.images.remove(image)
+
+
+def _neutral_material_dds(semantic):
+    """生成临时的中性 t1/t4 DDS，盖掉游戏原版遮罩/阴影对新贴图的干扰。"""
+    rgba = core.NEUTRAL_PACKED_MASK if semantic == "packedMask" else core.NEUTRAL_SHADE_COLOR
+    output = Path(tempfile.gettempdir()) / f"gmi_neutral_{semantic}.dds"
+    core.write_solid_rgba8_dds(output, rgba)
+    return str(output)
 from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
 from mathutils.kdtree import KDTree
@@ -592,10 +629,11 @@ class GMI_OT_resolve_body_json_library(Operator):
     def execute(self, context):
         try:
             result = _resolve_body_json_library(context.scene)
+            vc = result.get("vertexCount")
+            detail = f"，{vc} 顶点 / {result.get('indexCount')} 索引" if vc else ""
             self.report(
                 {"INFO"},
-                f"已匹配 {result['body']}（{result['match']}，"
-                f"{result['vertexCount']} 顶点 / {result['indexCount']} 索引）",
+                f"已匹配 {result['body']}（{result['match']}{detail}）",
             )
             return {"FINISHED"}
         except Exception as exc:
@@ -668,8 +706,11 @@ class GMI_OT_build_full_profile(Operator):
                 component_id=component_id,
                 main_draw=scene.gmi_extract_draw or None,
             )
-            # ②结构数据 + ③逆算子
-            report = core.complete_inverse_skin_profile(output_dir, library_dir, component_id)
+            # ②结构数据 + ③逆算子（可选指定 Body 以消歧）
+            report = core.complete_inverse_skin_profile(
+                output_dir, library_dir, component_id,
+                body_resource=(scene.gmi_body_resource or None),
+            )
             scene.gmi_profile_dir = output_dir
             naming = "骨架名" if report["boneNaming"] == "skeleton" else "骨骼hash(合成骨架)"
             self.report(
@@ -785,14 +826,26 @@ class GMI_OT_transfer_profile_weights(Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        target = context.active_object
-        if not target or target.type != "MESH":
-            self.report({"ERROR"}, "请选择要转权的作者模型网格")
-            return {"CANCELLED"}
         try:
             reference = _profile_weight_reference(context)
-            if target == reference:
-                raise ValueError("请选择作者模型网格，不要选择配置档参考模型本身")
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        # 优先用"激活对象";若它不是网格(或正好是参考模型本身),退用"唯一选中的非参考网格"。
+        target = context.active_object
+        if not (target and target.type == "MESH") or target is reference:
+            candidates = [obj for obj in context.selected_objects
+                          if obj.type == "MESH" and obj is not reference]
+            if len(candidates) == 1:
+                target = candidates[0]
+                context.view_layer.objects.active = target
+            elif len(candidates) > 1:
+                self.report({"ERROR"}, "选中了多个网格，请只激活作者模型那一个")
+                return {"CANCELLED"}
+            else:
+                self.report({"ERROR"}, "请把作者模型网格设为激活对象（在 3D 视图里点一下模型本体，别选参考模型）")
+                return {"CANCELLED"}
+        try:
             alignment_warnings = _check_transfer_alignment(target, reference)
             old_names = {group.index: group.name for group in target.vertex_groups}
             old_dominant = []
@@ -1030,14 +1083,21 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                 obj, bone_map, source_bind, remap, scene.gmi_unmapped_bone_fallback.strip(),
                 source_rig_weights=bool(obj.get("gmi_profile_weights")),
             )
-            material_textures = {
-                key: bpy.path.abspath(value)
-                for key, value in {
-                    "body.baseColor": scene.gmi_base_color_file,
-                    "body.packedMask": scene.gmi_packed_mask_file,
-                    "body.shadeColor": scene.gmi_shade_color_file,
-                }.items() if value
-            }
+            known_textures = profile_set["textures"].get("textures", {})
+            material_textures = {}
+            for key, value, semantic in (
+                ("body.baseColor", scene.gmi_base_color_file, None),
+                ("body.packedMask", scene.gmi_packed_mask_file, "packedMask"),
+                ("body.shadeColor", scene.gmi_shade_color_file, "shadeColor"),
+            ):
+                if value:
+                    path = bpy.path.abspath(value)
+                    if not path.lower().endswith(".dds"):
+                        path = _png_to_dds(path)  # PNG/其它图像 → 临时 DDS
+                    material_textures[key] = path
+                elif semantic and scene.gmi_neutral_material and key in known_textures:
+                    # 没提供时用中性贴图盖掉原版 t1/t4（仅当配置档有该槽位）
+                    material_textures[key] = _neutral_material_dds(semantic)
             _, _, output_dir = _scene_paths(scene)
             package = core.write_inverse_skin_package(
                 profile_dir, output_dir, scene.gmi_package_id, scene.gmi_package_name,

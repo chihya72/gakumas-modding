@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 4, 6),
+    "version": (0, 4, 8),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "导入学马仕参考模型，并导出绑定配置档的 3DMigoto 模组",
@@ -41,13 +41,12 @@ def register():
         name="模式",
         description="选择当前要执行的工作流步骤",
         items=[
-            ("EXTRACT", "提取对象", "从抓帧数据 / 配置档准备游戏对象数据"),
-            ("IMPORT", "导入对象", "导入原模型、骨架与权重参考"),
+            ("EXTRACT", "提取 / 导入", "抓帧+资源库生成完整配置档并导入参考模型"),
             ("SKINNING", "蒙皮转权", "把配置档权重转移给作者模型"),
             ("EXPORT", "导出模组", "校验并导出可安装模组"),
             ("TEXTURE", "材质模板", "绑定身体多贴图或单贴图替换"),
         ],
-        default="IMPORT",
+        default="EXTRACT",
     )
     bpy.types.Scene.gmi_profile_dir = StringProperty(
         name="配置档目录", subtype="DIR_PATH", default=_default_profile_dir()
@@ -63,6 +62,10 @@ def register():
     bpy.types.Scene.gmi_body_json_library_dir = StringProperty(
         name="Body JSON资源库", subtype="DIR_PATH", default=_default_body_json_dir(),
         description="AssetStudio 批量导出的 assetstudio-body-json 目录；插件会自动匹配 Geo_Body.json 和骨架 JSON",
+    )
+    bpy.types.Scene.gmi_body_resource = StringProperty(
+        name="角色 / Body", default="",
+        description="填角色代号即可（如 hmsz）：同款多角色时用于消歧，并只扫描该角色文件夹、显著加速匹配。也可填完整 body 名",
     )
     bpy.types.Scene.gmi_extract_draw = IntProperty(
         name="主 Draw", default=0, min=0,
@@ -90,6 +93,10 @@ def register():
     bpy.types.Scene.gmi_base_color_file = StringProperty(name="基础色 t0", subtype="FILE_PATH")
     bpy.types.Scene.gmi_packed_mask_file = StringProperty(name="混合遮罩 t1", subtype="FILE_PATH")
     bpy.types.Scene.gmi_shade_color_file = StringProperty(name="阴影色 t4", subtype="FILE_PATH")
+    bpy.types.Scene.gmi_neutral_material = BoolProperty(
+        name="中性 t1/t4", default=True,
+        description="未提供 t1/t4 时自动绑定中性贴图，盖掉游戏原版遮罩/阴影对新贴图的干扰",
+    )
     bpy.types.Scene.gmi_package_id = StringProperty(name="模组标识", default="author.hski.my-mod")
     bpy.types.Scene.gmi_package_name = StringProperty(name="模组名称", default="我的学马仕模组")
     bpy.types.Scene.gmi_author = StringProperty(name="作者", default="作者")
@@ -99,13 +106,14 @@ def unregister():
     for name in (
         "gmi_tool_mode",
         "gmi_profile_dir", "gmi_capture_dir", "gmi_extract_output_dir",
-        "gmi_body_json_library_dir",
+        "gmi_body_json_library_dir", "gmi_body_resource",
         "gmi_extract_draw", "gmi_output_dir", "gmi_component_id",
         "gmi_source_mesh_json", "gmi_skeleton_json", "gmi_bone_remap_file",
         "gmi_unmapped_bone_fallback",
         "gmi_transfer_risk_distance", "gmi_semantic_correction",
         "gmi_texture_key", "gmi_texture_file", "gmi_package_id",
         "gmi_base_color_file", "gmi_packed_mask_file", "gmi_shade_color_file",
+        "gmi_neutral_material",
         "gmi_package_name", "gmi_author",
     ):
         if hasattr(bpy.types.Scene, name):

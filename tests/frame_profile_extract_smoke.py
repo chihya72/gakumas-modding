@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import tempfile
 from pathlib import Path
 
@@ -75,5 +76,88 @@ def test_extract_frame_profile():
         assert component["draws"] == [20, 30, 40]
 
 
+def test_resolve_body_json_exact_match_must_match_vertex_count():
+    core = load_core()
+    with tempfile.TemporaryDirectory() as temp:
+        base = Path(temp)
+        profile_dir = base / "profile"
+        library = base / "library"
+        bad_body = library / "mdl_chr_hmsz-cstm-0128_body"
+        profile_dir.mkdir()
+        bad_body.mkdir(parents=True)
+
+        (profile_dir / "drawcall_map.json").write_text("{}", encoding="utf-8")
+        (profile_dir / "texture_map.json").write_text('{"textures":{}}', encoding="utf-8")
+        (profile_dir / "profile.json").write_text(json.dumps({
+            "schemaVersion": 1,
+            "id": "test-profile",
+            "target": {"bodyResource": "mdl_chr_hmsz-cstm-0128_body"},
+            "components": [{
+                "id": "body",
+                "vertices": 19040,
+                "indices": 77304,
+            }],
+        }), encoding="utf-8")
+        (bad_body / "Geo_Body.json").write_text(json.dumps({
+            "m_Name": "Geo_Body",
+            "m_VertexCount": 16,
+            "m_Indices": [0, 1, 2],
+            "m_BindPose": [],
+        }), encoding="utf-8")
+
+        try:
+            core.resolve_body_json_resource(profile_dir, library)
+        except ValueError as exc:
+            message = str(exc)
+            assert "16 顶点" in message
+            assert "19040 顶点" in message
+        else:
+            raise AssertionError("expected vertex-count mismatch to be rejected")
+
+
+def test_extract_prefers_complete_body_over_repeated_tiny_helpers():
+    core = load_core()
+    with tempfile.TemporaryDirectory() as temp:
+        base = Path(temp)
+        capture = base / "FrameAnalysis-2026-06-25-015839"
+        output = base / "generated-profile"
+        capture.mkdir()
+
+        lines = []
+        for draw in range(70, 93):
+            lines.extend([
+                f"{draw:06d} VSSetShader(hash=15751eb080b9bcfc)",
+                f"{draw:06d} PSSetShader(hash=ae4e6fdc09590dc5)",
+                f"{draw:06d} IASetIndexBuffer(format=R16_UINT, hash=dbd82e34)",
+                f"{draw:06d} DrawIndexedInstanced(IndexCountPerInstance:120, InstanceCount:1, StartIndexLocation:0, BaseVertexLocation:0, StartInstanceLocation:0)",
+            ])
+            write_resource(capture, draw, "ib", "dbd82e34", "15751eb080b9bcfc", "ae4e6fdc09590dc5", 120 * 2)
+            write_resource(capture, draw, "vb0", "aaaa1111", "15751eb080b9bcfc", "ae4e6fdc09590dc5", 64 * 40)
+
+        for draw, vs, ps in (
+            (263, "5b7fff8ecccaf579", "cf02c2d50d3f2230"),
+            (290, "5b7fff8ecccaf579", "cf02c2d50d3f2230"),
+            (325, "fe50b7a82b0f37be", "f872756c910a6eb7"),
+            (338, "e0ceaa854f457e74", "58352a72263d897c"),
+        ):
+            lines.extend([
+                f"{draw:06d} VSSetShader(hash={vs})",
+                f"{draw:06d} PSSetShader(hash={ps})",
+                f"{draw:06d} IASetIndexBuffer(format=R16_UINT, hash=398a5635)",
+                f"{draw:06d} DrawIndexedInstanced(IndexCountPerInstance:69108, InstanceCount:1, StartIndexLocation:1302, BaseVertexLocation:0, StartInstanceLocation:0)",
+            ])
+            write_resource(capture, draw, "ib", "398a5635", vs, ps, 70008 * 2)
+            write_resource(capture, draw, "vb0", "bbbb2222", vs, ps, 16766 * 40)
+            write_resource(capture, draw, "vb1", "cccc3333", vs, ps, 16766 * 12)
+
+        (capture / "log.txt").write_text("\n".join(lines), encoding="utf-8")
+        report = core.extract_profile_from_frame_dump(capture, output)
+        assert report["selected"]["ibHash"] == "398a5635"
+        assert report["selected"]["vertices"] == 16766
+        assert report["selected"]["indices"] == 69108
+
+
 if __name__ == "__main__":
     test_extract_frame_profile()
+    test_resolve_body_json_exact_match_must_match_vertex_count()
+    test_extract_prefers_complete_body_over_repeated_tiny_helpers()

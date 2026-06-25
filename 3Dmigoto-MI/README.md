@@ -1,53 +1,48 @@
-# 3Dmigoto-MI
+# 3dmigoto-gkms — GakumasMI 运行时
 
-GakumasMI 定制化 3DMigoto 运行时(基于 3DMigoto **v1.4.9**),从可正常工作的游戏
-目录整理而来,作为本项目运行时部分的版本化基线。
+面向《学园偶像大师》的定制 3DMigoto 运行时(基于 **v1.4.9**)。负责把作者导出的
+mod 注入游戏渲染、并运行逆解蒙皮 Compute Shader。
 
-## 目录内容
+## 安装(直接复制即可)
 
-| 文件/目录 | 说明 | 是否入库 |
+把以下文件/文件夹复制到游戏 `gakumas.exe` 同级目录:
+
+| 复制 | 说明 |
+|---|---|
+| `d3d11.dll`、`nvapi64.dll`、`d3dcompiler_47.dll` | 3DMigoto 二进制(必须) |
+| `d3dx.ini` | 运行时配置(必须) |
+| `ShaderFixes/` | 着色器修复(整个文件夹,必须) |
+| `Mods/` | mod 安装目录(没有就建一个空的) |
+
+然后用 `-force-d3d11` 启动游戏即可。
+
+> 源码仓库不含 DLL(第三方二进制),需从 3DMigoto v1.4.9 发行版或可工作的游戏目录补齐;
+> 发布 zip 里已经带好这三个 DLL。
+
+## 用法
+
+- 把作者导出的 mod 文件夹整体放进 `Mods/`(每个 mod 一个子文件夹,**别改名**);
+- 文件夹名以 `DISABLED_` 开头会被忽略,可用来临时禁用某个 mod;
+- **改动 mod 后按 `F10` 重载即可,不用重启游戏**;
+- 游戏左上角绿色的 `VS:0/0 PS:0/0 CS:0/0` 是正常的调试 HUD,不影响游玩。
+
+## 按键说明
+
+| 按键 | 作用 | 谁会用 |
 |---|---|---|
-| `d3dx.ini` | **开发配置**:`hunting=1`、Frame Analysis / Dump 全开 | ✅ 跟踪 |
-| `d3dx-release.ini` | **发布配置**:`hunting=0`、关 HUD / Dump / 多余日志,只保留 mod 加载 | ✅ 跟踪 |
-| `install.ps1` | 一键安装/卸载到游戏目录(可选 dev/release 配置) | ✅ 跟踪 |
-| `ShaderFixes/` | 游戏专属着色器修复 / 替换(`*-vs_replace.txt` 等)与 3DMigoto 自带修复 | ✅ 跟踪 |
-| `Mods/` | mod 安装目录(作者导出的 mod 放这里) | ⬜ 仅 README |
-| `d3d11.dll` / `nvapi64.dll` / `d3dcompiler_47.dll` | 3DMigoto v1.4.9 二进制 | ❌ 不入库(见 `.gitignore`) |
-| `ShaderCache/` | 运行时生成缓存 | ❌ 不入库 |
+| **F10** | 重新加载全部 mod / 配置(加了或改了 mod 后按它生效) | 所有人,最常用 |
+| **F9** | 按住临时显示原版,松开恢复 mod —— 用来对比前后 | 所有人 |
+| **PrtSc** | 截图 | 所有人 |
+| F8 | 帧分析:转储当前帧的模型/贴图/缓冲(给开发者建配置档用) | 开发者 |
+| 小键盘 `0` | 开/关绿色 Hunting HUD | 开发者 |
+| 小键盘 `+` 及其它键 | Hunting 调试(循环/标记着色器、顶点/索引缓冲) | 开发者 |
+| Ctrl+F9 | 性能监视 | 开发者 |
 
-> 二进制不入库遵循项目既有策略(第三方二进制单独下载,不 vendoring)。克隆后需要
-> 从 3DMigoto v1.4.9 发行版补齐这三个 DLL,或直接从可工作的游戏目录拷贝。
+> 普通用户基本只用到 **F10**(加 mod 后重载)。F8 和小键盘那些是开发者抓帧/调试用的,
+> 平时不用按。
 
-## 安装到游戏
+## 和项目其它部分的关系
 
-**推荐用安装脚本**(自动选择配置、复制二进制 + ShaderFixes、建 Mods 目录):
-
-```powershell
-# 发布配置(默认,给玩家)
-./install.ps1 -GameDir "D:\Games\gakumas"
-# 开发配置(给核心维护者:开 Hunting / Frame Analysis)
-./install.ps1 -GameDir "D:\Games\gakumas" -Config dev
-# 卸载
-./install.ps1 -GameDir "D:\Games\gakumas" -Uninstall
-```
-
-安装后用 `-force-d3d11` 启动游戏即可。
-
-手动安装:把 `d3d11.dll`、`nvapi64.dll`、`d3dcompiler_47.dll`、所选 `d3dx*.ini`
-(复制为 `d3dx.ini`)和 `ShaderFixes/` 拷到 `gakumas.exe` 同级目录。
-
-## 开发 / 发布配置区别
-
-| 配置 | 文件 | 用途 | 关键区别 |
-|---|---|---|---|
-| 开发 | `d3dx.ini` | 核心维护者建配置档 / 抓帧 | `hunting=1`、`calls=1`、`verbose_overlay=1`、Frame Analysis 全开 |
-| 发布 | `d3dx-release.ini` | 玩家 | `hunting=0`、`calls=0`、`input=0`、`verbose_overlay=0`,只留 mod 加载 |
-
-两者的 `include_recursive=Mods`、`override_directory=ShaderFixes` 与设备/注入设置一致,
-只有 Hunting / 日志 / HUD 不同。安装脚本会把所选配置复制为游戏目录的 `d3dx.ini`。
-
-## 与项目其它部分的关系
-
-- 作者用 [`../blender_addon`](../blender_addon) 导出 mod → 放入本目录 `Mods/`;
-- mod 内的 Compute Shader(`RecoverMatricesCS` / `SkinCustomCS`)由运行时执行,
-  逆解每帧矩阵并重蒙皮,详见 [`../README.md`](../README.md) 的三层数据模型。
+- 作者用 [`../blender_addon`](../blender_addon) 的插件导出 mod → 放进本目录 `Mods/`;
+- mod 内的 Compute Shader 由本运行时执行(逆解每帧矩阵 + 重蒙皮);
+- 整体数据流见 [`../README.md`](../README.md)。

@@ -107,8 +107,8 @@ tools/build_inverse_skin_operator.py         → 由 bind + 权重生成逆算�
 | [README.md](README.md) | 项目总览（本文） |
 | [GakumasMI_开发路线_当前草案.md](GakumasMI_开发路线_当前草案.md) | 总体产品架构与路线 |
 | [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) | 当前进度、能力对比、后续计划（**最新状态以此为准**） |
-| [blender_addon/README.md](blender_addon/README.md) | 作者插件：安装与一键工作流（0.4.6） |
-| [3Dmigoto-MI/README.md](3Dmigoto-MI/README.md) | 运行时：安装、dev/release 配置 |
+| [blender_addon/README.md](blender_addon/README.md) | 作者插件：安装与一键工作流（0.4.8） |
+| [3Dmigoto-MI/README.md](3Dmigoto-MI/README.md) | 运行时：安装方法与按键说明 |
 | [spec/README.md](spec/README.md) | 配置档 / manifest 的 JSON Schema |
 | [research/inverse-skin-matrix-recovery.md](research/inverse-skin-matrix-recovery.md) | 逆解矩阵方案与游戏内验证报告 |
 
