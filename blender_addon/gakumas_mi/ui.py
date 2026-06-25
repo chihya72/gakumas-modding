@@ -89,6 +89,25 @@ class GMI_PT_main(Panel):
         material.label(text="遮罩通道：R 阴影 / G 光滑度 / B 金属度 / A 环境光遮蔽")
         material.operator("gmi.create_body_material_template", text="创建身体材质模板", icon="MATERIAL")
 
+        smart = layout.box()
+        smart.label(text="分材质烘焙 t1/t4（比中性更接近游戏观感）")
+        obj = bpy.context.active_object
+        if obj and obj.type == "MESH" and obj.material_slots:
+            for slot in obj.material_slots:
+                if slot.material is not None:
+                    row = smart.row(align=True)
+                    row.prop(slot.material, "gmi_material_class", text=slot.material.name)
+                    row.prop(slot.material, "gmi_material_toon", text="明暗")
+                    row.prop(slot.material, "gmi_material_shade", text="阴影色")
+        else:
+            smart.label(text="选中已分材质的网格后，逐材质设「材质类型」", icon="INFO")
+        smart.label(text="需先填上方「基础色 t0」(PNG)；t4 从它逐材质派生", icon="INFO")
+        smart.prop(scene, "gmi_form_shading")
+        if scene.gmi_form_shading:
+            smart.prop(scene, "gmi_form_strength")
+            smart.label(text="圆柱体(腿/裤袜)出硬光影分界时开此项；偏硬调高、偏脏调低", icon="INFO")
+        smart.operator("gmi.bake_material_maps", text="按材质烘焙 t1/t4", icon="NODE_MATERIAL")
+
         texture = layout.box()
         texture.label(text="单贴图替换")
         texture.prop(scene, "gmi_texture_key")

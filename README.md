@@ -5,8 +5,10 @@
 目标：让 Mod 作者只用 Blender 和本项目的导出插件就能换装 / 换模，**不需要安装
 Unity、不制作 AssetBundle、不手写 3DMigoto 配置**。
 
-> **当前状态(v0.4.8)**:单 t0 身体的 Blender → 3DMigoto → 游戏(换模 + 动画 + 贴图 +
+> **当前状态(v0.5.0)**:单 t0 身体的 Blender → 3DMigoto → 游戏(换模 + 动画 + 贴图 +
 > 多 mod 共存)完整闭环已达成并发布,已在跨服装实机验证。一键即可对任意 body 生成完整配置档。
+> 0.5.0 新增**分材质烘焙 t1/t4**:为自定义 atlas / MMD 等无游戏来源的模型,按 Blender 材质
+> 逐材质烘出贴合游戏观感的遮罩/阴影(皮肤珊瑚阴影、哑光皮革、织物等,预设由实机抓帧实测)。
 > 仍在完善:回归测试冻结、多组件(脸/头发)、Mod Manager。详见
 > [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md)。
 
@@ -110,7 +112,7 @@ tools/build_inverse_skin_operator.py         → 由 bind + 权重生成逆算�
 | [README.md](README.md) | 项目总览（本文） |
 | [GakumasMI_开发路线_当前草案.md](GakumasMI_开发路线_当前草案.md) | 总体产品架构与路线 |
 | [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) | 当前进度、能力对比、后续计划（**最新状态以此为准**） |
-| [blender_addon/README.md](blender_addon/README.md) | 作者插件：安装与一键工作流（0.4.8） |
+| [blender_addon/README.md](blender_addon/README.md) | 作者插件：安装与一键工作流（0.5.0，含分材质烘焙） |
 | [3Dmigoto-MI/README.md](3Dmigoto-MI/README.md) | 运行时：安装方法与按键说明 |
 | [spec/README.md](spec/README.md) | 配置档 / manifest 的 JSON Schema |
 | [research/inverse-skin-matrix-recovery.md](research/inverse-skin-matrix-recovery.md) | 逆解矩阵方案与游戏内验证报告 |

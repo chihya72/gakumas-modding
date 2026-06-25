@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 4, 8),
+    "version": (0, 5, 0),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "导入学马仕参考模型，并导出绑定配置档的 3DMigoto 模组",
@@ -12,10 +12,21 @@ import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 from pathlib import Path
 
-from . import operators, ui
+from . import core, operators, ui
 
 
 CLASSES = operators.CLASSES + ui.CLASSES
+
+
+def _material_class_items():
+    """从预设库生成材质类型下拉项（值=预设键，名=中文标签）。"""
+    try:
+        presets = core.load_material_presets()
+    except Exception:
+        return [("neutral", "中性", "")]
+    order = ["skin", "cloth", "leather_shoe", "leather_plastic", "metal", "hair", "neutral"]
+    keys = [k for k in order if k in presets] + [k for k in presets if k not in order]
+    return [(k, presets[k].get("label", k), presets[k].get("confidence", "")) for k in keys]
 
 
 def _default_profile_dir():
@@ -97,6 +108,28 @@ def register():
         name="中性 t1/t4", default=True,
         description="未提供 t1/t4 时自动绑定中性贴图，盖掉游戏原版遮罩/阴影对新贴图的干扰",
     )
+    bpy.types.Scene.gmi_form_shading = BoolProperty(
+        name="几何AO软化阴影", default=False,
+        description="从网格几何烘 AO,只对凹陷缝隙(腋下/裆部/衣褶内)加深阴影;对光滑凸面(腿/裤袜)无效——硬光影分界要靠 toon 阈值",
+    )
+    bpy.types.Scene.gmi_form_strength = FloatProperty(
+        name="软化强度", default=0.6, min=0.0, max=2.0,
+        description="几何AO对 toon 渐变的影响强度;0=关闭,实机偏硬就调高、偏脏就调低",
+    )
+    bpy.types.Material.gmi_material_class = EnumProperty(
+        name="材质类型",
+        description="分材质烘焙 t1/t4 时该材质槽使用的预设（皮肤/布料/金属…）",
+        items=_material_class_items(),
+        default="cloth",
+    )
+    bpy.types.Material.gmi_material_toon = FloatProperty(
+        name="明暗(阴影范围)", default=-1.0, min=-1.0, max=1.0,
+        description="-1=用预设值。即 t1 的 toon 阴影阈值:值越低=阴影越大越暗、值越高=受光越多越亮。控制这个材质明暗分界落在哪、阴影铺多大;只影响这一个材质",
+    )
+    bpy.types.Material.gmi_material_shade = FloatProperty(
+        name="阴影色强度", default=-1.0, min=-1.0, max=1.0,
+        description="-1=用预设值。即 t4 阴影色(如皮肤珊瑚色)的叠加强度:越高阴影区颜色越浓、越低越淡。配合「明暗」用:明暗决定阴影铺多大,阴影色决定阴影多浓;只影响这一个材质",
+    )
     bpy.types.Scene.gmi_package_id = StringProperty(name="模组标识", default="author.hski.my-mod")
     bpy.types.Scene.gmi_package_name = StringProperty(name="模组名称", default="我的学马仕模组")
     bpy.types.Scene.gmi_author = StringProperty(name="作者", default="作者")
@@ -114,10 +147,17 @@ def unregister():
         "gmi_texture_key", "gmi_texture_file", "gmi_package_id",
         "gmi_base_color_file", "gmi_packed_mask_file", "gmi_shade_color_file",
         "gmi_neutral_material",
+        "gmi_form_shading", "gmi_form_strength",
         "gmi_package_name", "gmi_author",
     ):
         if hasattr(bpy.types.Scene, name):
             delattr(bpy.types.Scene, name)
+    if hasattr(bpy.types.Material, "gmi_material_class"):
+        del bpy.types.Material.gmi_material_class
+    if hasattr(bpy.types.Material, "gmi_material_toon"):
+        del bpy.types.Material.gmi_material_toon
+    if hasattr(bpy.types.Material, "gmi_material_shade"):
+        del bpy.types.Material.gmi_material_shade
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)
 

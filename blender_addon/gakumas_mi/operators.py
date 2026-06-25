@@ -1195,6 +1195,162 @@ class GMI_OT_create_body_material_template(Operator):
         return {"FINISHED"}
 
 
+def _compute_vertex_ao(obj, samples=20):
+    """对网格逐顶点算几何 AO(BVHTree 半球射线遮蔽),返回 0..1 数组并做百分位拉伸。
+
+    用来重建游戏皮肤那种随形体的柔和光影渐变,替代 flat toon 阈值,避免圆柱体
+    (如腿/裤袜)上出现硬光影分界。
+    """
+    import numpy as np
+
+    deps = bpy.context.evaluated_depsgraph_get()
+    bvh = BVHTree.FromObject(obj, deps)
+    mesh = obj.data
+    mw = obj.matrix_world
+    nrm = mw.to_3x3().inverted_safe().transposed()
+    max_dist = max(obj.dimensions) * 0.12 or 0.2
+    eps = max_dist * 0.002
+
+    # 斐波那契半球方向(切空间 +Z)
+    ga = np.pi * (3 - np.sqrt(5))
+    dirs = []
+    for i in range(samples):
+        z = (i + 0.5) / samples
+        r = np.sqrt(max(0.0, 1 - z * z))
+        th = ga * i
+        dirs.append((r * np.cos(th), r * np.sin(th), z))
+
+    ao = np.empty(len(mesh.vertices), dtype=np.float32)
+    for vi, v in enumerate(mesh.vertices):
+        co = mw @ v.co
+        n = (nrm @ v.normal).normalized()
+        up = Vector((0, 0, 1)) if abs(n.z) < 0.99 else Vector((1, 0, 0))
+        t = n.cross(up).normalized()
+        b = n.cross(t)
+        origin = co + n * eps
+        hits = 0
+        for dx, dy, dz in dirs:
+            wd = t * dx + b * dy + n * dz
+            loc, _, _, _ = bvh.ray_cast(origin, wd, max_dist)
+            if loc is not None:
+                hits += 1
+        ao[vi] = 1.0 - hits / samples
+    # 百分位拉伸到 [0,1],让渐变用满量程(强度由 form_strength 控制)
+    lo, hi = np.percentile(ao, 5), np.percentile(ao, 95)
+    if hi - lo > 1e-4:
+        ao = np.clip((ao - lo) / (hi - lo), 0.0, 1.0)
+    return ao
+
+
+class GMI_OT_bake_material_maps(Operator):
+    bl_idname = "gmi.bake_material_maps"
+    bl_label = "按材质烘焙 t1/t4"
+    bl_description = (
+        "按各材质槽的「材质类型」预设，从基础色 t0 派生分材质 t1/t4 并设为导出贴图。"
+        "比平铺中性更接近游戏观感"
+    )
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        import numpy as np
+
+        scene = context.scene
+        obj = context.active_object
+        if not obj or obj.type != "MESH":
+            self.report({"ERROR"}, "请选择网格")
+            return {"CANCELLED"}
+        if not scene.gmi_base_color_file:
+            self.report({"ERROR"}, "需要先指定基础色 t0（t4 从它派生）")
+            return {"CANCELLED"}
+        mesh = obj.data
+        if not mesh.uv_layers.active:
+            self.report({"ERROR"}, "网格缺少 UV，无法按 UV 烘焙")
+            return {"CANCELLED"}
+        if not obj.material_slots or all(s.material is None for s in obj.material_slots):
+            self.report({"ERROR"}, "网格没有材质槽，请先分材质并设置每个材质的「材质类型」")
+            return {"CANCELLED"}
+
+        base_path = bpy.path.abspath(scene.gmi_base_color_file)
+        if base_path.lower().endswith(".dds"):
+            self.report({"ERROR"}, "基础色请用 PNG（DDS 无法在 Blender 内读像素派生 t4）")
+            return {"CANCELLED"}
+        image = bpy.data.images.load(base_path, check_existing=False)
+        try:
+            try:
+                image.colorspace_settings.name = "Non-Color"
+            except Exception:
+                pass
+            width, height = int(image.size[0]), int(image.size[1])
+            if width != height:
+                self.report({"ERROR"}, f"基础色需为正方形（当前 {width}x{height}）")
+                return {"CANCELLED"}
+            buffer = np.empty(width * height * 4, dtype=np.float32)
+            image.pixels.foreach_get(buffer)
+            base8 = np.clip(
+                buffer.reshape(height, width, 4)[::-1] * 255.0 + 0.5, 0, 255
+            ).astype(np.uint8)  # top-down，与 DDS / UV(1-v) 一致
+        finally:
+            bpy.data.images.remove(image)
+
+        mesh.calc_loop_triangles()
+        uv = mesh.uv_layers.active.data
+        count = len(mesh.loop_triangles)
+        tris = np.empty((count, 3, 2), dtype=np.float32)
+        mat_ids = np.empty(count, dtype=np.int32)
+        vert_tris = np.empty((count, 3), dtype=np.int32)
+        for i, lt in enumerate(mesh.loop_triangles):
+            for j, loop in enumerate(lt.loops):
+                tris[i, j] = uv[loop].uv
+            mat_ids[i] = lt.material_index
+            vert_tris[i] = lt.vertices
+
+        presets = core.load_material_presets()
+        class_per_slot = {
+            idx: slot.material.gmi_material_class
+            for idx, slot in enumerate(obj.material_slots)
+            if slot.material is not None
+        }
+        toon_per_slot = {
+            idx: slot.material.gmi_material_toon
+            for idx, slot in enumerate(obj.material_slots)
+            if slot.material is not None and slot.material.gmi_material_toon >= 0
+        }
+        shade_per_slot = {
+            idx: slot.material.gmi_material_shade
+            for idx, slot in enumerate(obj.material_slots)
+            if slot.material is not None and slot.material.gmi_material_shade >= 0
+        }
+        id_map = core.rasterize_material_ids(tris, mat_ids, width, dilate=8)
+
+        form_map = None
+        if scene.gmi_form_shading:
+            ao = _compute_vertex_ao(obj)
+            form_map = core.rasterize_vertex_scalar(tris, ao[vert_tris], width, dilate=8)
+        t1, t4 = core.bake_material_maps(
+            id_map, base8, class_per_slot, presets,
+            form_map=form_map, form_strength=scene.gmi_form_strength,
+            toon_per_slot=toon_per_slot, shade_per_slot=shade_per_slot,
+        )
+
+        out = Path(tempfile.gettempdir())
+        t1_path = out / "gmi_baked_packedMask.dds"
+        t4_path = out / "gmi_baked_shadeColor.dds"
+        core.write_rgba8_dds(t1_path, width, height, t1.tobytes(), srgb=False)
+        core.write_rgba8_dds(t4_path, width, height, t4.tobytes(), srgb=True)
+        scene.gmi_packed_mask_file = str(t1_path)
+        scene.gmi_shade_color_file = str(t4_path)
+
+        covered = int((id_map >= 0).sum()) * 100 // (width * height)
+        used = sorted({presets[c]["label"] for c in class_per_slot.values() if c in presets})
+        form_note = "；几何AO软化阴影" if form_map is not None else ""
+        self.report(
+            {"INFO"},
+            f"已烘焙 t1/t4（{covered}% UV 覆盖；材质：{'、'.join(used)}{form_note}）；"
+            f"已设为导出 t1/t4，可直接校验导出",
+        )
+        return {"FINISHED"}
+
+
 class GMI_OT_export_texture_mod(Operator):
     bl_idname = "gmi.export_texture_mod"
     bl_label = "导出贴图模组"
@@ -1231,5 +1387,6 @@ CLASSES = (
     GMI_OT_export_inverse_skin_mod,
     GMI_OT_export_validated_mod,
     GMI_OT_create_body_material_template,
+    GMI_OT_bake_material_maps,
     GMI_OT_export_texture_mod,
 )

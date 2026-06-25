@@ -61,6 +61,222 @@ def write_solid_rgba8_dds(path, rgba, size=4, srgb=False):
     write_rgba8_dds(path, size, size, bytes([r, g, b, a]) * (size * size), srgb=srgb)
 
 
+def load_material_presets():
+    """读取分材质 t1/t4 预设库(随插件分发)。"""
+    return load_json(Path(__file__).parent / "material_presets.json")["presets"]
+
+
+def _srgb_to_linear(c):
+    import numpy as np
+    return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+
+
+def _linear_to_srgb(c):
+    import numpy as np
+    c = np.clip(c, 0.0, 1.0)
+    return np.where(c <= 0.0031308, c * 12.92, 1.055 * c ** (1 / 2.4) - 0.055)
+
+
+def _rgb_to_hsv(rgb):
+    import numpy as np
+    r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+    mx = np.max(rgb, axis=-1)
+    mn = np.min(rgb, axis=-1)
+    df = mx - mn
+    h = np.zeros_like(mx)
+    nz = df > 1e-9
+    rm, gm, bm = (mx == r) & nz, (mx == g) & nz, (mx == b) & nz
+    h[rm] = ((g - b)[rm] / df[rm]) % 6
+    h[gm] = ((b - r)[gm] / df[gm]) + 2
+    h[bm] = ((r - g)[bm] / df[bm]) + 4
+    h = (h / 6.0) % 1.0
+    s = np.where(mx > 1e-9, df / np.maximum(mx, 1e-9), 0.0)
+    return h, s, mx
+
+
+def _hsv_to_rgb(h, s, v):
+    import numpy as np
+    i = np.floor(h * 6.0)
+    f = h * 6.0 - i
+    p = v * (1 - s)
+    q = v * (1 - f * s)
+    t = v * (1 - (1 - f) * s)
+    i = (i.astype(int)) % 6
+    r = np.choose(i, [v, q, p, p, t, v])
+    g = np.choose(i, [t, v, v, q, p, p])
+    b = np.choose(i, [p, p, t, v, v, q])
+    return np.stack([r, g, b], axis=-1)
+
+
+def shade_color_from_base(base_rgb8, darken, hue_shift_deg, sat_scale):
+    """由 baseColor(sRGB 8-bit RGB)派生 shadeColor RGB(sRGB 8-bit)。
+
+    压暗在线性光下进行(与游戏采样后的着色一致),色相/饱和在 HSV 上微调。
+    """
+    import numpy as np
+    base01 = base_rgb8.astype(np.float32) / 255.0
+    lin = _srgb_to_linear(base01) * float(darken)
+    h, s, v = _rgb_to_hsv(lin)
+    h = (h + hue_shift_deg / 360.0) % 1.0
+    s = np.clip(s * sat_scale, 0.0, 1.0)
+    out = _linear_to_srgb(_hsv_to_rgb(h, s, v))
+    return np.clip(out * 255.0 + 0.5, 0, 255).astype(np.uint8)
+
+
+def rasterize_material_ids(uv_tris, mat_ids, size, dilate=8):
+    """把每个三角形按 UV 栅格化成材质槽 ID 图(top-down,V 翻转)。
+
+    uv_tris: (N,3,2) float UV；mat_ids: (N,) int(材质槽索引)。
+    返回 (size,size) int16,未覆盖处为 -1;dilate 步外扩以补 UV 缝隙/外扩填充。
+    """
+    import numpy as np
+    id_map = np.full((size, size), -1, dtype=np.int16)
+    px = uv_tris[:, :, 0] * size
+    py = (1.0 - uv_tris[:, :, 1]) * size  # V 翻转 → top-down
+    for tri in range(uv_tris.shape[0]):
+        x0, x1, x2 = px[tri]
+        y0, y1, y2 = py[tri]
+        minx, maxx = int(np.floor(min(x0, x1, x2))), int(np.ceil(max(x0, x1, x2)))
+        miny, maxy = int(np.floor(min(y0, y1, y2))), int(np.ceil(max(y0, y1, y2)))
+        minx, miny = max(minx, 0), max(miny, 0)
+        maxx, maxy = min(maxx, size), min(maxy, size)
+        if maxx <= minx or maxy <= miny:
+            continue
+        ys, xs = np.mgrid[miny:maxy, minx:maxx]
+        xs = xs + 0.5
+        ys = ys + 0.5
+        denom = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
+        if abs(denom) < 1e-9:
+            continue
+        a = ((y1 - y2) * (xs - x2) + (x2 - x1) * (ys - y2)) / denom
+        b = ((y2 - y0) * (xs - x2) + (x0 - x2) * (ys - y2)) / denom
+        c = 1.0 - a - b
+        inside = (a >= 0) & (b >= 0) & (c >= 0)
+        block = id_map[miny:maxy, minx:maxx]
+        block[inside] = mat_ids[tri]
+    # 外扩填充:用最近的已覆盖材质补缝隙,避免 mip/采样在岛边漏到中性
+    for _ in range(dilate):
+        empty = id_map < 0
+        if not empty.any():
+            break
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            shifted = np.roll(id_map, (dy, dx), axis=(0, 1))
+            take = empty & (shifted >= 0)
+            id_map[take] = shifted[take]
+            empty = id_map < 0
+    return id_map
+
+
+def rasterize_vertex_scalar(uv_tris, scalar_tris, size, dilate=8):
+    """把每顶点标量(如 AO)按 UV 栅格化并重心插值成 (size,size) float 图。
+
+    uv_tris: (N,3,2) UV；scalar_tris: (N,3) 每个三角顶点的标量。
+    未覆盖处为 NaN，dilate 步用最近值外扩补缝。
+    """
+    import numpy as np
+    out = np.full((size, size), np.nan, dtype=np.float32)
+    px = uv_tris[:, :, 0] * size
+    py = (1.0 - uv_tris[:, :, 1]) * size
+    for tri in range(uv_tris.shape[0]):
+        x0, x1, x2 = px[tri]
+        y0, y1, y2 = py[tri]
+        minx, maxx = int(np.floor(min(x0, x1, x2))), int(np.ceil(max(x0, x1, x2)))
+        miny, maxy = int(np.floor(min(y0, y1, y2))), int(np.ceil(max(y0, y1, y2)))
+        minx, miny = max(minx, 0), max(miny, 0)
+        maxx, maxy = min(maxx, size), min(maxy, size)
+        if maxx <= minx or maxy <= miny:
+            continue
+        ys, xs = np.mgrid[miny:maxy, minx:maxx]
+        xs = xs + 0.5
+        ys = ys + 0.5
+        denom = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
+        if abs(denom) < 1e-9:
+            continue
+        a = ((y1 - y2) * (xs - x2) + (x2 - x1) * (ys - y2)) / denom
+        b = ((y2 - y0) * (xs - x2) + (x0 - x2) * (ys - y2)) / denom
+        c = 1.0 - a - b
+        inside = (a >= 0) & (b >= 0) & (c >= 0)
+        s0, s1, s2 = scalar_tris[tri]
+        vals = a * s0 + b * s1 + c * s2
+        block = out[miny:maxy, minx:maxx]
+        block[inside] = vals[inside]
+    for _ in range(dilate):
+        empty = np.isnan(out)
+        if not empty.any():
+            break
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            shifted = np.roll(out, (dy, dx), axis=(0, 1))
+            take = empty & ~np.isnan(shifted)
+            out[take] = shifted[take]
+            empty = np.isnan(out)
+    return out
+
+
+def bake_material_maps(id_map, base_rgb8, class_per_slot, presets,
+                       form_map=None, form_strength=0.0, smoothness_max=1.0,
+                       toon_override=None, toon_per_slot=None, shade_per_slot=None):
+    """按材质ID图烘焙 t1(packedMask)/t4(shadeColor)的 RGBA8 数组。
+
+    id_map: (H,W) int 材质槽索引(-1=未覆盖→中性);base_rgb8: (H,W,3 或 4) uint8;
+    class_per_slot: {slot_index: 预设键};presets: load_material_presets()。
+    form_map: 可选 (H,W) 0..1 几何 AO/曲率图(NaN=无),用于给 toon/AO 通道
+    叠加随形体的空间渐变,避免 flat toon 在圆柱体上出硬光影分界。
+    form_strength: 渐变强度(0=关闭)。
+    返回 (t1_rgba8, t4_rgba8),均为 (H,W,4) uint8。
+    """
+    import numpy as np
+    h, w = id_map.shape
+    base = base_rgb8[..., :3]
+    t1 = np.empty((h, w, 4), dtype=np.uint8)
+    t4 = np.empty((h, w, 4), dtype=np.uint8)
+    use_form = form_map is not None and form_strength > 0.0
+    if use_form:
+        form = np.where(np.isnan(form_map), 0.5, form_map)  # 无几何处取中性 0.5
+
+    def _fill(mask, toon, smooth, metal, ao):
+        if toon_override is not None:
+            toon = toon_override  # 调试/统一:强制 toon 阈值,验证 t1 是否生效
+        if use_form:
+            delta = (form[mask] - 0.5) * form_strength
+            t1[mask, 0] = np.clip((toon + delta) * 255.0 + 0.5, 0, 255).astype(np.uint8)
+            # 凹陷(form 低)再补一点 AO 暗,凸起不动
+            t1[mask, 3] = np.clip((ao - np.minimum(delta, 0.0)) * 255.0 + 0.5, 0, 255).astype(np.uint8)
+        else:
+            t1[mask, 0] = round(toon * 255)
+            t1[mask, 3] = round(ao * 255)
+        t1[mask, 1] = round(min(smooth, smoothness_max) * 255)
+        t1[mask, 2] = round(metal * 255)
+
+    neutral = presets["neutral"]
+    n1, n4 = neutral["t1"], neutral["t4"]
+    _fill(np.ones((h, w), bool), n1["toonShadowThreshold"], n1["smoothness"],
+          n1["metallic"], n1["ao"])
+    t4[..., :3] = shade_color_from_base(base, n4["darken"], n4["hueShiftDeg"], n4["satScale"])
+    t4[..., 3] = round(n4["alpha"] * 255)
+    for slot, key in class_per_slot.items():
+        preset = presets.get(key)
+        if preset is None:
+            continue
+        mask = id_map == slot
+        if not mask.any():
+            continue
+        m1, m4 = preset["t1"], preset["t4"]
+        toon = m1["toonShadowThreshold"]
+        if toon_per_slot and toon_per_slot.get(slot) is not None:
+            toon = toon_per_slot[slot]  # 该材质的逐材质 toon 微调,覆盖预设
+        _fill(mask, toon, m1["smoothness"], m1["metallic"], m1["ao"])
+        if m4.get("fixedColor"):  # 固定阴影色(如皮肤的珊瑚色),不从底色派生
+            t4[mask, 0], t4[mask, 1], t4[mask, 2] = m4["fixedColor"]
+        else:
+            t4[mask, :3] = shade_color_from_base(
+                base[mask], m4["darken"], m4["hueShiftDeg"], m4["satScale"])
+        alpha = m4["alpha"]
+        if shade_per_slot and shade_per_slot.get(slot) is not None:
+            alpha = shade_per_slot[slot]  # 逐材质阴影色强度微调
+        t4[mask, 3] = round(alpha * 255)
+    return t1, t4
+
+
 def load_profile_set(profile_dir):
     root = Path(profile_dir)
     required = ("profile.json", "drawcall_map.json", "texture_map.json")
