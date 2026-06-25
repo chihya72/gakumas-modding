@@ -279,7 +279,23 @@ HSKI Body 已验证的身体贴图语义：
 
 ## 当前版本
 
-插件源码版本：0.5.0。
+插件源码版本：0.5.1。
 
-发布包用 `python tools/package_blender_addon.py -o dist/gakumas_mi-0.5.0.zip` 生成
+### 0.5.1 — 运行时替换链修复（重要）
+
+修复同一 body IB 被**多 pass、多段**绘制时的替换问题，导出器与 profile 同步增强：
+
+- **全 VS 触发**：profile 记录 body IB 关联的全部顶点着色器，导出为每个生成
+  `ShaderOverride…checktextureoverride = ib`。只覆盖部分 VS 会让其它 pass 漏画原版 → 与
+  mod 网格**叠图**。
+- **主体段定位 + drawindexed**：profile 记录主体段的 `mainFirstIndex`/`indexCount`。主体在
+  IB 偏移不一定是 0（随服装而变）；导出用 `match_first_index = <主体偏移>` +
+  `handling = skip` + `drawindexed = <索引数>, 0, 0`，跳过原 draw、从自定义 IB 的 0 画满，
+  避免越界/只替换到小段。
+- **尾部段跳过**：profile 记录同 IB 的尾部段 `tailFirstIndices`（原版裙摆等配件），导出为
+  每段生成 `handling = skip`，避免原版配件从 mod 网格里漏出。
+
+> 旧 profile 需**重新提取**才会带上述字段；既有已手改的 mod.ini 不受影响。
+
+发布包用 `python tools/package_blender_addon.py -o dist/gakumas_mi-0.5.1.zip` 生成
 （代码版，不含资源库；加 `--with-body-lib` 可一并打包）。本地包不提交到公开仓库。

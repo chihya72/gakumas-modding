@@ -157,7 +157,69 @@ def test_extract_prefers_complete_body_over_repeated_tiny_helpers():
         assert report["selected"]["indices"] == 69108
 
 
+def test_records_first_index_tails_and_all_vs():
+    """冻结运行时替换链修复:主体 first_index、尾部段、全部 body VS。
+
+    回归对象:游戏把同一 body IB 分多段多 pass 画(主体可能不在偏移 0,另有尾部配件)。
+    生成器需据此 match_first_index + drawindexed 主体、skip 尾部、为每个 VS 生成
+    checktextureoverride，否则会出现“matched 但不替换 / 叠原版 / 配件漏出”。
+    """
+    core = load_core()
+    with tempfile.TemporaryDirectory() as temp:
+        base = Path(temp)
+        capture = base / "FrameAnalysis-2026-06-25-999999"
+        output = base / "generated-profile"
+        capture.mkdir()
+
+        body_ib = "abcd1234"
+        main_passes = (
+            ("5b7fff8ecccaf579", "cf02c2d50d3f2230"),
+            ("fe50b7a82b0f37be", "f872756c910a6eb7"),
+            ("436f9c16af3b54cf", "a04da6e49886b206"),
+        )
+        lines = []
+        for draw, (vs, ps) in zip((200, 210, 220), main_passes):
+            lines += [
+                f"{draw:06d} VSSetShader(hash={vs})",
+                f"{draw:06d} PSSetShader(hash={ps})",
+                f"{draw:06d} IASetIndexBuffer(format=R16_UINT, hash={body_ib})",
+                f"{draw:06d} DrawIndexedInstanced(IndexCountPerInstance:1000, InstanceCount:1, "
+                "StartIndexLocation:64, BaseVertexLocation:0, StartInstanceLocation:0)",
+            ]
+            write_resource(capture, draw, "ib", body_ib, vs, ps, 1100 * 2)
+            write_resource(capture, draw, "vb0", "11110000", vs, ps, 500 * 40)
+            write_resource(capture, draw, "vb1", "22220000", vs, ps, 500 * 12)
+        # 尾部小段(原版配件):同 IB、不同 StartIndex，仅日志里出现
+        for draw, start in ((230, 1064), (231, 1080)):
+            lines += [
+                f"{draw:06d} VSSetShader(hash=5b7fff8ecccaf579)",
+                f"{draw:06d} PSSetShader(hash=cf02c2d50d3f2230)",
+                f"{draw:06d} IASetIndexBuffer(format=R16_UINT, hash={body_ib})",
+                f"{draw:06d} DrawIndexedInstanced(IndexCountPerInstance:16, InstanceCount:1, "
+                f"StartIndexLocation:{start}, BaseVertexLocation:0, StartInstanceLocation:0)",
+            ]
+        (capture / "log.txt").write_text("\n".join(lines), encoding="utf-8")
+
+        core.extract_profile_from_frame_dump(capture, output)
+        profile = core.load_json(output / "profile.json")
+        component = profile["components"][0]
+        assert component["ibHash"] == body_ib
+        assert component["mainFirstIndex"] == 64, component.get("mainFirstIndex")
+        assert component["tailFirstIndices"] == [1064, 1080], component.get("tailFirstIndices")
+
+        drawcalls = core.load_json(output / "drawcall_map.json")
+        vs_set = {p.get("vertexShader") for p in drawcalls["components"]["body"]["passBindings"].values()}
+        assert {"5b7fff8ecccaf579", "fe50b7a82b0f37be", "436f9c16af3b54cf"} <= vs_set, vs_set
+
+        checks = core._shader_check_overrides("Test", "body", drawcalls)
+        assert checks.count("checktextureoverride = ib") == 3, checks
+        for vs in ("5b7fff8ecccaf579", "fe50b7a82b0f37be", "436f9c16af3b54cf"):
+            assert vs in checks
+    print("test_records_first_index_tails_and_all_vs OK")
+
+
 if __name__ == "__main__":
     test_extract_frame_profile()
     test_resolve_body_json_exact_match_must_match_vertex_count()
     test_extract_prefers_complete_body_over_repeated_tiny_helpers()
+    test_records_first_index_tails_and_all_vs()
