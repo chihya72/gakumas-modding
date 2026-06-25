@@ -5,7 +5,10 @@
 目标：让 Mod 作者只用 Blender 和本项目的导出插件就能换装 / 换模，**不需要安装
 Unity、不制作 AssetBundle、不手写 3DMigoto 配置**。
 
-> 当前处于 `hski-cstm-0000 / Body` 单配置档验证阶段，不是面向普通作者的正式版。
+> **当前状态(v0.4.8)**:单 t0 身体的 Blender → 3DMigoto → 游戏(换模 + 动画 + 贴图 +
+> 多 mod 共存)完整闭环已达成并发布,已在跨服装实机验证。一键即可对任意 body 生成完整配置档。
+> 仍在完善:回归测试冻结、多组件(脸/头发)、Mod Manager。详见
+> [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md)。
 
 ---
 

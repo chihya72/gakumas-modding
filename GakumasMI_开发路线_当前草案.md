@@ -1,9 +1,10 @@
 # GakumasMI 开发路线（当前草案）
 
-> **2026-06-22 更新**：GPU inverse-skin 矩阵恢复和任意拓扑驱动已经完成游戏内
-> 验证；当前主要问题已转为 Blender 权重工作流、原生手/颈部件保留和材质语义。
-> 本文保留总体产品架构，最新执行状态与分阶段计划以
-> [`research/current-status-and-roadmap.md`](research/current-status-and-roadmap.md) 为准。
+> **2026-06-25 更新（v0.4.8）**：单 t0 身体的 Blender → 3DMigoto → 游戏（换模 + 动画 +
+> 贴图 + 多 mod 共存）完整闭环已达成并发布；一键即可对任意 body 生成完整配置档。本文为
+> 总体产品愿景，**最新执行状态、完成度与后续计划以**
+> [`research/current-status-and-roadmap.md`](research/current-status-and-roadmap.md)**为准**
+> （下方分阶段计划属早期草案，部分已完成/调整）。
 
 > **项目定位**：为《学园偶像大师》建立一套以 **3DMigoto / DX11** 为核心的视觉 Mod 体系。  
 > **目标用户**：玩家只需安装运行环境；Mod 作者主要使用 Blender，不要求安装完整 Unity、制作 AssetBundle 或手动研究 Shader Hash。  
