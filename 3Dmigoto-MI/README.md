@@ -3,6 +3,11 @@
 面向《学园偶像大师》的定制 3DMigoto 运行时(基于 **v1.4.9**)。负责把作者导出的
 mod 注入游戏渲染、并运行逆解蒙皮 Compute Shader。
 
+> ⚠️ 本仓库的 `d3d11.dll` 是**自编译的补丁版**,修了游戏竖屏↔横屏 live 切换时的
+> 黑屏/闪烁(FLIP swap chain 的 `ResizeBuffers` 丢失 WAITABLE flag)。**官方
+> 3DMigoto / 各 fork 均无此修复,直接换它们会复现该 bug。** 补丁原理、源码改动与
+> 重编译步骤见 [`FLIP-RESIZE-PATCH.md`](FLIP-RESIZE-PATCH.md)。
+
 ## 安装(直接复制即可)
 
 把以下文件/文件夹复制到游戏 `gakumas.exe` 同级目录:
@@ -16,8 +21,10 @@ mod 注入游戏渲染、并运行逆解蒙皮 Compute Shader。
 
 然后用 `-force-d3d11` 启动游戏即可。
 
-> 源码仓库不含 DLL(第三方二进制),需从 3DMigoto v1.4.9 发行版或可工作的游戏目录补齐;
-> 发布 zip 里已经带好这三个 DLL。
+> 源码仓库不含 DLL(第三方二进制 + 自编译产物,均 gitignore)。`nvapi64.dll`、
+> `d3dcompiler_47.dll` 可从 3DMigoto v1.4.9 发行版或可工作的游戏目录补齐;但
+> **`d3d11.dll` 必须用本仓库的补丁版**(官方版会犯横竖屏切换 bug,见
+> [`FLIP-RESIZE-PATCH.md`](FLIP-RESIZE-PATCH.md))。发布 zip 里已带好补丁版三件套。
 
 ## 用法
 
