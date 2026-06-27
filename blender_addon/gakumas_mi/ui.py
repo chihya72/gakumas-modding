@@ -60,7 +60,7 @@ class GMI_PT_main(Panel):
         box.label(text="作者模型蒙皮 / 转权")
         box.prop(scene, "gmi_transfer_risk_distance")
         box.prop(scene, "gmi_semantic_correction")
-        box.operator("gmi.transfer_profile_weights", text="从配置档传递权重", icon="MOD_DATA_TRANSFER")
+        box.operator("gmi.transfer_profile_weights", text="从配置档传递权重 + 颜色", icon="MOD_DATA_TRANSFER")
         box.operator("gmi.select_high_risk_vertices", text="选择高风险顶点", icon="RESTRICT_SELECT_OFF")
         box.label(text="传权后检查高风险顶点组：GMI_REVIEW_HIGH_RISK", icon="ERROR")
 

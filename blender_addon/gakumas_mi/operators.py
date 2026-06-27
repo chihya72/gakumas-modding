@@ -497,6 +497,37 @@ def _inverse_skin_export_data(
     if unresolved and not fallback_bone:
         sample = ", ".join(sorted(unresolved)[:12])
         raise ValueError(f"Unmapped weighted bones ({len(unresolved)}): {sample}")
+    # 学马仕描边 VS(e0ceaa85)沿 TANGENT.xyz 挤出描边(NORMAL 通道不参与描边),
+    # 且原版 TANGENT 并非 UV 切线,而是逐顶点"平滑法线"(同坐标顶点法线平均,cos≈0.6)。
+    # 自定义网格若把 UV 切线写进 TANGENT,描边会沿表面方向挤出 → 整圈不可见。
+    # 故这里按位置合并法线得到平滑法线,写入 TANGENT.xyz(w=1,与原版一致),让描边外扩。
+    if vertices:
+        from collections import defaultdict
+        position_groups = defaultdict(list)
+        for index, position in enumerate(vertices):
+            key = (round(position[0], 5), round(position[1], 5), round(position[2], 5))
+            position_groups[key].append(index)
+        smoothed_tangents = list(tangents)
+        for indices in position_groups.values():
+            if len(indices) == 1:
+                n = normals[indices[0]]
+                smoothed_tangents[indices[0]] = (n[0], n[1], n[2], 1.0)
+                continue
+            for i in indices:
+                ni = normals[i]
+                sx = sy = sz = 0.0
+                for j in indices:
+                    nj = normals[j]
+                    # 只平均与本顶点同朝向(点积>0)的法线。裙褶/薄壳/双面处同坐标的正反面
+                    # 法线相反,若一起平均会相消成乱向 → 描边沿错向挤出 → 凸起毛刺(橙色破边)。
+                    if ni[0] * nj[0] + ni[1] * nj[1] + ni[2] * nj[2] > 0.0:
+                        sx += nj[0]; sy += nj[1]; sz += nj[2]
+                length = (sx * sx + sy * sy + sz * sz) ** 0.5
+                if length > 1e-8:
+                    smoothed_tangents[i] = (sx / length, sy / length, sz / length, 1.0)
+                else:
+                    smoothed_tangents[i] = (ni[0], ni[1], ni[2], 1.0)
+        tangents = smoothed_tangents
     return {
         "vertices": vertices, "normals": normals, "tangents": tangents,
         "uv0": uv0, "uv1": uv1, "colors": colors, "skin": skin, "faces": faces,
@@ -819,10 +850,48 @@ class GMI_OT_import_weighted_reference(Operator):
             return {"CANCELLED"}
 
 
+def _transfer_color_attribute(context, target, reference):
+    """从参考身体把 COLOR 顶点属性按【最近顶点】拷贝到作者网格。
+
+    Gakumas 的顶点 COLOR 是逐顶点【打包位数据】(描边 VS / 主 VS 都 floor(v5*15.9375)
+    解包):它编码描边颜色 + 描边宽度等。这种打包数据【绝不能插值】——插值会把相邻
+    打包值混成无意义值,导致主 Pass 解包出错(裙子橙斑)。故用 vert_mapping="NEAREST"
+    直接拷贝最近原版顶点的精确打包值,不做任何混合。
+
+    若不传 COLOR(网格无该层),导出默认白 (1,1,1,1) → 描边解包成白色高光。
+    返回是否成功传递。
+    """
+    ref_color = reference.data.color_attributes.get("COLOR")
+    if not ref_color:
+        return False
+    dst = target.data.color_attributes.get("COLOR")
+    if dst is not None and dst.domain != "POINT":
+        target.data.color_attributes.remove(dst)
+        dst = None
+    if dst is None:
+        target.data.color_attributes.new(name="COLOR", type="FLOAT_COLOR", domain="POINT")
+
+    transfer = target.modifiers.new(name="GMI_传递配置档颜色", type="DATA_TRANSFER")
+    transfer.object = reference
+    transfer.use_vert_data = True
+    transfer.data_types_verts = {"COLOR_VERTEX"}
+    # 关键:NEAREST = 拷贝最近顶点的精确打包值，绝不插值（插值会毁掉打包数据）。
+    transfer.vert_mapping = "NEAREST"
+    transfer.layers_vcol_vert_select_src = "ALL"
+    transfer.layers_vcol_vert_select_dst = "NAME"
+    transfer.mix_mode = "REPLACE"
+    transfer.mix_factor = 1.0
+    context.view_layer.objects.active = target
+    target.select_set(True)
+    reference.select_set(False)
+    result = bpy.ops.object.modifier_apply(modifier=transfer.name)
+    return "FINISHED" in result
+
+
 class GMI_OT_transfer_profile_weights(Operator):
     bl_idname = "gmi.transfer_profile_weights"
-    bl_label = "从配置档传递权重"
-    bl_description = "用 HSKI 配置档插值权重替换当前选中网格的权重"
+    bl_label = "从配置档传递权重 + 颜色"
+    bl_description = "用 HSKI 配置档插值权重 + 按最近顶点拷贝 COLOR（COLOR 是打包数据，决定描边颜色，不可插值）"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -884,6 +953,13 @@ class GMI_OT_transfer_profile_weights(Operator):
                     target, reference, old_dominant
                 )
             zero, truncated = _normalize_profile_weights(target, maximum=4)
+            # 紧接着按【最近顶点】拷贝原版 COLOR(打包数据,决定描边颜色/宽度,不可插值)。
+            color_transferred = False
+            try:
+                color_transferred = _transfer_color_attribute(context, target, reference)
+            except Exception as color_exc:
+                self.report({"WARNING"}, f"COLOR 拷贝失败（描边会变白）：{color_exc}")
+            context.view_layer.objects.active = target
             risk = _write_weight_risk_attributes(
                 target, reference, context.scene.gmi_transfer_risk_distance, old_dominant
             )
@@ -900,13 +976,15 @@ class GMI_OT_transfer_profile_weights(Operator):
                 "truncatedWeightTotal": truncated,
                 "semanticCorrections": corrected,
                 "alignmentWarnings": alignment_warnings,
+                "colorTransferred": color_transferred,
                 **risk,
             }
             target["gmi_weight_report"] = json.dumps(report, separators=(",", ":"))
             if zero:
                 raise ValueError(f"仍有 {len(zero)} 个顶点没有权重")
+            color_note = "权重+COLOR(最近顶点)" if color_transferred else "权重（COLOR 未拷，描边会变白）"
             messages = [
-                f"已传递配置档权重；需复核 {risk['reviewVertices']} 个顶点，"
+                f"已传递配置档{color_note}；需复核 {risk['reviewVertices']} 个顶点，"
                 f"p95 {risk['p95Distance']:.4f} m，最大 {risk['maxDistance']:.4f} m"
             ]
             messages.extend(alignment_warnings)
@@ -989,6 +1067,8 @@ class GMI_OT_validate_mesh(Operator):
                 for required_uv in ("UV0", "UV1"):
                     if required_uv not in obj.data.uv_layers:
                         warnings.append(f"缺少 {required_uv}")
+                if obj.data.color_attributes.get("COLOR") is None:
+                    warnings.append("缺少 COLOR（导出默认白色 → 描边会变白色高光，请先“传递权重 + 颜色”）")
                 if errors:
                     self.report({"ERROR"}, "; ".join(errors))
                     return {"CANCELLED"}
