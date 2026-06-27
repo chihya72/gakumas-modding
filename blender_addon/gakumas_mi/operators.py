@@ -285,6 +285,25 @@ def _normalize_profile_weights(obj, maximum=4):
     return zero_vertices, truncated_total
 
 
+def _vertex_group_indices(obj, name):
+    group = obj.vertex_groups.get(name)
+    if not group:
+        return set()
+    return {
+        vertex.index
+        for vertex in obj.data.vertices
+        for item in vertex.groups
+        if item.group == group.index and item.weight > 0.0
+    }
+
+
+def _clear_outline_width(color):
+    rgba = [max(0, min(255, round(float(channel) * 255.0))) for channel in color]
+    # Outline VS decodes the low nibble of COLOR.b as extrusion width.
+    rgba[2] &= 0xF0
+    return tuple(channel / 255.0 for channel in rgba)
+
+
 def _apply_semantic_weight_correction(target, reference, old_dominant):
     reference_groups = {group.index: group.name for group in reference.vertex_groups}
     semantic_names = _semantic_bone_names(reference_groups.values())
@@ -434,6 +453,10 @@ def _inverse_skin_export_data(
     uv0_layer = mesh.uv_layers.get("UV0") or (uv_layers[0] if uv_layers else None)
     uv1_layer = mesh.uv_layers.get("UV1") or (uv_layers[1] if len(uv_layers) > 1 else uv0_layer)
     color_layer = mesh.color_attributes.get("COLOR")
+    no_outline_vertices = (
+        _vertex_group_indices(obj, "GMI_NO_OUTLINE")
+        | _vertex_group_indices(obj, "GMI_REVIEW_HIGH_RISK")
+    )
     world = obj.matrix_world
     normal_matrix = world.to_3x3().inverted().transposed()
     tangent_matrix = world.to_3x3()
@@ -445,6 +468,7 @@ def _inverse_skin_export_data(
         except RuntimeError:
             tangents_ready = False
     vertices, normals, tangents, uv0, uv1, colors, skin, faces = ([] for _ in range(8))
+    tangent_groups = {}
     truncated_weight = 0.0
     for polygon in mesh.polygons:
         face = []
@@ -474,6 +498,8 @@ def _inverse_skin_export_data(
                 color = tuple(float(value[channel]) for channel in range(4))
             else:
                 color = (1.0, 1.0, 1.0, 1.0)
+            if loop.vertex_index in no_outline_vertices:
+                color = _clear_outline_width(color)
             resolved = {}
             for item in source_vertex.groups:
                 if item.weight <= 0.0 or item.group not in group_binding:
@@ -490,9 +516,15 @@ def _inverse_skin_export_data(
                 ordered = ordered[:4]
             if not ordered:
                 raise ValueError(f"顶点 {loop.vertex_index} 没有可导出的配置档兼容权重")
-            face.append(len(vertices))
+            expanded_index = len(vertices)
+            face.append(expanded_index)
             vertices.append(position); normals.append(normal); tangents.append(tangent)
             uv0.append(tex0); uv1.append(tex1); colors.append(color); skin.append(ordered)
+            key = (
+                round(position[0], 5), round(position[1], 5), round(position[2], 5),
+                int(polygon.material_index),
+            )
+            tangent_groups.setdefault(key, []).append(expanded_index)
         faces.append(tuple(face))
     if unresolved and not fallback_bone:
         sample = ", ".join(sorted(unresolved)[:12])
@@ -500,15 +532,10 @@ def _inverse_skin_export_data(
     # 学马仕描边 VS(e0ceaa85)沿 TANGENT.xyz 挤出描边(NORMAL 通道不参与描边),
     # 且原版 TANGENT 并非 UV 切线,而是逐顶点"平滑法线"(同坐标顶点法线平均,cos≈0.6)。
     # 自定义网格若把 UV 切线写进 TANGENT,描边会沿表面方向挤出 → 整圈不可见。
-    # 故这里按位置合并法线得到平滑法线,写入 TANGENT.xyz(w=1,与原版一致),让描边外扩。
+    # 故这里按位置+材质合并法线得到平滑法线,写入 TANGENT.xyz(w=1,与原版一致),让描边外扩。
     if vertices:
-        from collections import defaultdict
-        position_groups = defaultdict(list)
-        for index, position in enumerate(vertices):
-            key = (round(position[0], 5), round(position[1], 5), round(position[2], 5))
-            position_groups[key].append(index)
         smoothed_tangents = list(tangents)
-        for indices in position_groups.values():
+        for indices in tangent_groups.values():
             if len(indices) == 1:
                 n = normals[indices[0]]
                 smoothed_tangents[indices[0]] = (n[0], n[1], n[2], 1.0)
@@ -520,7 +547,7 @@ def _inverse_skin_export_data(
                     nj = normals[j]
                     # 只平均与本顶点同朝向(点积>0)的法线。裙褶/薄壳/双面处同坐标的正反面
                     # 法线相反,若一起平均会相消成乱向 → 描边沿错向挤出 → 凸起毛刺(橙色破边)。
-                    if ni[0] * nj[0] + ni[1] * nj[1] + ni[2] * nj[2] > 0.0:
+                    if ni[0] * nj[0] + ni[1] * nj[1] + ni[2] * nj[2] > 0.35:
                         sx += nj[0]; sy += nj[1]; sz += nj[2]
                 length = (sx * sx + sy * sy + sz * sz) ** 0.5
                 if length > 1e-8:
