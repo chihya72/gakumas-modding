@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 5, 8),
+    "version": (0, 5, 9),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "导入学马仕参考模型，并导出绑定配置档的 3DMigoto 模组",
@@ -118,6 +118,16 @@ def register():
         ],
         default="DISABLE_ALL",
     )
+    bpy.types.Scene.gmi_vertex_color_mode = EnumProperty(
+        name="顶点 COLOR",
+        description="COLOR 是游戏打包材质参数；新拓扑衣服默认用常量，避免最近点拷贝把原版花纹/棕块参数带过来",
+        items=[
+            ("CONSTANT_CLOTH", "衣物常量", "所有顶点写入已验证的衣物常量 COLOR=(0,0,240,0)"),
+            ("COPY_REFERENCE", "拷原版", "从参考身体最近顶点拷贝原版 COLOR；只适合同拓扑或贴身替换"),
+            ("KEEP", "保留对象", "保留当前网格已有 COLOR"),
+        ],
+        default="CONSTANT_CLOTH",
+    )
     bpy.types.Scene.gmi_form_shading = BoolProperty(
         name="几何AO软化阴影", default=False,
         description="从网格几何烘 AO,只对凹陷缝隙(腋下/裆部/衣褶内)加深阴影;对光滑凸面(腿/裤袜)无效——硬光影分界要靠 toon 阈值",
@@ -156,7 +166,7 @@ def unregister():
         "gmi_transfer_risk_distance", "gmi_semantic_correction",
         "gmi_texture_key", "gmi_texture_file", "gmi_package_id",
         "gmi_base_color_file", "gmi_packed_mask_file", "gmi_shade_color_file",
-        "gmi_neutral_material", "gmi_outline_width_mode",
+        "gmi_neutral_material", "gmi_outline_width_mode", "gmi_vertex_color_mode",
         "gmi_form_shading", "gmi_form_strength",
         "gmi_package_name", "gmi_author",
     ):

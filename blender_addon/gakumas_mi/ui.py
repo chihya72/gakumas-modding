@@ -10,7 +10,7 @@ class GMI_PT_main(Panel):
     bl_category = "GakumasMI"
 
     def draw_header(self, context):
-        self.layout.label(text="v0.5.8")
+        self.layout.label(text="v0.5.9")
 
     def draw(self, context):
         scene = context.scene
@@ -60,6 +60,7 @@ class GMI_PT_main(Panel):
         box.label(text="作者模型蒙皮 / 转权")
         box.prop(scene, "gmi_transfer_risk_distance")
         box.prop(scene, "gmi_semantic_correction")
+        box.prop(scene, "gmi_vertex_color_mode")
         box.operator("gmi.transfer_profile_weights", text="从配置档传递权重 + 颜色", icon="MOD_DATA_TRANSFER")
         box.operator("gmi.select_high_risk_vertices", text="选择高风险顶点", icon="RESTRICT_SELECT_OFF")
         box.label(text="高风险/GMI_NO_OUTLINE 顶点导出时会关闭描边宽度", icon="ERROR")
@@ -74,6 +75,7 @@ class GMI_PT_main(Panel):
 
         mesh = layout.box()
         mesh.label(text="网格导出")
+        mesh.prop(scene, "gmi_vertex_color_mode")
         mesh.prop(scene, "gmi_outline_width_mode")
         mesh.operator("gmi.export_validated_mod", text="校验并导出模组", icon="EXPORT")
         mesh.operator("gmi.validate_mesh", text="校验网格", icon="CHECKMARK")

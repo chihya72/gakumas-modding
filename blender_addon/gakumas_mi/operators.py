@@ -47,6 +47,10 @@ from mathutils.kdtree import KDTree
 from . import core
 
 
+GMI_CLOTH_COLOR_RGBA8 = (0, 0, 240, 0)
+GMI_CLOTH_COLOR_FLOAT = tuple(channel / 255.0 for channel in GMI_CLOTH_COLOR_RGBA8)
+
+
 def _scene_paths(scene):
     profile_dir = bpy.path.abspath(scene.gmi_profile_dir)
     capture_dir = bpy.path.abspath(scene.gmi_capture_dir) if scene.gmi_capture_dir else None
@@ -304,6 +308,17 @@ def _clear_outline_width(color):
     return tuple(channel / 255.0 for channel in rgba)
 
 
+def _set_constant_color_attribute(target, color=GMI_CLOTH_COLOR_FLOAT):
+    dst = target.data.color_attributes.get("COLOR")
+    if dst is not None and dst.domain != "POINT":
+        target.data.color_attributes.remove(dst)
+        dst = None
+    if dst is None:
+        dst = target.data.color_attributes.new(name="COLOR", type="FLOAT_COLOR", domain="POINT")
+    dst.data.foreach_set("color", [value for _ in target.data.vertices for value in color])
+    return True
+
+
 def _apply_semantic_weight_correction(target, reference, old_dominant):
     reference_groups = {group.index: group.name for group in reference.vertex_groups}
     semantic_names = _semantic_bone_names(reference_groups.values())
@@ -386,7 +401,7 @@ def _write_weight_risk_attributes(target, reference, risk_distance, old_dominant
 
 def _inverse_skin_export_data(
     obj, bone_map, source_bind, remap=None, fallback_bone="", source_rig_weights=False,
-    outline_width_mode="DISABLE_ALL",
+    outline_width_mode="DISABLE_ALL", vertex_color_mode="CONSTANT_CLOTH",
 ):
     """Expand triangle loops, resolve groups and generate target->source bind corrections."""
     mesh = obj.data
@@ -495,7 +510,9 @@ def _inverse_skin_export_data(
                 tex1 = (float(value[0]), float(value[1]))
             else:
                 tex1 = tex0
-            if color_layer:
+            if vertex_color_mode == "CONSTANT_CLOTH":
+                color = GMI_CLOTH_COLOR_FLOAT
+            elif color_layer:
                 color_index = loop.vertex_index if color_layer.domain == "POINT" else loop_index
                 value = color_layer.data[color_index].color
                 color = tuple(float(value[channel]) for channel in range(4))
@@ -921,7 +938,7 @@ def _transfer_color_attribute(context, target, reference):
 class GMI_OT_transfer_profile_weights(Operator):
     bl_idname = "gmi.transfer_profile_weights"
     bl_label = "从配置档传递权重 + 颜色"
-    bl_description = "用 HSKI 配置档插值权重 + 按最近顶点拷贝 COLOR（COLOR 是打包数据，决定描边颜色，不可插值）"
+    bl_description = "用 HSKI 配置档插值权重，并按顶点 COLOR 策略写入游戏打包材质参数"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -983,12 +1000,15 @@ class GMI_OT_transfer_profile_weights(Operator):
                     target, reference, old_dominant
                 )
             zero, truncated = _normalize_profile_weights(target, maximum=4)
-            # 紧接着按【最近顶点】拷贝原版 COLOR(打包数据,决定描边颜色/宽度,不可插值)。
+            color_mode = context.scene.gmi_vertex_color_mode
             color_transferred = False
-            try:
-                color_transferred = _transfer_color_attribute(context, target, reference)
-            except Exception as color_exc:
-                self.report({"WARNING"}, f"COLOR 拷贝失败（描边会变白）：{color_exc}")
+            if color_mode == "CONSTANT_CLOTH":
+                color_transferred = _set_constant_color_attribute(target)
+            elif color_mode == "COPY_REFERENCE":
+                try:
+                    color_transferred = _transfer_color_attribute(context, target, reference)
+                except Exception as color_exc:
+                    self.report({"WARNING"}, f"COLOR 拷贝失败（将保留/默认 COLOR）：{color_exc}")
             context.view_layer.objects.active = target
             risk = _write_weight_risk_attributes(
                 target, reference, context.scene.gmi_transfer_risk_distance, old_dominant
@@ -1006,13 +1026,18 @@ class GMI_OT_transfer_profile_weights(Operator):
                 "truncatedWeightTotal": truncated,
                 "semanticCorrections": corrected,
                 "alignmentWarnings": alignment_warnings,
+                "colorMode": color_mode,
                 "colorTransferred": color_transferred,
                 **risk,
             }
             target["gmi_weight_report"] = json.dumps(report, separators=(",", ":"))
             if zero:
                 raise ValueError(f"仍有 {len(zero)} 个顶点没有权重")
-            color_note = "权重+COLOR(最近顶点)" if color_transferred else "权重（COLOR 未拷，描边会变白）"
+            color_note = {
+                "CONSTANT_CLOTH": "权重+COLOR(衣物常量)",
+                "COPY_REFERENCE": "权重+COLOR(最近顶点)" if color_transferred else "权重（COLOR 未拷）",
+                "KEEP": "权重（保留对象 COLOR）",
+            }.get(color_mode, "权重")
             messages = [
                 f"已传递配置档{color_note}；需复核 {risk['reviewVertices']} 个顶点，"
                 f"p95 {risk['p95Distance']:.4f} m，最大 {risk['maxDistance']:.4f} m"
@@ -1193,6 +1218,7 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                 obj, bone_map, source_bind, remap, scene.gmi_unmapped_bone_fallback.strip(),
                 source_rig_weights=bool(obj.get("gmi_profile_weights")),
                 outline_width_mode=scene.gmi_outline_width_mode,
+                vertex_color_mode=scene.gmi_vertex_color_mode,
             )
             known_textures = profile_set["textures"].get("textures", {})
             material_textures = {}
@@ -1223,6 +1249,7 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                 "truncatedWeightTotal": data["truncated_weight"],
                 "materialTextures": material_textures,
                 "outlineWidthMode": scene.gmi_outline_width_mode,
+                "vertexColorMode": scene.gmi_vertex_color_mode,
             })
             suffix = (
                 f"；祖先骨骼自动映射 {len(data['automatic_remap'])}，"
