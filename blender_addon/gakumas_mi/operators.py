@@ -47,7 +47,9 @@ from mathutils.kdtree import KDTree
 from . import core
 
 
-GMI_CLOTH_COLOR_RGBA8 = (0, 0, 240, 0)
+# COLOR.b low nibble drives outline extrusion width. 0xFF keeps the neutral
+# packed material class from 0.5.9 while restoring full outline width.
+GMI_CLOTH_COLOR_RGBA8 = (0, 0, 255, 0)
 GMI_CLOTH_COLOR_FLOAT = tuple(channel / 255.0 for channel in GMI_CLOTH_COLOR_RGBA8)
 
 
@@ -319,6 +321,22 @@ def _set_constant_color_attribute(target, color=GMI_CLOTH_COLOR_FLOAT):
     return True
 
 
+def _preset_color_float(preset):
+    rgba = (preset or {}).get("color", {}).get("rgba", GMI_CLOTH_COLOR_RGBA8)
+    if len(rgba) != 4:
+        rgba = GMI_CLOTH_COLOR_RGBA8
+    return tuple(max(0, min(255, int(channel))) / 255.0 for channel in rgba)
+
+
+def _material_slot_color_map(obj):
+    presets = core.load_material_presets()
+    result = {}
+    for index, slot in enumerate(obj.material_slots):
+        key = getattr(slot.material, "gmi_material_class", "cloth") if slot.material else "cloth"
+        result[index] = _preset_color_float(presets.get(key) or presets.get("cloth"))
+    return result
+
+
 def _apply_semantic_weight_correction(target, reference, old_dominant):
     reference_groups = {group.index: group.name for group in reference.vertex_groups}
     semantic_names = _semantic_bone_names(reference_groups.values())
@@ -401,7 +419,8 @@ def _write_weight_risk_attributes(target, reference, risk_distance, old_dominant
 
 def _inverse_skin_export_data(
     obj, bone_map, source_bind, remap=None, fallback_bone="", source_rig_weights=False,
-    outline_width_mode="DISABLE_ALL", vertex_color_mode="CONSTANT_CLOTH",
+    outline_width_mode="DISABLE_ALL", vertex_color_mode="MATERIAL_PRESET",
+    color_per_slot=None,
 ):
     """Expand triangle loops, resolve groups and generate target->source bind corrections."""
     mesh = obj.data
@@ -487,6 +506,7 @@ def _inverse_skin_export_data(
             tangents_ready = False
     vertices, normals, tangents, uv0, uv1, colors, skin, faces = ([] for _ in range(8))
     tangent_groups = {}
+    color_per_slot = color_per_slot or {}
     truncated_weight = 0.0
     for polygon in mesh.polygons:
         face = []
@@ -510,7 +530,9 @@ def _inverse_skin_export_data(
                 tex1 = (float(value[0]), float(value[1]))
             else:
                 tex1 = tex0
-            if vertex_color_mode == "CONSTANT_CLOTH":
+            if vertex_color_mode == "MATERIAL_PRESET":
+                color = color_per_slot.get(int(polygon.material_index), GMI_CLOTH_COLOR_FLOAT)
+            elif vertex_color_mode == "CONSTANT_CLOTH":
                 color = GMI_CLOTH_COLOR_FLOAT
             elif color_layer:
                 color_index = loop.vertex_index if color_layer.domain == "POINT" else loop_index
@@ -1002,7 +1024,7 @@ class GMI_OT_transfer_profile_weights(Operator):
             zero, truncated = _normalize_profile_weights(target, maximum=4)
             color_mode = context.scene.gmi_vertex_color_mode
             color_transferred = False
-            if color_mode == "CONSTANT_CLOTH":
+            if color_mode in {"MATERIAL_PRESET", "CONSTANT_CLOTH"}:
                 color_transferred = _set_constant_color_attribute(target)
             elif color_mode == "COPY_REFERENCE":
                 try:
@@ -1034,6 +1056,7 @@ class GMI_OT_transfer_profile_weights(Operator):
             if zero:
                 raise ValueError(f"仍有 {len(zero)} 个顶点没有权重")
             color_note = {
+                "MATERIAL_PRESET": "权重+COLOR(按材质预设导出)",
                 "CONSTANT_CLOTH": "权重+COLOR(衣物常量)",
                 "COPY_REFERENCE": "权重+COLOR(最近顶点)" if color_transferred else "权重（COLOR 未拷）",
                 "KEEP": "权重（保留对象 COLOR）",
@@ -1219,6 +1242,7 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                 source_rig_weights=bool(obj.get("gmi_profile_weights")),
                 outline_width_mode=scene.gmi_outline_width_mode,
                 vertex_color_mode=scene.gmi_vertex_color_mode,
+                color_per_slot=_material_slot_color_map(obj),
             )
             known_textures = profile_set["textures"].get("textures", {})
             material_textures = {}
@@ -1250,6 +1274,10 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                 "materialTextures": material_textures,
                 "outlineWidthMode": scene.gmi_outline_width_mode,
                 "vertexColorMode": scene.gmi_vertex_color_mode,
+                "vertexColorByMaterialSlot": {
+                    str(slot): [round(channel * 255) for channel in color]
+                    for slot, color in _material_slot_color_map(obj).items()
+                },
             })
             suffix = (
                 f"；祖先骨骼自动映射 {len(data['automatic_remap'])}，"

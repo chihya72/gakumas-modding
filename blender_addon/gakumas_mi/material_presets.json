@@ -14,42 +14,49 @@
   "presets": {
     "skin": {
       "label": "皮肤",
+      "color": { "rgba": [81, 0, 15, 144], "source": "FrameAnalysis-2026-06-27-031022 body VB1 common warm skin/cloth cluster" },
       "t1": { "toonShadowThreshold": 0.45, "smoothness": 0.13, "metallic": 0.0, "ao": 0.0 },
       "t4": { "fixedColor": [201, 140, 104], "darken": 0.48, "hueShiftDeg": -6, "satScale": 1.15, "alpha": 0.6 },
       "confidence": "empirical (泳装实测:底色饱和桃 0.36、shadeColor 为固定饱和珊瑚 (201,140,104)/sat0.47;游戏皮肤阴影的浓珊瑚来自 t4 而非压暗底色,故用固定珊瑚色+alpha0.6,toon 0.45 给出明显阴影形状。smoothness 0.13 哑光实测)"
     },
     "cloth": {
       "label": "布料",
+      "color": { "rgba": [0, 19, 15, 144], "source": "FrameAnalysis-2026-06-27-031022 body VB1 common blue/gray cloth cluster" },
       "t1": { "toonShadowThreshold": 0.38, "smoothness": 0.40, "metallic": 0.0, "ao": 0.0 },
       "t4": { "darken": 0.45, "hueShiftDeg": -4, "satScale": 1.10, "alpha": 0.12 },
       "confidence": "empirical (皮鞋帧 183917 深藏青制服/针织袜区实测:smoothG≈0.38 哑光、toon≈0.35、metallic/AO 0、t4 alpha≈0。通用布料,袜子也归此类,不按颜色区分)"
     },
     "leather_plastic": {
       "label": "皮革/塑料(亮面)",
+      "color": { "rgba": [0, 28, 15, 144], "source": "FrameAnalysis-2026-06-27-031022 body VB1 glossy accessory/plastic-like cluster" },
       "t1": { "toonShadowThreshold": 0.50, "smoothness": 0.70, "metallic": 0.0, "ao": 0.54 },
       "t4": { "darken": 0.59, "hueShiftDeg": -4, "satScale": 1.10, "alpha": 0.20 },
       "confidence": "empirical (smoothness≈0.70、ao≈0.54、darken≈0.59 实测,信号干净)"
     },
     "leather_shoe": {
       "label": "皮鞋/哑光皮革",
+      "color": { "rgba": [33, 6, 15, 0], "source": "FrameAnalysis-2026-06-27-031022 body VB1 brown leather/shoe cluster" },
       "t1": { "toonShadowThreshold": 0.42, "smoothness": 0.38, "metallic": 0.0, "ao": 0.10 },
       "t4": { "darken": 0.45, "hueShiftDeg": 0, "satScale": 1.0, "alpha": 0.0 },
       "confidence": "empirical (皮鞋抓帧 183917 深藏青皮鞋区实测:smoothG≈0.38 哑光软光泽、metallic 0、AO 低、toon≈0.4、t4 alpha 0。比 leather_plastic(0.70 亮面)哑很多,符合学马皮鞋质感)"
     },
     "metal": {
       "label": "金属",
+      "color": { "rgba": [17, 16, 15, 144], "source": "FrameAnalysis-2026-06-27-031022 body VB1 small accessory/metal cluster" },
       "t1": { "toonShadowThreshold": 0.34, "smoothness": 0.73, "metallic": 0.75, "ao": 0.57 },
       "t4": { "darken": 0.32, "hueShiftDeg": 0, "satScale": 1.0, "alpha": 0.20 },
       "confidence": "empirical (metallic≈0.75、smoothness≈0.73、ao≈0.57、darken≈0.32 实测,信号干净)"
     },
     "hair": {
       "label": "头发",
+      "color": { "rgba": [0, 31, 15, 144], "source": "FrameAnalysis-2026-06-27-031022 body/hair-adjacent dark cluster; provisional" },
       "t1": { "toonShadowThreshold": 0.45, "smoothness": 0.60, "metallic": 0.0, "ao": 0.0 },
       "t4": { "darken": 0.55, "hueShiftDeg": -6, "satScale": 1.15, "alpha": 0.40 },
       "confidence": "domain (本帧未单独取头发 draw,取卡通发丝常规:中高光滑、暖阴影)"
     },
     "neutral": {
       "label": "中性(等于旧行为)",
+      "color": { "rgba": [0, 0, 255, 0], "source": "diagnostic neutral: removes copied COLOR artifacts while keeping outline width" },
       "t1": { "toonShadowThreshold": 1.0, "smoothness": 0.0, "metallic": 0.0, "ao": 1.0 },
       "t4": { "darken": 0.50, "hueShiftDeg": 0, "satScale": 1.0, "alpha": 0.0 },
       "confidence": "等价 NEUTRAL_PACKED_MASK(255,0,0,255)/NEUTRAL_SHADE_COLOR(.,.,.,0)"
