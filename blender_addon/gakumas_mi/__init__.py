@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 5, 11),
+    "version": (0, 5, 12),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "导入学马仕参考模型，并导出绑定配置档的 3DMigoto 模组",
@@ -122,12 +122,12 @@ def register():
         name="顶点 COLOR",
         description="COLOR 是游戏打包材质参数；新拓扑衣服默认用常量，避免最近点拷贝把原版花纹/棕块参数带过来",
         items=[
-            ("MATERIAL_PRESET", "按材质预设", "按材质槽的材质类型写入预设表里的原版 COLOR"),
             ("CONSTANT_CLOTH", "衣物常量", "所有顶点写入中性衣物 COLOR=(0,0,255,0)，保留描边宽度"),
+            ("MATERIAL_PRESET", "按材质预设(实验)", "按材质槽的材质类型写入预设表里的原版 COLOR；要求面材质分配完全正确"),
             ("COPY_REFERENCE", "拷原版", "从参考身体最近顶点拷贝原版 COLOR；只适合同拓扑或贴身替换"),
             ("KEEP", "保留对象", "保留当前网格已有 COLOR"),
         ],
-        default="MATERIAL_PRESET",
+        default="CONSTANT_CLOTH",
     )
     bpy.types.Scene.gmi_form_shading = BoolProperty(
         name="几何AO软化阴影", default=False,
