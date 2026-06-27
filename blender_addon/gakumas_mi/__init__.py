@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 5, 7),
+    "version": (0, 5, 8),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "导入学马仕参考模型，并导出绑定配置档的 3DMigoto 模组",
@@ -108,6 +108,16 @@ def register():
         name="中性 t1/t4", default=True,
         description="未提供 t1/t4 时自动绑定中性贴图，盖掉游戏原版遮罩/阴影对新贴图的干扰",
     )
+    bpy.types.Scene.gmi_outline_width_mode = EnumProperty(
+        name="描边宽度",
+        description="控制导出时 COLOR.b 低 4 bit 的描边挤出宽度；新拓扑裙子/披风异常时先用关闭全部诊断",
+        items=[
+            ("DISABLE_ALL", "关闭全部", "清掉所有顶点的描边宽度，优先排除描边壳异常"),
+            ("RISK_ONLY", "仅风险顶点", "只清掉 GMI_REVIEW_HIGH_RISK 和 GMI_NO_OUTLINE 顶点"),
+            ("KEEP", "保留", "完整保留 COLOR 中的描边宽度"),
+        ],
+        default="DISABLE_ALL",
+    )
     bpy.types.Scene.gmi_form_shading = BoolProperty(
         name="几何AO软化阴影", default=False,
         description="从网格几何烘 AO,只对凹陷缝隙(腋下/裆部/衣褶内)加深阴影;对光滑凸面(腿/裤袜)无效——硬光影分界要靠 toon 阈值",
@@ -146,7 +156,7 @@ def unregister():
         "gmi_transfer_risk_distance", "gmi_semantic_correction",
         "gmi_texture_key", "gmi_texture_file", "gmi_package_id",
         "gmi_base_color_file", "gmi_packed_mask_file", "gmi_shade_color_file",
-        "gmi_neutral_material",
+        "gmi_neutral_material", "gmi_outline_width_mode",
         "gmi_form_shading", "gmi_form_strength",
         "gmi_package_name", "gmi_author",
     ):

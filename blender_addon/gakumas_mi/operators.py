@@ -386,6 +386,7 @@ def _write_weight_risk_attributes(target, reference, risk_distance, old_dominant
 
 def _inverse_skin_export_data(
     obj, bone_map, source_bind, remap=None, fallback_bone="", source_rig_weights=False,
+    outline_width_mode="DISABLE_ALL",
 ):
     """Expand triangle loops, resolve groups and generate target->source bind corrections."""
     mesh = obj.data
@@ -453,10 +454,12 @@ def _inverse_skin_export_data(
     uv0_layer = mesh.uv_layers.get("UV0") or (uv_layers[0] if uv_layers else None)
     uv1_layer = mesh.uv_layers.get("UV1") or (uv_layers[1] if len(uv_layers) > 1 else uv0_layer)
     color_layer = mesh.color_attributes.get("COLOR")
-    no_outline_vertices = (
-        _vertex_group_indices(obj, "GMI_NO_OUTLINE")
-        | _vertex_group_indices(obj, "GMI_REVIEW_HIGH_RISK")
-    )
+    no_outline_vertices = set()
+    if outline_width_mode == "RISK_ONLY":
+        no_outline_vertices = (
+            _vertex_group_indices(obj, "GMI_NO_OUTLINE")
+            | _vertex_group_indices(obj, "GMI_REVIEW_HIGH_RISK")
+        )
     world = obj.matrix_world
     normal_matrix = world.to_3x3().inverted().transposed()
     tangent_matrix = world.to_3x3()
@@ -498,7 +501,7 @@ def _inverse_skin_export_data(
                 color = tuple(float(value[channel]) for channel in range(4))
             else:
                 color = (1.0, 1.0, 1.0, 1.0)
-            if loop.vertex_index in no_outline_vertices:
+            if outline_width_mode == "DISABLE_ALL" or loop.vertex_index in no_outline_vertices:
                 color = _clear_outline_width(color)
             resolved = {}
             for item in source_vertex.groups:
@@ -1189,6 +1192,7 @@ class GMI_OT_export_inverse_skin_mod(Operator):
             data = _inverse_skin_export_data(
                 obj, bone_map, source_bind, remap, scene.gmi_unmapped_bone_fallback.strip(),
                 source_rig_weights=bool(obj.get("gmi_profile_weights")),
+                outline_width_mode=scene.gmi_outline_width_mode,
             )
             known_textures = profile_set["textures"].get("textures", {})
             material_textures = {}
@@ -1218,6 +1222,7 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                 "unresolvedGroups": data["unresolved"],
                 "truncatedWeightTotal": data["truncated_weight"],
                 "materialTextures": material_textures,
+                "outlineWidthMode": scene.gmi_outline_width_mode,
             })
             suffix = (
                 f"；祖先骨骼自动映射 {len(data['automatic_remap'])}，"

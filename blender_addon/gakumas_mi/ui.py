@@ -10,7 +10,7 @@ class GMI_PT_main(Panel):
     bl_category = "GakumasMI"
 
     def draw_header(self, context):
-        self.layout.label(text="v0.4.8")
+        self.layout.label(text="v0.5.8")
 
     def draw(self, context):
         scene = context.scene
@@ -74,6 +74,7 @@ class GMI_PT_main(Panel):
 
         mesh = layout.box()
         mesh.label(text="网格导出")
+        mesh.prop(scene, "gmi_outline_width_mode")
         mesh.operator("gmi.export_validated_mod", text="校验并导出模组", icon="EXPORT")
         mesh.operator("gmi.validate_mesh", text="校验网格", icon="CHECKMARK")
         mesh.operator("gmi.export_inverse_skin_mod", text="导出带权重 GPU 模组", icon="ARMATURE_DATA")
