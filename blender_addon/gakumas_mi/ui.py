@@ -10,7 +10,7 @@ class GMI_PT_main(Panel):
     bl_category = "GakumasMI"
 
     def draw_header(self, context):
-        self.layout.label(text="v0.5.13")
+        self.layout.label(text="v0.5.50")
 
     def draw(self, context):
         scene = context.scene
@@ -59,8 +59,7 @@ class GMI_PT_main(Panel):
         box = layout.box()
         box.label(text="作者模型蒙皮 / 转权")
         box.prop(scene, "gmi_transfer_risk_distance")
-        box.prop(scene, "gmi_semantic_correction")
-        box.prop(scene, "gmi_vertex_color_mode")
+        box.prop(scene, "gmi_enable_native_color_transfer")
         box.operator("gmi.transfer_profile_weights", text="从配置档传递权重 + 颜色", icon="MOD_DATA_TRANSFER")
         box.operator("gmi.select_high_risk_vertices", text="选择高风险顶点", icon="RESTRICT_SELECT_OFF")
         box.label(text="高风险/GMI_NO_OUTLINE 顶点导出时会关闭描边宽度", icon="ERROR")
@@ -76,6 +75,7 @@ class GMI_PT_main(Panel):
         mesh = layout.box()
         mesh.label(text="网格导出")
         mesh.prop(scene, "gmi_vertex_color_mode")
+        mesh.label(text="「描边颜色=取自基础色」需在材质模板填好基础色 t0", icon="INFO")
         mesh.prop(scene, "gmi_outline_width_mode")
         mesh.operator("gmi.export_validated_mod", text="校验并导出模组", icon="EXPORT")
         mesh.operator("gmi.validate_mesh", text="校验网格", icon="CHECKMARK")
@@ -85,6 +85,8 @@ class GMI_PT_main(Panel):
         material = layout.box()
         material.label(text="身体材质（贴图可填 PNG 或 DDS）")
         material.prop(scene, "gmi_base_color_file")
+        material.prop(scene, "gmi_opacity_texture_file")
+        material.label(text="留空则透明材质使用基础色 t0；仅需单独 RGBA/alpha 图时填写", icon="INFO")
         material.prop(scene, "gmi_packed_mask_file")
         material.prop(scene, "gmi_shade_color_file")
         material.prop(scene, "gmi_neutral_material")
@@ -93,22 +95,23 @@ class GMI_PT_main(Panel):
         material.operator("gmi.create_body_material_template", text="创建身体材质模板", icon="MATERIAL")
 
         smart = layout.box()
-        smart.label(text="分材质烘焙 t1/t4（比中性更接近游戏观感）")
+        smart.label(text="分材质烘焙 t1/t4")
         obj = bpy.context.active_object
         if obj and obj.type == "MESH" and obj.material_slots:
             for slot in obj.material_slots:
                 if slot.material is not None:
                     row = smart.row(align=True)
                     row.prop(slot.material, "gmi_material_class", text=slot.material.name)
+                    row.prop(slot.material, "gmi_alpha_mode", text="")
                     row.prop(slot.material, "gmi_material_toon", text="明暗")
                     row.prop(slot.material, "gmi_material_shade", text="阴影色")
         else:
             smart.label(text="选中已分材质的网格后，逐材质设「材质类型」", icon="INFO")
-        smart.label(text="需先填上方「基础色 t0」(PNG)；t4 从它逐材质派生", icon="INFO")
+        smart.label(text="明暗：-1 用预设；调低阴影更大更暗，调高受光更多更亮", icon="INFO")
+        smart.label(text="阴影色：-1 用预设；调高阴影区染色更浓，调低更淡", icon="INFO")
         smart.prop(scene, "gmi_form_shading")
         if scene.gmi_form_shading:
             smart.prop(scene, "gmi_form_strength")
-            smart.label(text="圆柱体(腿/裤袜)出硬光影分界时开此项；偏硬调高、偏脏调低", icon="INFO")
         smart.operator("gmi.bake_material_maps", text="按材质烘焙 t1/t4", icon="NODE_MATERIAL")
 
         texture = layout.box()
