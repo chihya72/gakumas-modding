@@ -647,7 +647,7 @@ Profile 更新可以修复：
 - [x] 成功隐藏一个独立部件（花海咲季 `cstm-0000` 发饰 PoC）
 - [x] 成功替换一张服装贴图（Body Base Color `950989c5` 换色 PoC 已实机验证）
 - [x] 成功替换一个同骨骼 Mesh（Body `4d5dfe7b` 索引级动画 Mesh PoC 已实机验证，骨骼动画正常）
-- [x] 建立 Profile / Manifest v1 规范、资源命名规则与自动校验脚本（`spec/`、`tools/validate-packages.ps1`）
+- [x] 建立 Profile / Manifest v1 规范与资源命名规则（早期的 `spec/` JSON Schema 与 `validate-packages.ps1` 校验器已随实现演进移除）
 - [x] 完成 Blender 插件 `0.1.0`（Blender 4.2 LTS：参考 Mesh 导入、索引 Mesh 验证/导出、DDS 贴图包导出）
 - [x] 定位上游 Bone Index / Bone Weight / Bind Pose（`Geo_Body`：152 根加权骨骼，Blender 插件 0.2 已支持加权参考导入）
 - [x] 对照 EFMI / GIMI / WWMI / SRMI 的真实蒙皮切入点（见 `research/archive/reference-framework-comparison.md`；EFMI 官方同样不支持 CPU-posed 组件 VB 换模）

@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CORE_PATH = ROOT / "blender_addon" / "gakumas_mi" / "core.py"
+CORE_PATH = ROOT / "gakumas_mi" / "core.py"
 
 
 def load_core():

@@ -9,12 +9,14 @@ checkpoints/
 # Public repository safety: keep generated release packages local for now.
 dist/
 
-# Third-party 3DMigoto binary drops — keep config/ShaderFixes in git, not the binaries.
+# 3DMigoto binary drops — keep config/ShaderFixes in git. The self-compiled
+# d3d11.dll (GakumasMI runtime) IS committed; third-party redistributables are not.
 3Dmigoto_v1.4.9/
-3Dmigoto-MI/*.dll
-3Dmigoto-MI/ShaderCache/
-3Dmigoto-MI/Mods/*
-!3Dmigoto-MI/Mods/README.md
+3dmigoto-gkms/*.dll
+!3dmigoto-gkms/d3d11.dll
+3dmigoto-gkms/ShaderCache/
+3dmigoto-gkms/Mods/*
+!3dmigoto-gkms/Mods/README.md
 
 # Extracted or derived game assets must not be pushed to the public repository.
 all_body/
@@ -30,7 +32,7 @@ mdl_chr_ttmr-cstm-0119_body/
 profiles/**/Reference/
 profiles/**/Buffers/
 profiles/**/body-regions.json
-blender_addon/gakumas_mi/resources/assetstudio-body-json/
+gakumas_mi/resources/assetstudio-body-json/
 
 # Python/Blender caches.
 __pycache__/

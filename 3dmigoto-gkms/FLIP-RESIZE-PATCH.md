@@ -71,7 +71,7 @@ resize 失败 → swap chain 卡在旧尺寸 → 游戏按新尺寸渲染到错�
   /p:WindowsTargetPlatformVersion=10.0.26100.0 /p:PlatformToolset=v143
 ```
 
-产出:`builds\x64\Release\d3d11.dll` → 复制到游戏目录(及本仓库 `3Dmigoto-MI/`)。
+产出:`builds\x64\Release\d3d11.dll` → 复制到游戏目录(及本仓库 `3dmigoto-gkms/`)。
 
 ## 验证
 

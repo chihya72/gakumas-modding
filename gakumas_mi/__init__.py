@@ -33,7 +33,7 @@ def _default_profile_dir():
     bundled = Path(__file__).resolve().parent / "profiles" / "hski-cstm-0000"
     if bundled.is_dir():
         return str(bundled)
-    development = Path(__file__).resolve().parents[2] / "profiles" / "hski-cstm-0000"
+    development = Path(__file__).resolve().parents[1] / "profiles" / "hski-cstm-0000"
     return str(development) if development.is_dir() else ""
 
 
@@ -41,7 +41,7 @@ def _default_body_json_dir():
     bundled = Path(__file__).resolve().parent / "resources" / "assetstudio-body-json"
     if bundled.is_dir():
         return str(bundled)
-    development = Path(__file__).resolve().parents[2] / "build" / "assetstudio-body-json"
+    development = Path(__file__).resolve().parents[1] / "build" / "assetstudio-body-json"
     return str(development) if development.is_dir() else ""
 
 

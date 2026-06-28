@@ -6,7 +6,7 @@ import bmesh
 
 
 ROOT = Path(r"D:\GIT\gakumas-modding")
-sys.path.insert(0, str(ROOT / "blender_addon"))
+sys.path.insert(0, str(ROOT))
 
 import gakumas_mi
 

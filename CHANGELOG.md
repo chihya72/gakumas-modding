@@ -1,6 +1,6 @@
 # GakumasMI Blender 插件更新日志
 
-版本号见 [`blender_addon/gakumas_mi/__init__.py`](blender_addon/gakumas_mi/__init__.py) 的 `bl_info["version"]`。
+版本号见 [`gakumas_mi/__init__.py`](gakumas_mi/__init__.py) 的 `bl_info["version"]`。
 发布包用 `python tools/package_blender_addon.py` 生成（代码版不含 Body JSON 资源库；
 加 `--with-body-lib` 可一并打包）。本地包不提交到公开仓库。
 

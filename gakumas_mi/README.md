@@ -248,7 +248,7 @@ HSKI Body 已验证的身体贴图语义：
 
 把自定义 atlas（尤其 MMD 等自带 UV、无游戏 t1/t4 来源的模型）按 **Blender 材质槽**
 逐材质烘焙出贴合游戏观感的 t1/t4，比平铺「中性」更接近原作。预设数值由实机抓帧
-逐材质实测得来，存放于 [`gakumas_mi/material_presets.json`](gakumas_mi/material_presets.json)。
+逐材质实测得来，存放于 [`material_presets.json`](material_presets.json)。
 
 用法：
 

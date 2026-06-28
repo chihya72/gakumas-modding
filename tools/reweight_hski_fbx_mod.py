@@ -23,7 +23,7 @@ fbx, profile, mesh_json, skeleton_json, output = map(
 package_id = args[5]
 texture = Path(args[6]).resolve()
 repo = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(repo / "blender_addon"))
+sys.path.insert(0, str(repo))
 import gakumas_mi  # noqa: E402
 from gakumas_mi import core, operators  # noqa: E402
 

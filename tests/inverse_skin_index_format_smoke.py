@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
-    "gmi_core", ROOT / "blender_addon" / "gakumas_mi" / "core.py"
+    "gmi_core", ROOT / "gakumas_mi" / "core.py"
 )
 core = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(core)

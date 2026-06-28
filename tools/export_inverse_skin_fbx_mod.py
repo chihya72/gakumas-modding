@@ -19,7 +19,7 @@ source, profile, skeleton, output = map(lambda value: Path(value).resolve(), arg
 package_id, fallback = args[4:6]
 remap_file = Path(args[6]).resolve() if len(args) > 6 and args[6] else None
 repo = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(repo / "blender_addon"))
+sys.path.insert(0, str(repo))
 import gakumas_mi  # noqa: E402
 
 

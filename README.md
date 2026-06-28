@@ -60,7 +60,7 @@ Unity、不制作 AssetBundle、不手写 3DMigoto 配置**。
 ## 2. 仓库结构
 
 ```text
-blender_addon/gakumas_mi/   作者用 Blender 插件（导入 / 转权 / 校验 / 导出）
+gakumas_mi/                 作者用 Blender 插件（导入 / 转权 / 校验 / 导出）
   ├─ core.py                数据读写、缓冲打包、配置档解析
   ├─ operators.py           Blender 操作器
   ├─ ui.py                  侧边栏面板
@@ -68,14 +68,14 @@ blender_addon/gakumas_mi/   作者用 Blender 插件（导入 / 转权 / 校验 
 experiments/inverse-skin/   逆解蒙皮的原始验证 Compute Shader（参考）
 tools/                      离线脚本：AssetStudio 批量导出、逆算子构建、配置档抽取、审计、打包
 profiles/                   各角色 / 服装的配置档（drawcall / 材质 / 贴图映射）
-spec/                       配置档与 manifest 的 JSON Schema
 tests/                      冒烟测试与数据契约测试
 research/                   研究记录与路线（含已排除路线的历史证据）
+3dmigoto-gkms/              玩家侧运行时（自编译 d3d11.dll + d3dx.ini + ShaderFixes）
 ```
 
 仅本地、不入库的工作数据（已在 `.gitignore` 中）：
 `all_body/`（游戏资源）、`build/`（AssetStudio 导出）、`dist/`、`mods/`、
-`checkpoints/`、`blender_addon/gakumas_mi/resources/assetstudio-body-json/`。
+`checkpoints/`、`gakumas_mi/resources/assetstudio-body-json/`。
 
 ---
 
@@ -90,7 +90,7 @@ research/                   研究记录与路线（含已排除路线的历史�
 → 校验并导出模组
 ```
 
-详见 [`blender_addon/README.md`](blender_addon/README.md)。
+详见 [`gakumas_mi/README.md`](gakumas_mi/README.md)。
 
 ### 核心维护者侧（建配置档）
 
@@ -115,9 +115,8 @@ tools/build_inverse_skin_operator.py         → 由 bind + 权重生成逆算�
 | [CHANGELOG.md](CHANGELOG.md) | 插件版本变更日志 |
 | [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) | 当前进度、完成度、能力对比、后续计划（**最新状态以此为准**） |
 | [GakumasMI_开发路线_当前草案.md](GakumasMI_开发路线_当前草案.md) | 总体产品架构与愿景 |
-| [blender_addon/README.md](blender_addon/README.md) | 作者插件：安装与一键工作流 |
-| [3Dmigoto-MI/README.md](3Dmigoto-MI/README.md) | 运行时：安装方法与按键说明 |
-| [spec/README.md](spec/README.md) | 配置档 / manifest 的 JSON Schema |
+| [gakumas_mi/README.md](gakumas_mi/README.md) | 作者插件：安装与一键工作流 |
+| [3dmigoto-gkms/README.md](3dmigoto-gkms/README.md) | 运行时：安装方法与按键说明 |
 | [research/inverse-skin-matrix-recovery.md](research/inverse-skin-matrix-recovery.md) | 逆解矩阵方案与游戏内验证报告 |
 | [research/transparent-material-status.md](research/transparent-material-status.md) | 透明材质当前策略与结论 |
 | [research/color-scan-20260627-091033.md](research/color-scan-20260627-091033.md) | 顶点 COLOR / 描边安全族 |

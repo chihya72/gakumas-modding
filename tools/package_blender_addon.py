@@ -18,7 +18,7 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ADDON_DIR = ROOT / "blender_addon" / "gakumas_mi"
+ADDON_DIR = ROOT / "gakumas_mi"
 DIST_DIR = ROOT / "dist"
 
 

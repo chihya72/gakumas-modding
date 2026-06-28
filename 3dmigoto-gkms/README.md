@@ -21,9 +21,9 @@ mod 注入游戏渲染、并运行逆解蒙皮 Compute Shader。
 
 然后用 `-force-d3d11` 启动游戏即可。
 
-> 源码仓库不含 DLL(第三方二进制 + 自编译产物,均 gitignore)。`nvapi64.dll`、
-> `d3dcompiler_47.dll` 可从 3DMigoto v1.4.9 发行版或可工作的游戏目录补齐;但
-> **`d3d11.dll` 必须用本仓库的补丁版**(官方版会犯横竖屏切换 bug,见
+> 仓库**已包含自编译的补丁版 `d3d11.dll`**(直接可用);第三方 `nvapi64.dll`、
+> `d3dcompiler_47.dll` 不入库,可从 3DMigoto v1.4.9 发行版或可工作的游戏目录补齐。
+> **务必使用本仓库的 `d3d11.dll`**——官方版会犯横竖屏切换 bug(见
 > [`FLIP-RESIZE-PATCH.md`](FLIP-RESIZE-PATCH.md))。发布 zip 里已带好补丁版三件套。
 
 ## 用法
@@ -50,6 +50,6 @@ mod 注入游戏渲染、并运行逆解蒙皮 Compute Shader。
 
 ## 和项目其它部分的关系
 
-- 作者用 [`../blender_addon`](../blender_addon) 的插件导出 mod → 放进本目录 `Mods/`;
+- 作者用 [`../gakumas_mi`](../gakumas_mi) 的插件导出 mod → 放进本目录 `Mods/`;
 - mod 内的 Compute Shader 由本运行时执行(逆解每帧矩阵 + 重蒙皮);
 - 整体数据流见 [`../README.md`](../README.md)。
