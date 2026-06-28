@@ -22,7 +22,7 @@
 | 蒙皮转权（作者模型 → 配置档骨架） | ~75% | 全身最近表面传权重稳定、自动限四权重/归一化、风险标记。手指/宽袖/裙摆仍需人工复核，缺可视化精修工具。 |
 | 贴图 / 材质（t0 自动 DDS、分材质 t1/t4 烘焙、中性、COLOR/描边） | ~80% | t0/t1/t4 通道语义已实机实测；分材质预设由抓帧标定。缺多套服装持续校准、PNG→DDS 多材质 selector。 |
 | 透明材质 | ~50% | 保守路径：A=0 镂空干净 + 投影/遮挡正常；半透明仅在已有 coverage 上可靠。真正伸出轮廓外的前向半透明未做（需窄触发点）。 |
-| 健壮性 / 回归测试 | ~55% | 已有数据契约审计（60/60）与若干冒烟测试；缺 GPU 数值误差 fixture、shader 编译产物、端到端导出回归。 |
+| 健壮性 / 回归测试 | ~65% | 数据契约审计（60/60）+ CI 跑的 buffer 打包契约、mod.ini 契约、抓帧抽取等回归（见 P0）；仍缺 GPU 数值误差 fixture（依赖本地抓帧）。 |
 | 产品化（多组件 / Mod Manager / 发布） | ~40% | 仅 HSKI Body 单组件主线；脸/头发/饰品、Shape Key、LOD、Mod Manager 未做。 |
 
 **已确认边界**：学马所有 body 都是**单 t0**，工具的单 t0 模型与游戏结构一致。多材质身体
@@ -78,9 +78,17 @@
 
 ## 5. 后续计划（按优先级）
 
-### P0 — 巩固核心与回归（健壮性 55% → 目标 80%）
-- GPU 数值误差 fixture、shader 编译产物、端到端导出（VB/IB/UV/COLOR）接入自动回归；
-- 防止已踩过的导出 bug（首次导出 UV/COLOR 错乱、NaN、fallback UV）回退。
+### P0 — 巩固核心与回归（健壮性 55% → 目标 80%，进行中）
+进度（CI 已接入，`.github/workflows/ci.yml` 每次 push/PR 跑）：
+- ✅ 导出 buffer 打包契约回归 `tests/export_buffers_regression.py`：锁定 VB0/VB1 字节布局、
+  权重归一化、材质→连续 draw_range 分组、R16/R32 选择与补齐，以及 0.5.30 类防错
+  （UV NaN/Inf/越界停止导出、COLOR NaN→安全、fp16 钳制）。
+- ✅ mod.ini 生成契约回归 `tests/mod_ini_contract.py`：用合成 profile 锁定 0.5.1 多 pass
+  替换链（全 VS `checktextureoverride`、主体段 `match_first_index`+`drawindexed`、尾部段
+  `handling=skip`）与 0.6.0 透明路径（InheritMask/AlphaBlend、反向 Z、不写深度、预乘 alpha、
+  缺 t0 报错）。
+- ⬜ GPU 数值误差 fixture（逆解矩阵/重建位置 RMS 阈值）—— 依赖本地抓帧数据，留作本地
+  测试（`tests/profile_contract_smoke.py` 同类，CI 无法跑）。
 
 ### P1 — 作者蒙皮体验（转权 75% → 目标 90%）
 - 传递距离 / 截断权重 / 未映射组 / 高风险热图的可视化复核工具；
