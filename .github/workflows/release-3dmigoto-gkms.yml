@@ -1,4 +1,4 @@
-name: Release · 3dmigoto-gkms (运行时)
+name: Release · 3dmigoto-gkms (游戏 mod 插件)
 
 # 触发：推送形如 3dmigoto-gkms-v0.4.9 的 tag。
 # 产物：自编译补丁版 d3d11.dll + 仓库 d3dx.ini/ShaderFixes/Mods，
@@ -43,7 +43,7 @@ jobs:
             fi
           done
 
-      - name: 打包运行时 zip（开箱即用三件套 + 配置）
+      - name: 打包游戏 mod 插件 zip（开箱即用三件套 + 配置）
         run: |
           set -e
           stage="staging/3dmigoto-gkms"
@@ -57,7 +57,7 @@ jobs:
       - name: 写 Release 说明
         run: |
           cat > notes.md <<'EOF'
-          学马仕定制 3DMigoto 运行时，**开箱即用**。
+          学马仕定制 3DMigoto 游戏 mod 插件，**开箱即用**。
 
           含三件套：
           - **自编译补丁版 `d3d11.dll`**（修了 live 横竖屏切换闪屏）；
@@ -75,5 +75,5 @@ jobs:
         run: |
           gh release create "${GITHUB_REF_NAME}" \
             "3dmigoto-gkms-${{ steps.ver.outputs.version }}.zip" \
-            --title "3dmigoto-gkms 运行时 ${{ steps.ver.outputs.version }}" \
+            --title "3dmigoto-gkms 游戏 mod 插件 ${{ steps.ver.outputs.version }}" \
             --notes-file notes.md

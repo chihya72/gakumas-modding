@@ -1,6 +1,6 @@
-# 3dmigoto-gkms — GakumasMI 运行时
+# 3dmigoto-gkms — GakumasMI 游戏 mod 插件
 
-面向《学园偶像大师》的定制 3DMigoto 运行时(基于 **v1.4.9**)。负责把作者导出的
+面向《学园偶像大师》的定制 3DMigoto 游戏 mod 插件(基于 **v1.4.9**)。负责把作者导出的
 mod 注入游戏渲染、并运行逆解蒙皮 Compute Shader。
 
 > ⚠️ 本仓库的 `d3d11.dll` 是**自编译的补丁版**,修了游戏竖屏↔横屏 live 切换时的
@@ -15,7 +15,7 @@ mod 注入游戏渲染、并运行逆解蒙皮 Compute Shader。
 | 复制 | 说明 |
 |---|---|
 | `d3d11.dll`、`nvapi64.dll`、`d3dcompiler_47.dll` | 3DMigoto 二进制(必须) |
-| `d3dx.ini` | 运行时配置(必须) |
+| `d3dx.ini` | 插件配置(必须) |
 | `ShaderFixes/` | 着色器修复(整个文件夹,必须) |
 | `Mods/` | mod 安装目录(没有就建一个空的) |
 
@@ -51,5 +51,5 @@ mod 注入游戏渲染、并运行逆解蒙皮 Compute Shader。
 ## 和项目其它部分的关系
 
 - 作者用 [`../gakumas_mi`](../gakumas_mi) 的插件导出 mod → 放进本目录 `Mods/`;
-- mod 内的 Compute Shader 由本运行时执行(逆解每帧矩阵 + 重蒙皮);
+- mod 内的 Compute Shader 由本插件执行(逆解每帧矩阵 + 重蒙皮);
 - 整体数据流见 [`../README.md`](../README.md)。

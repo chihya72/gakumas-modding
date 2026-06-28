@@ -2,7 +2,7 @@ name: Release · gakumas_mi (Blender 插件)
 
 # 触发：推送形如 gakumas-mi-v0.6.0 的 tag。
 # 产物：用 tools/package_blender_addon.py 打出插件 zip 并建 GitHub Release。
-# 版本号与运行时 3dmigoto-gkms 相互独立，不同步。
+# 版本号与游戏 mod 插件 3dmigoto-gkms 相互独立，不同步。
 
 on:
   push:

@@ -70,7 +70,7 @@ tools/                      离线脚本：AssetStudio 批量导出、逆算子�
 profiles/                   各角色 / 服装的配置档（drawcall / 材质 / 贴图映射）
 tests/                      冒烟测试与数据契约测试
 research/                   研究记录与路线（含已排除路线的历史证据）
-3dmigoto-gkms/              玩家侧运行时（自编译 d3d11.dll + d3dx.ini + ShaderFixes）
+3dmigoto-gkms/              游戏 mod 插件（自编译 d3d11.dll + d3dx.ini + ShaderFixes）
 ```
 
 仅本地、不入库的工作数据（已在 `.gitignore` 中）：
@@ -116,7 +116,7 @@ tools/build_inverse_skin_operator.py         → 由 bind + 权重生成逆算�
 | [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) | 当前进度、完成度、能力对比、后续计划（**最新状态以此为准**） |
 | [GakumasMI_开发路线_当前草案.md](GakumasMI_开发路线_当前草案.md) | 总体产品架构与愿景 |
 | [gakumas_mi/README.md](gakumas_mi/README.md) | 作者插件：安装与一键工作流 |
-| [3dmigoto-gkms/README.md](3dmigoto-gkms/README.md) | 运行时：安装方法与按键说明 |
+| [3dmigoto-gkms/README.md](3dmigoto-gkms/README.md) | 游戏 mod 插件：安装方法与按键说明 |
 | [research/inverse-skin-matrix-recovery.md](research/inverse-skin-matrix-recovery.md) | 逆解矩阵方案与游戏内验证报告 |
 | [research/transparent-material-status.md](research/transparent-material-status.md) | 透明材质当前策略与结论 |
 | [research/color-scan-20260627-091033.md](research/color-scan-20260627-091033.md) | 顶点 COLOR / 描边安全族 |
