@@ -1,8 +1,9 @@
 name: Release · 3dmigoto-gkms (运行时)
 
 # 触发：推送形如 3dmigoto-gkms-v0.4.9 的 tag。
-# 产物：打包仓库内的运行时文件（自编译补丁版 d3d11.dll + d3dx.ini + ShaderFixes + Mods/README）。
-# 注意：第三方 nvapi64.dll / d3dcompiler_47.dll 不入库，故不在产物内，需用户自行补齐。
+# 产物：自编译补丁版 d3d11.dll + 仓库 d3dx.ini/ShaderFixes/Mods，
+#       并从官方 bo3b/3Dmigoto 的 1.4.9 release 取版本匹配的 nvapi64.dll /
+#       d3dcompiler_47.dll（本项目 d3d11.dll 即基于该版本），打成开箱即用的 zip。
 # 版本号与插件 gakumas_mi 相互独立，不同步。
 
 on:
@@ -23,12 +24,32 @@ jobs:
         id: ver
         run: echo "version=${GITHUB_REF_NAME#3dmigoto-gkms-v}" >> "$GITHUB_OUTPUT"
 
-      - name: 打包运行时 zip
+      - name: 取官方 3Dmigoto 1.4.9 的匹配版第三方 dll
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full
+          gh release download 1.4.9 --repo bo3b/3Dmigoto \
+            --pattern "3Dmigoto_v1.4.9.7z" --dir . --clobber
+          7z x 3Dmigoto_v1.4.9.7z -othirdparty -y >/dev/null
+          # 版本一致性守卫：与仓库内同名 dll 字节大小比对，防止上游改包
+          for f in nvapi64.dll d3dcompiler_47.dll; do
+            up=$(stat -c%s "thirdparty/x64/$f")
+            repo=$(stat -c%s "3dmigoto-gkms/$f" 2>/dev/null || echo "")
+            echo "$f: upstream=$up repo=${repo:-<not committed>}"
+            if [ -n "$repo" ] && [ "$up" != "$repo" ]; then
+              echo "::warning::$f 上游($up)与仓库($repo)大小不一致，请人工确认"
+            fi
+          done
+
+      - name: 打包运行时 zip（开箱即用三件套 + 配置）
         run: |
           set -e
           stage="staging/3dmigoto-gkms"
           mkdir -p "$stage/Mods"
           cp 3dmigoto-gkms/d3d11.dll 3dmigoto-gkms/d3dx.ini "$stage/"
+          cp thirdparty/x64/nvapi64.dll thirdparty/x64/d3dcompiler_47.dll "$stage/"
           cp -r 3dmigoto-gkms/ShaderFixes "$stage/"
           cp 3dmigoto-gkms/Mods/README.md "$stage/Mods/"
           (cd staging && zip -r "../3dmigoto-gkms-${{ steps.ver.outputs.version }}.zip" 3dmigoto-gkms)
@@ -36,12 +57,16 @@ jobs:
       - name: 写 Release 说明
         run: |
           cat > notes.md <<'EOF'
-          学马仕定制 3DMigoto 运行时，含**自编译补丁版 `d3d11.dll`**（修了 live 横竖屏切换闪屏）。
+          学马仕定制 3DMigoto 运行时，**开箱即用**。
 
-          ⚠️ **本包不含**第三方 `nvapi64.dll` 与 `d3dcompiler_47.dll`（非自由再分发二进制）。
-          请从 3DMigoto v1.4.9 发行版或可用游戏目录补齐这两个文件，与本包一起放到游戏 `gakumas.exe` 同级目录。
+          含三件套：
+          - **自编译补丁版 `d3d11.dll`**（修了 live 横竖屏切换闪屏）；
+          - `nvapi64.dll` / `d3dcompiler_47.dll`（构建时从官方 bo3b/3Dmigoto 1.4.9 release 取得，版本匹配）；
+          - 定制 `d3dx.ini` + `ShaderFixes/`。
 
-          安装方法与按键说明见仓库 `3dmigoto-gkms/README.md`。用 `-force-d3d11` 启动游戏。
+          ## 安装
+          整个 `3dmigoto-gkms/` 解压到游戏 `gakumas.exe` 同级目录，用 `-force-d3d11` 启动。
+          按键说明见仓库 `3dmigoto-gkms/README.md`。
           EOF
 
       - name: 创建 Release
