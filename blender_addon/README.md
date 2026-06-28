@@ -1,6 +1,6 @@
-# GakumasMI Blender 插件 0.5.0
+# GakumasMI Blender 插件 0.6.0
 
-当前状态：开发预览版。0.4.8 把建配置档收敛为**一键流程**：填「抓帧目录」+
+当前状态：开发预览版。建配置档已收敛为**一键流程**：填「抓帧目录」+
 「Body JSON资源库」，点 `一键生成完整配置档（注入+结构+逆算子）` 即可一次产出
 **①注入信息 + ②结构数据 + ③逆算子** 的完整配置档。
 
@@ -23,7 +23,7 @@
 
 `编辑 > 偏好设置 > 插件 > 从磁盘安装`
 
-选择本地构建生成的 0.5.0 插件 ZIP。公开仓库不直接提交包含配置档资产的发布包。
+选择本地构建生成的 0.6.0 插件 ZIP。公开仓库不直接提交包含配置档资产的发布包。
 
 启用 **GakumasMI** 后，面板位于：
 
@@ -209,7 +209,8 @@ bind 空间，导出又会烘焙 `matrix_world @ co`，所以作者模型必须�
 - 点击 `从配置档传递权重`；
   - 如果模型未对齐 / 尺寸相差过大，插件会直接报错并提示如何修正；
   - 存在未应用变换时会给出警告。
-- 检查 `GMI_WEIGHT_RISK` 和 `GMI_REVIEW_HIGH_RISK`；
+- 检查 `GMI_WEIGHT_RISK` 和 `GMI_REVIEW_HIGH_RISK`；导出页的“描边宽度”默认关闭全部，用于规避/诊断新拓扑裙子、披风的描边壳异常。确认模型稳定后可改为“仅风险顶点”或“保留”；需要手动关闭描边的裙内侧/问题三角，可加入 `GMI_NO_OUTLINE` 顶点组；
+- 新拓扑衣服的“顶点 COLOR”默认使用“衣物常量”，这是最稳的无斑纹/无色块方案并保留描边宽度。COLOR 是游戏打包材质参数，不是普通颜色；原版抓帧 COLOR 带有区域/拓扑假设，不能简单按材质复用；“拷原版”只适合同拓扑或非常贴身的替换；
 - 手指、宽袖、裙摆等区域仍需要人工复核或精修。
 
 ### 4. 导出模组
@@ -277,25 +278,15 @@ HSKI Body 已验证的身体贴图语义：
 > 几何 AO 软化（可选，默认关）：从网格烘 AO 只对凹陷缝隙加深阴影，对光滑凸面（腿/袜）
 > 无效；圆柱体的硬光影分界应用「明暗」调，而非 AO。
 
-## 当前版本
+## 7. 透明材质
 
-插件源码版本：0.5.1。
+材质属性 `渲染材质` 选 **透明** 即走透明路径（`gmi_alpha_mode = ALPHA_BLEND`）。当前为
+**保守路径**：优先保证 A=0 镂空干净 + 投影/遮挡正常；半透明只在「背后已有同模型/同角色
+其它几何或 coverage」的像素上可靠显示，伸出角色轮廓外、背后纯背景的半透明暂不保证。
+原理与边界详见 [`../research/transparent-material-status.md`](../research/transparent-material-status.md)。
 
-### 0.5.1 — 运行时替换链修复（重要）
+## 版本与打包
 
-修复同一 body IB 被**多 pass、多段**绘制时的替换问题，导出器与 profile 同步增强：
-
-- **全 VS 触发**：profile 记录 body IB 关联的全部顶点着色器，导出为每个生成
-  `ShaderOverride…checktextureoverride = ib`。只覆盖部分 VS 会让其它 pass 漏画原版 → 与
-  mod 网格**叠图**。
-- **主体段定位 + drawindexed**：profile 记录主体段的 `mainFirstIndex`/`indexCount`。主体在
-  IB 偏移不一定是 0（随服装而变）；导出用 `match_first_index = <主体偏移>` +
-  `handling = skip` + `drawindexed = <索引数>, 0, 0`，跳过原 draw、从自定义 IB 的 0 画满，
-  避免越界/只替换到小段。
-- **尾部段跳过**：profile 记录同 IB 的尾部段 `tailFirstIndices`（原版裙摆等配件），导出为
-  每段生成 `handling = skip`，避免原版配件从 mod 网格里漏出。
-
-> 旧 profile 需**重新提取**才会带上述字段；既有已手改的 mod.ini 不受影响。
-
-发布包用 `python tools/package_blender_addon.py -o dist/gakumas_mi-0.5.1.zip` 生成
-（代码版，不含资源库；加 `--with-body-lib` 可一并打包）。本地包不提交到公开仓库。
+各版本变更见根目录 [`../CHANGELOG.md`](../CHANGELOG.md)。发布包用
+`python tools/package_blender_addon.py` 生成（代码版不含资源库；加 `--with-body-lib`
+可一并打包）。本地包不提交到公开仓库。

@@ -25,6 +25,7 @@ def _png_to_dds(image_path):
             raise ValueError(f"无法读取图像尺寸：{image_path}")
         buffer = np.empty(width * height * 4, dtype=np.float32)
         image.pixels.foreach_get(buffer)
+        buffer = np.nan_to_num(buffer, nan=0.0, posinf=1.0, neginf=0.0)
         rgba = buffer.reshape(height, width, 4)[::-1]  # Blender 自下而上 → DDS 自上而下
         rgba8 = np.clip(rgba * 255.0 + 0.5, 0.0, 255.0).astype(np.uint8)
         output = Path(tempfile.gettempdir()) / f"gmi_{Path(image_path).stem}.dds"
@@ -45,6 +46,12 @@ from mathutils.bvhtree import BVHTree
 from mathutils.kdtree import KDTree
 
 from . import core
+
+
+# COLOR.b low nibble drives outline extrusion width. 0xFF keeps the neutral
+# packed material class from 0.5.9 while restoring full outline width.
+GMI_CLOTH_COLOR_RGBA8 = (0, 0, 255, 0)
+GMI_CLOTH_COLOR_FLOAT = tuple(channel / 255.0 for channel in GMI_CLOTH_COLOR_RGBA8)
 
 
 def _scene_paths(scene):
@@ -119,6 +126,32 @@ def _link_only_to_collection(obj, collection):
             existing.objects.unlink(obj)
 
 
+def _sync_object_mesh_data(context, obj):
+    if not obj or obj.type != "MESH":
+        return
+    if context.mode != "OBJECT":
+        try:
+            obj.update_from_editmode()
+        except Exception:
+            pass
+        try:
+            bpy.ops.object.mode_set(mode="OBJECT")
+        except Exception:
+            pass
+    obj.data.update()
+    context.view_layer.objects.active = obj
+    obj.select_set(True)
+    context.view_layer.update()
+    try:
+        context.evaluated_depsgraph_get().update()
+    except Exception:
+        pass
+    removed_uv_layers = _cleanup_invalid_uv_layers(obj.data)
+    if removed_uv_layers:
+        obj["gmi_removed_invalid_uv_layers"] = json.dumps(removed_uv_layers, separators=(",", ":"))
+    return removed_uv_layers
+
+
 def _bind_pose_matrix(values):
     # AssetStudio JSON stores Unity's column-major fields with translation in M30..M32.
     return Matrix((
@@ -152,6 +185,115 @@ def _vertex_uv(mesh, name):
                 values[index] = tuple(layer.data[loop.index].uv)
                 assigned[index] = True
     return values
+
+
+def _uv_layer_stats(layer):
+    if layer is None or len(layer.data) <= 0:
+        return {"score": 0.0, "seen": 0, "validRatio": 0.0, "coverage": 0.0, "maxAbs": 0.0}
+    non_zero = 0
+    valid = 0
+    lo_u = lo_v = float("inf")
+    hi_u = hi_v = float("-inf")
+    max_abs = 0.0
+    sample_count = min(len(layer.data), 4096)
+    step = max(1, len(layer.data) // sample_count)
+    seen = 0
+    for index in range(0, len(layer.data), step):
+        item = layer.data[index]
+        uv = item.uv
+        u = core._safe_float(uv[0], 0.0)
+        v = core._safe_float(uv[1], 0.0)
+        max_abs = max(max_abs, abs(u), abs(v))
+        if abs(u) > 8.0 or abs(v) > 8.0:
+            seen += 1
+            continue
+        valid += 1
+        if abs(u) > 1e-7 or abs(v) > 1e-7:
+            non_zero += 1
+        lo_u = min(lo_u, u); hi_u = max(hi_u, u)
+        lo_v = min(lo_v, v); hi_v = max(hi_v, v)
+        seen += 1
+    if seen <= 0 or valid <= 0:
+        return {"score": 0.0, "seen": seen, "validRatio": 0.0, "coverage": 0.0, "maxAbs": max_abs}
+    if valid / seen < 0.95:
+        return {
+            "score": 0.0, "seen": seen, "validRatio": valid / seen,
+            "coverage": 0.0, "maxAbs": max_abs,
+        }
+    coverage = max(0.0, hi_u - lo_u) + max(0.0, hi_v - lo_v)
+    if coverage < 1e-5 or coverage > 16.0:
+        return {
+            "score": 0.0, "seen": seen, "validRatio": valid / seen,
+            "coverage": coverage, "maxAbs": max_abs,
+        }
+    score = (non_zero / valid) + min(coverage, 4.0)
+    return {
+        "score": score, "seen": seen, "validRatio": valid / seen,
+        "coverage": coverage, "maxAbs": max_abs,
+    }
+
+
+def _uv_layer_score(layer):
+    return _uv_layer_stats(layer)["score"]
+
+
+def _cleanup_invalid_uv_layers(mesh):
+    if mesh is None or getattr(mesh, "uv_layers", None) is None:
+        return []
+    removed = []
+    for layer in list(mesh.uv_layers):
+        stats = _uv_layer_stats(layer)
+        name = layer.name or ""
+        # Empty-name UV layers are never created intentionally by this add-on.
+        # They also caused first-click exports to read garbage coordinates
+        # clamped to fp16 max (65504), so remove them before any export path.
+        invalid_empty_name = not name.strip()
+        invalid_range = stats["seen"] > 0 and stats["validRatio"] < 0.95 and stats["maxAbs"] > 8.0
+        if invalid_empty_name or invalid_range:
+            removed.append({
+                "name": name,
+                "reason": "empty_name" if invalid_empty_name else "out_of_range",
+                **stats,
+            })
+            mesh.uv_layers.remove(layer)
+    if removed:
+        mesh.update()
+    return removed
+
+
+def _best_uv_layer(mesh, preferred_name=None, fallback=None):
+    layers = list(mesh.uv_layers)
+    if not layers:
+        return None
+    preferred = mesh.uv_layers.get(preferred_name) if preferred_name else None
+    candidates = []
+    if preferred is not None:
+        candidates.append(preferred)
+    if fallback is not None and fallback not in candidates:
+        candidates.append(fallback)
+    active = mesh.uv_layers.active
+    if active is not None and active not in candidates:
+        candidates.append(active)
+    for layer in layers:
+        if layer not in candidates:
+            candidates.append(layer)
+    scored = [(layer, _uv_layer_score(layer)) for layer in candidates]
+    best, best_score = max(scored, key=lambda item: item[1])
+    if preferred is not None and _uv_layer_score(preferred) >= max(0.02, best_score * 0.25):
+        return preferred
+    if best_score <= 0.02:
+        return None
+    return best
+
+
+def _uv_layer_candidates_report(mesh):
+    return [
+        {
+            "name": layer.name,
+            "score": _uv_layer_score(layer),
+        }
+        for layer in mesh.uv_layers
+    ]
 
 
 def _vertex_colors(mesh):
@@ -285,6 +427,214 @@ def _normalize_profile_weights(obj, maximum=4):
     return zero_vertices, truncated_total
 
 
+def _vertex_group_indices(obj, name):
+    group = obj.vertex_groups.get(name)
+    if not group:
+        return set()
+    return {
+        vertex.index
+        for vertex in obj.data.vertices
+        for item in vertex.groups
+        if item.group == group.index and item.weight > 0.0
+    }
+
+
+def _clear_outline_width(color):
+    rgba = [core._safe_unorm8(channel) for channel in color]
+    # Outline VS decodes the low nibble of COLOR.b as extrusion width.
+    rgba[2] &= 0xF0
+    return tuple(channel / 255.0 for channel in rgba)
+
+
+def _black_outline_colors(colors):
+    """黑色常量描边:R=0、G高位=0(描边色黑),保留 g低(ramp行)/b(宽度)/a(光照)。"""
+    out = []
+    for r, g, b, a in colors:
+        g8 = core._safe_unorm8(g)
+        out.append((0.0, (g8 & 0x0F) / 255.0, b, a))
+    return out
+
+
+def _set_constant_color_attribute(target, color=GMI_CLOTH_COLOR_FLOAT):
+    dst = target.data.color_attributes.get("COLOR")
+    if dst is not None and dst.domain != "POINT":
+        target.data.color_attributes.remove(dst)
+        dst = None
+    if dst is None:
+        dst = target.data.color_attributes.new(name="COLOR", type="FLOAT_COLOR", domain="POINT")
+    dst.data.foreach_set("color", [value for _ in target.data.vertices for value in color])
+    return True
+
+
+def _preset_color_float(preset):
+    rgba = (preset or {}).get("color", {}).get("rgba", GMI_CLOTH_COLOR_RGBA8)
+    if len(rgba) != 4:
+        rgba = GMI_CLOTH_COLOR_RGBA8
+    return tuple(
+        max(0, min(255, int(core._safe_float(channel, 0.0)))) / 255.0
+        for channel in rgba
+    )
+
+
+def _material_slot_color_map(obj):
+    presets = core.load_material_presets()
+    result = {}
+    for index, slot in enumerate(obj.material_slots):
+        key = getattr(slot.material, "gmi_material_class", "cloth") if slot.material else "cloth"
+        result[index] = _preset_color_float(presets.get(key) or presets.get("cloth"))
+    return result
+
+
+def _material_slot_alpha_modes(obj):
+    result = {}
+    for index, slot in enumerate(obj.material_slots):
+        material = slot.material
+        if material is None:
+            continue
+        mode = getattr(material, "gmi_alpha_mode", "OPAQUE")
+        # 旧工程可能还保存着 AUTO/ALPHA_CLIP；当前插件只有一条保守透明路径。
+        if mode in {"ALPHA_CLIP", "ALPHA_BLEND"}:
+            result[index] = "ALPHA_BLEND"
+    return result
+
+
+def _material_slot_alpha_cutoffs(obj):
+    result = {}
+    for index, mode in _material_slot_alpha_modes(obj).items():
+        material = obj.material_slots[index].material
+        cutoff = getattr(material, "gmi_alpha_cutoff", 0.5) if material else 0.5
+        result[index] = max(0.0, min(1.0, float(cutoff)))
+    return result
+
+
+def _load_rgba_sampler(image_path):
+    if not image_path:
+        return None
+    path = bpy.path.abspath(image_path)
+    if not path:
+        return None
+    import numpy as np
+
+    image = bpy.data.images.load(path, check_existing=False)
+    try:
+        width, height = int(image.size[0]), int(image.size[1])
+        if width <= 0 or height <= 0:
+            return None
+        buffer = np.empty(width * height * 4, dtype=np.float32)
+        image.pixels.foreach_get(buffer)
+        buffer = np.nan_to_num(buffer, nan=0.0, posinf=1.0, neginf=0.0)
+        # Blender exposes image pixels bottom-to-top; DDS/PIL and GPU UV sampling
+        # for the frame dumps are top-to-bottom. Flip here so the native COLOR
+        # synthesis sees the same texels as tools/synthesize_mod_mcolors.py.
+        pixels = np.clip(
+            buffer.reshape(height, width, 4)[::-1] * 255.0 + 0.5, 0, 255
+        ).astype(np.uint8)
+    finally:
+        bpy.data.images.remove(image)
+
+    def sample(uv):
+        u = core._safe_float(uv[0], 0.0) % 1.0
+        v = core._safe_float(uv[1], 0.0) % 1.0
+        x = min(width - 1, max(0, int(u * width)))
+        y = min(height - 1, max(0, int((1.0 - v) * height)))
+        r, g, b, a = pixels[y, x]
+        return int(r), int(g), int(b), int(a)
+
+    return sample
+
+
+def _color_feature(uv, rgba):
+    r, g, b, _ = rgba or (128, 128, 128, 255)
+    luma = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
+    return (core._safe_float(uv[0], 0.0) * 2.0, core._safe_float(uv[1], 0.0) * 2.0, luma)
+
+
+def _object_vertex_arrays(obj):
+    import numpy as np
+
+    world = obj.matrix_world
+    normal_matrix = world.to_3x3().inverted().transposed()
+    positions, normals = [], []
+    for vertex in obj.data.vertices:
+        position = world @ vertex.co
+        normal = (normal_matrix @ vertex.normal).normalized()
+        positions.append((float(position.x), float(position.y), float(position.z)))
+        normals.append((float(normal.x), float(normal.y), float(normal.z)))
+    return np.asarray(positions, dtype=np.float32), np.asarray(normals, dtype=np.float32)
+
+
+def _normalize_numpy_vectors(values):
+    import numpy as np
+
+    length = np.linalg.norm(values, axis=1, keepdims=True)
+    return values / np.maximum(length, 1e-8)
+
+
+def _sample_vertex_rgb(sampler, uvs):
+    import numpy as np
+
+    if not sampler:
+        return np.full((len(uvs), 3), 0.5, dtype=np.float32)
+    colors = []
+    for uv in uvs:
+        r, g, b, _ = sampler(uv)
+        colors.append((r / 255.0, g / 255.0, b / 255.0))
+    return np.asarray(colors, dtype=np.float32)
+
+
+def _synthesize_export_native_colors(profile_dir, component_id, data, target_base_color_file, color_per_slot=None):
+    import numpy as np
+
+    texture_notes = []
+    try:
+        tgt_sampler = _load_rgba_sampler(target_base_color_file)
+    except Exception as exc:
+        tgt_sampler = None
+        texture_notes.append(f"target baseColor unavailable: {exc}")
+    tgt_uv = np.nan_to_num(np.asarray(data["uv0"], dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+    tgt_rgb = _sample_vertex_rgb(tgt_sampler, tgt_uv)
+
+    # 复刻原版描边色:逐顶点把【该点基础色】编码进 COLOR 的 nibble。
+    # 实测原版编码系数(saki body draw227, o1=(R高,R低,G高)/15 与基础色相关 0.94/0.77/0.24):
+    #   R高4位 ≈ 4.08×baseR, R低4位 ≈ 1.03×baseG, G高4位 ≈ 0.63×baseB
+    # 描边 VS 解出 o1≈基础色,×全局常量 → 衣服自身颜色的暗化描边(贴合衣服、不死黑)。
+    # ramp行(g低4位)/宽度(b)/光照(a) 仍按材质预设(防色块、对称)。
+    def _nib(value):
+        return max(0, min(15, int(round(value))))
+
+    # 原版描边色逐通道曲线(实测自两套服装 0628outfit + saki):描边色 = 基础色经一条
+    # 「暗化 + 越亮越暖」曲线 —— R 随基础R 明显上升(亮处达 ~4/15),G/B 偏低(~1-2/15)。
+    # 效果:暗/中性面→暗灰线;亮/白面→暗线偏暖;肤色→棕。整体偏暗,不是高饱和红。
+    # 曲线改陡(实测锚点 saki:灰0.55→R nibble~1、米0.99→~5):R 用 5.0×base^2.7 → 灰面保持
+    # 暗(~1/15,和原版灰衣一致、对比足)、亮/米面才提到 ~5/15(暖)。G/B 保持低平(原版亦如此)。
+    OUTLINE_GAIN = 1.0   # 整体微调:实机整体偏弱调>1,偏强调<1
+    materials = data.get("materials", [])
+    color_per_slot = color_per_slot or {}
+    colors = []
+    encoded = 0
+    for index in range(len(tgt_uv)):
+        br = min(1.0, max(0.0, float(tgt_rgb[index][0])))
+        bg = min(1.0, max(0.0, float(tgt_rgb[index][1])))
+        bb = min(1.0, max(0.0, float(tgt_rgb[index][2])))
+        r_high = _nib(OUTLINE_GAIN * 5.0 * br ** 2.7)
+        r_low = _nib(OUTLINE_GAIN * 1.50 * bg ** 0.41)
+        g_high = _nib(OUTLINE_GAIN * 1.50 * bb ** 0.86)
+        # 保留 gather 已写好的 ramp行(g低)/宽度(b,已按「描边宽度」处理)/光照(a);只改描边色 R/G高位
+        existing = data["colors"][index] if index < len(data["colors"]) else (0.0, 0.0, 1.0, 0.0)
+        g8 = core._safe_unorm8(existing[1])
+        r_byte = r_high * 16 + r_low
+        g_byte = g_high * 16 + (g8 & 0x0F)
+        colors.append((r_byte / 255.0, g_byte / 255.0, existing[2], existing[3]))
+
+    return colors, {
+        "method": "export_outline_color_from_basecolor",
+        "encodeFactors": {"rHigh": 4.08, "rLow": 1.03, "gHigh": 0.63},
+        "encodedVertices": len(colors),
+        "totalVertices": len(colors),
+        "textureNotes": texture_notes,
+    }
+
+
 def _apply_semantic_weight_correction(target, reference, old_dominant):
     reference_groups = {group.index: group.name for group in reference.vertex_groups}
     semantic_names = _semantic_bone_names(reference_groups.values())
@@ -367,6 +717,8 @@ def _write_weight_risk_attributes(target, reference, risk_distance, old_dominant
 
 def _inverse_skin_export_data(
     obj, bone_map, source_bind, remap=None, fallback_bone="", source_rig_weights=False,
+    outline_width_mode="DISABLE_ALL", vertex_color_mode="MATERIAL_PRESET",
+    color_per_slot=None,
 ):
     """Expand triangle loops, resolve groups and generate target->source bind corrections."""
     mesh = obj.data
@@ -431,20 +783,49 @@ def _inverse_skin_export_data(
         group_binding[group_index] = (bone_map[mapped_name], correction_index)
 
     uv_layers = list(mesh.uv_layers)
-    uv0_layer = mesh.uv_layers.get("UV0") or (uv_layers[0] if uv_layers else None)
-    uv1_layer = mesh.uv_layers.get("UV1") or (uv_layers[1] if len(uv_layers) > 1 else uv0_layer)
+    uv0_layer = _best_uv_layer(mesh, "UV0", uv_layers[0] if uv_layers else None)
+    uv1_layer = _best_uv_layer(
+        mesh,
+        "UV1",
+        uv_layers[1] if len(uv_layers) > 1 else uv0_layer,
+    )
+    if uv0_layer is None:
+        names = ", ".join(
+            f"{layer.name or '<空名>'}:{_uv_layer_score(layer):.3f}"
+            for layer in uv_layers
+        ) or "无"
+        raise ValueError(f"没有可用 UV 层，已停止导出（候选：{names}）")
+    if uv1_layer is None:
+        uv1_layer = uv0_layer
+    uv0_layer_name = uv0_layer.name
+    uv1_layer_name = uv1_layer.name
     color_layer = mesh.color_attributes.get("COLOR")
+    no_outline_vertices = set()
+    if outline_width_mode == "RISK_ONLY":
+        no_outline_vertices = (
+            _vertex_group_indices(obj, "GMI_NO_OUTLINE")
+            | _vertex_group_indices(obj, "GMI_REVIEW_HIGH_RISK")
+        )
     world = obj.matrix_world
     normal_matrix = world.to_3x3().inverted().transposed()
     tangent_matrix = world.to_3x3()
     tangents_ready = False
-    if uv0_layer:
+    if uv0_layer is not None:
         try:
-            mesh.calc_tangents(uvmap=uv0_layer.name)
+            mesh.calc_tangents(uvmap=uv0_layer_name)
             tangents_ready = True
         except RuntimeError:
             tangents_ready = False
-    vertices, normals, tangents, uv0, uv1, colors, skin, faces = ([] for _ in range(8))
+    # calc_tangents can rebuild loop custom data on the first run and invalidate
+    # previously held MeshUVLoopLayer RNA wrappers. Re-fetch by name so the
+    # export never falls back to zero UVs after tangent calculation.
+    uv0_layer = mesh.uv_layers.get(uv0_layer_name)
+    uv1_layer = mesh.uv_layers.get(uv1_layer_name) or uv0_layer
+    if uv0_layer is None:
+        raise ValueError(f"切线计算后 UV 层丢失：{uv0_layer_name}")
+    vertices, normals, tangents, uv0, uv1, colors, skin, faces, materials = ([] for _ in range(9))
+    tangent_groups = {}
+    color_per_slot = color_per_slot or {}
     truncated_weight = 0.0
     for polygon in mesh.polygons:
         face = []
@@ -458,22 +839,19 @@ def _inverse_skin_export_data(
                 tangent = (*tangent_xyz, float(loop.bitangent_sign))
             else:
                 tangent = (1.0, 0.0, 0.0, 1.0)
-            if uv0_layer:
+            if uv0_layer is not None:
                 value = uv0_layer.data[loop_index].uv
-                tex0 = (float(value[0]), float(value[1]))
+                tex0 = (core._safe_float(value[0], 0.0), core._safe_float(value[1], 0.0))
             else:
-                tex0 = (0.0, 0.0)
-            if uv1_layer:
+                raise ValueError("没有可用 UV0，已停止导出")
+            if uv1_layer is not None:
                 value = uv1_layer.data[loop_index].uv
-                tex1 = (float(value[0]), float(value[1]))
+                tex1 = (core._safe_float(value[0], 0.0), core._safe_float(value[1], 0.0))
             else:
                 tex1 = tex0
-            if color_layer:
-                color_index = loop.vertex_index if color_layer.domain == "POINT" else loop_index
-                value = color_layer.data[color_index].color
-                color = tuple(float(value[channel]) for channel in range(4))
-            else:
-                color = (1.0, 1.0, 1.0, 1.0)
+            color = color_per_slot.get(int(polygon.material_index), GMI_CLOTH_COLOR_FLOAT)
+            if outline_width_mode == "DISABLE_ALL" or loop.vertex_index in no_outline_vertices:
+                color = _clear_outline_width(color)
             resolved = {}
             for item in source_vertex.groups:
                 if item.weight <= 0.0 or item.group not in group_binding:
@@ -490,16 +868,57 @@ def _inverse_skin_export_data(
                 ordered = ordered[:4]
             if not ordered:
                 raise ValueError(f"顶点 {loop.vertex_index} 没有可导出的配置档兼容权重")
-            face.append(len(vertices))
+            expanded_index = len(vertices)
+            face.append(expanded_index)
             vertices.append(position); normals.append(normal); tangents.append(tangent)
             uv0.append(tex0); uv1.append(tex1); colors.append(color); skin.append(ordered)
+            materials.append(int(polygon.material_index))
+            key = (
+                round(position[0], 5), round(position[1], 5), round(position[2], 5),
+                int(polygon.material_index),
+            )
+            tangent_groups.setdefault(key, []).append(expanded_index)
         faces.append(tuple(face))
     if unresolved and not fallback_bone:
         sample = ", ".join(sorted(unresolved)[:12])
         raise ValueError(f"Unmapped weighted bones ({len(unresolved)}): {sample}")
+    # 学马仕描边 VS(e0ceaa85)沿 TANGENT.xyz 挤出描边(NORMAL 通道不参与描边),
+    # 且原版 TANGENT 并非 UV 切线,而是逐顶点"平滑法线"(同坐标顶点法线平均,cos≈0.6)。
+    # 自定义网格若把 UV 切线写进 TANGENT,描边会沿表面方向挤出 → 整圈不可见。
+    # 故这里按位置+材质合并法线得到平滑法线,写入 TANGENT.xyz(w=1,与原版一致),让描边外扩。
+    if vertices:
+        smoothed_tangents = list(tangents)
+        for indices in tangent_groups.values():
+            if len(indices) == 1:
+                n = normals[indices[0]]
+                smoothed_tangents[indices[0]] = (n[0], n[1], n[2], 1.0)
+                continue
+            for i in indices:
+                ni = normals[i]
+                sx = sy = sz = 0.0
+                for j in indices:
+                    nj = normals[j]
+                    # 只平均与本顶点同朝向(点积>0)的法线。裙褶/薄壳/双面处同坐标的正反面
+                    # 法线相反,若一起平均会相消成乱向 → 描边沿错向挤出 → 凸起毛刺(橙色破边)。
+                    if ni[0] * nj[0] + ni[1] * nj[1] + ni[2] * nj[2] > 0.35:
+                        sx += nj[0]; sy += nj[1]; sz += nj[2]
+                length = (sx * sx + sy * sy + sz * sz) ** 0.5
+                if length > 1e-8:
+                    smoothed_tangents[i] = (sx / length, sy / length, sz / length, 1.0)
+                else:
+                    smoothed_tangents[i] = (ni[0], ni[1], ni[2], 1.0)
+        tangents = smoothed_tangents
     return {
         "vertices": vertices, "normals": normals, "tangents": tangents,
         "uv0": uv0, "uv1": uv1, "colors": colors, "skin": skin, "faces": faces,
+        "materials": materials,
+        "uvLayers": {
+            "uv0": uv0_layer.name if uv0_layer is not None else "",
+            "uv1": uv1_layer.name if uv1_layer is not None else "",
+            "uv0Score": _uv_layer_score(uv0_layer),
+            "uv1Score": _uv_layer_score(uv1_layer),
+            "candidates": _uv_layer_candidates_report(mesh),
+        },
         "corrections": corrections, "unresolved": sorted(unresolved),
         "automatic_remap": automatic_remap, "truncated_weight": truncated_weight,
     }
@@ -821,8 +1240,8 @@ class GMI_OT_import_weighted_reference(Operator):
 
 class GMI_OT_transfer_profile_weights(Operator):
     bl_idname = "gmi.transfer_profile_weights"
-    bl_label = "从配置档传递权重"
-    bl_description = "用 HSKI 配置档插值权重替换当前选中网格的权重"
+    bl_label = "从配置档传递权重 + 颜色"
+    bl_description = "用 HSKI 配置档插值权重，并按顶点 COLOR 策略写入游戏打包材质参数"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -879,11 +1298,11 @@ class GMI_OT_transfer_profile_weights(Operator):
                 raise RuntimeError(f"权重传递修改器执行失败：{result}")
 
             corrected = {}
-            if context.scene.gmi_semantic_correction:
-                corrected = _apply_semantic_weight_correction(
-                    target, reference, old_dominant
-                )
             zero, truncated = _normalize_profile_weights(target, maximum=4)
+            # 转权时写中性衣物 COLOR 占位;真正的描边色在导出时按基础色生成
+            # (勾选「描边色取自基础色」→ _synthesize_export_native_colors 覆盖)。
+            color_transferred = _set_constant_color_attribute(target)
+            context.view_layer.objects.active = target
             risk = _write_weight_risk_attributes(
                 target, reference, context.scene.gmi_transfer_risk_distance, old_dominant
             )
@@ -900,13 +1319,15 @@ class GMI_OT_transfer_profile_weights(Operator):
                 "truncatedWeightTotal": truncated,
                 "semanticCorrections": corrected,
                 "alignmentWarnings": alignment_warnings,
+                "colorTransferred": color_transferred,
                 **risk,
             }
             target["gmi_weight_report"] = json.dumps(report, separators=(",", ":"))
             if zero:
                 raise ValueError(f"仍有 {len(zero)} 个顶点没有权重")
             messages = [
-                f"已传递配置档权重；需复核 {risk['reviewVertices']} 个顶点，"
+                f"已传递配置档权重 + COLOR 占位(描边色在导出时按基础色生成)；"
+                f"需复核 {risk['reviewVertices']} 个顶点，"
                 f"p95 {risk['p95Distance']:.4f} m，最大 {risk['maxDistance']:.4f} m"
             ]
             messages.extend(alignment_warnings)
@@ -948,6 +1369,7 @@ class GMI_OT_validate_mesh(Operator):
         if not obj or obj.type != "MESH":
             self.report({"ERROR"}, "请选择一个网格对象")
             return {"CANCELLED"}
+        _sync_object_mesh_data(context, obj)
         if obj.get("gmi_profile_weights"):
             try:
                 profile_set = core.load_profile_set(obj["gmi_profile_dir"])
@@ -960,10 +1382,10 @@ class GMI_OT_validate_mesh(Operator):
                 if any(len(poly.vertices) != 3 for poly in obj.data.polygons):
                     errors.append("网格尚未三角化")
                 loop_count = sum(len(poly.vertices) for poly in obj.data.polygons)
-                if loop_count > int(component["indices"]):
-                    errors.append(f"{loop_count} 个索引超过原 Draw 容量 {component['indices']}")
                 if loop_count > 65535:
-                    errors.append(f"{loop_count} 个展开顶点超过 R16 上限 65535")
+                    warnings.append(f"{loop_count} 个展开顶点超过 R16 上限 65535，导出将使用 R32 索引缓冲")
+                if loop_count > int(component["indices"]):
+                    warnings.append(f"{loop_count} 个索引超过原 Draw 容量 {component['indices']}，导出将使用自定义 drawindexed")
                 unknown, zero, excessive, non_normalized = set(), 0, 0, 0
                 for vertex in obj.data.vertices:
                     influences = [
@@ -989,6 +1411,8 @@ class GMI_OT_validate_mesh(Operator):
                 for required_uv in ("UV0", "UV1"):
                     if required_uv not in obj.data.uv_layers:
                         warnings.append(f"缺少 {required_uv}")
+                if obj.data.color_attributes.get("COLOR") is None:
+                    warnings.append("缺少 COLOR（导出默认白色 → 描边会变白色高光，请先“传递权重 + 颜色”）")
                 if errors:
                     self.report({"ERROR"}, "; ".join(errors))
                     return {"CANCELLED"}
@@ -1063,6 +1487,7 @@ class GMI_OT_export_inverse_skin_mod(Operator):
             self.report({"ERROR"}, "请选择要导出的带权重网格")
             return {"CANCELLED"}
         try:
+            _sync_object_mesh_data(context, obj)
             profile_dir = bpy.path.abspath(scene.gmi_profile_dir)
             profile_set = core.load_profile_set(profile_dir)
             resolved = _resolve_body_json_library(scene)
@@ -1082,6 +1507,9 @@ class GMI_OT_export_inverse_skin_mod(Operator):
             data = _inverse_skin_export_data(
                 obj, bone_map, source_bind, remap, scene.gmi_unmapped_bone_fallback.strip(),
                 source_rig_weights=bool(obj.get("gmi_profile_weights")),
+                outline_width_mode=scene.gmi_outline_width_mode,
+                vertex_color_mode=scene.gmi_vertex_color_mode,
+                color_per_slot=_material_slot_color_map(obj),
             )
             known_textures = profile_set["textures"].get("textures", {})
             material_textures = {}
@@ -1098,19 +1526,55 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                 elif semantic and scene.gmi_neutral_material and key in known_textures:
                     # 没提供时用中性贴图盖掉原版 t1/t4（仅当配置档有该槽位）
                     material_textures[key] = _neutral_material_dds(semantic)
+            # 描边颜色来源:复选框 或 「描边颜色」=取自基础色 → 基础色曲线;黑色常量 → 黑边;
+            # 按材质预设 → 保留 gather 的逐材质预设色。宽度已在 gather 按「描边宽度」处理,这里不动。
+            export_color_synthesis = None
+            if scene.gmi_enable_native_color_transfer or scene.gmi_vertex_color_mode == "BASECOLOR":
+                data["colors"], export_color_synthesis = _synthesize_export_native_colors(
+                    profile_dir,
+                    scene.gmi_component_id,
+                    data,
+                    material_textures.get("body.baseColor") or scene.gmi_base_color_file,
+                    _material_slot_color_map(obj),
+                )
+            elif scene.gmi_vertex_color_mode == "CONSTANT_BLACK":
+                data["colors"] = _black_outline_colors(data["colors"])
             _, _, output_dir = _scene_paths(scene)
+            alpha_modes = _material_slot_alpha_modes(obj)
+            alpha_cutoffs = _material_slot_alpha_cutoffs(obj)
+            opacity_texture = (
+                _png_to_dds(bpy.path.abspath(scene.gmi_opacity_texture_file))
+                if scene.gmi_opacity_texture_file and not bpy.path.abspath(scene.gmi_opacity_texture_file).lower().endswith(".dds")
+                else bpy.path.abspath(scene.gmi_opacity_texture_file) if scene.gmi_opacity_texture_file else None
+            )
             package = core.write_inverse_skin_package(
                 profile_dir, output_dir, scene.gmi_package_id, scene.gmi_package_name,
                 scene.gmi_author, scene.gmi_component_id,
                 data["vertices"], data["normals"], data["tangents"], data["uv0"],
                 data["uv1"], data["colors"], data["faces"], data["skin"],
                 data["corrections"], material_textures=material_textures,
+                materials=data.get("materials"),
+                alpha_modes=alpha_modes,
+                opacity_texture=opacity_texture,
+                alpha_cutoffs=alpha_cutoffs,
             )
             core._write_json(Path(package) / "export-report.json", {
                 "automaticAncestorRemap": data["automatic_remap"],
                 "unresolvedGroups": data["unresolved"],
                 "truncatedWeightTotal": data["truncated_weight"],
                 "materialTextures": material_textures,
+                "opacityTexture": bpy.path.abspath(scene.gmi_opacity_texture_file) if scene.gmi_opacity_texture_file else "",
+                "outlineWidthMode": scene.gmi_outline_width_mode,
+                "vertexColorMode": scene.gmi_vertex_color_mode,
+                "uvLayers": data.get("uvLayers", {}),
+                "invalidUvLayersRemoved": json.loads(obj.get("gmi_removed_invalid_uv_layers", "[]")),
+                "exportColorSynthesis": export_color_synthesis,
+                "vertexColorByMaterialSlot": {
+                    str(slot): [core._safe_unorm8(channel) for channel in color]
+                    for slot, color in _material_slot_color_map(obj).items()
+                },
+                "alphaModesByMaterialSlot": alpha_modes,
+                "alphaCutoffsByMaterialSlot": alpha_cutoffs,
             })
             suffix = (
                 f"；祖先骨骼自动映射 {len(data['automatic_remap'])}，"
@@ -1134,14 +1598,17 @@ class GMI_OT_export_validated_mod(Operator):
         if not obj or obj.type != "MESH":
             self.report({"ERROR"}, "请选择要导出的网格")
             return {"CANCELLED"}
+        if "gmi_removed_invalid_uv_layers" in obj:
+            del obj["gmi_removed_invalid_uv_layers"]
+        _sync_object_mesh_data(context, obj)
         result = bpy.ops.gmi.validate_mesh()
         if "FINISHED" not in result:
             self.report({"ERROR"}, "校验未通过，已停止导出")
             return {"CANCELLED"}
         if obj.get("gmi_profile_weights"):
-            return bpy.ops.gmi.export_inverse_skin_mod()
+            return GMI_OT_export_inverse_skin_mod.execute(self, context)
         if obj.get("gmi_source_vertex_count"):
-            return bpy.ops.gmi.export_mesh_mod()
+            return GMI_OT_export_mesh_mod.execute(self, context)
         self.report({"ERROR"}, "当前对象不是可导出的 GakumasMI 网格")
         return {"CANCELLED"}
 
@@ -1259,11 +1726,12 @@ class GMI_OT_bake_material_maps(Operator):
         if not obj or obj.type != "MESH":
             self.report({"ERROR"}, "请选择网格")
             return {"CANCELLED"}
+        _sync_object_mesh_data(context, obj)
         if not scene.gmi_base_color_file:
             self.report({"ERROR"}, "需要先指定基础色 t0（t4 从它派生）")
             return {"CANCELLED"}
         mesh = obj.data
-        if not mesh.uv_layers.active:
+        if mesh.uv_layers.active is None:
             self.report({"ERROR"}, "网格缺少 UV，无法按 UV 烘焙")
             return {"CANCELLED"}
         if not obj.material_slots or all(s.material is None for s in obj.material_slots):
@@ -1286,6 +1754,7 @@ class GMI_OT_bake_material_maps(Operator):
                 return {"CANCELLED"}
             buffer = np.empty(width * height * 4, dtype=np.float32)
             image.pixels.foreach_get(buffer)
+            buffer = np.nan_to_num(buffer, nan=0.0, posinf=1.0, neginf=0.0)
             base8 = np.clip(
                 buffer.reshape(height, width, 4)[::-1] * 255.0 + 0.5, 0, 255
             ).astype(np.uint8)  # top-down，与 DDS / UV(1-v) 一致

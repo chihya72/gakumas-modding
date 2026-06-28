@@ -57,7 +57,10 @@ NEUTRAL_SHADE_COLOR = (128, 128, 128, 0)
 
 def write_solid_rgba8_dds(path, rgba, size=4, srgb=False):
     """Write a tiny solid-color RGBA8 DDS (for neutral t1/t4 material textures)."""
-    r, g, b, a = (int(max(0, min(255, channel))) for channel in rgba)
+    r, g, b, a = (
+        max(0, min(255, int(_safe_float(channel, 0.0))))
+        for channel in rgba
+    )
     write_rgba8_dds(path, size, size, bytes([r, g, b, a]) * (size * size), srgb=srgb)
 
 
@@ -1717,13 +1720,32 @@ def inverse_skin_bone_map(profile_dir, skeleton_json=None):
 _FP16_MAX = 65504.0
 
 
+def _safe_unorm8(value):
+    v = float(value)
+    if v != v:  # NaN
+        return 0
+    if v <= 0.0:
+        return 0
+    if v >= 1.0:
+        return 255
+    return max(0, min(255, round(v * 255.0)))
+
+
+def _safe_float(value, default=0.0):
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+    if v != v or v == float("inf") or v == float("-inf"):
+        return float(default)
+    return v
+
+
 def _safe_half(value):
     """Clamp a float into the fp16-representable range so struct 'e' packing never
     overflows. Game VB1 UVs are fp16; out-of-range or non-finite values (corrupt /
     extra UV channels) are clamped instead of crashing the export."""
-    v = float(value)
-    if v != v:  # NaN
-        return 0.0
+    v = _safe_float(value, 0.0)
     if v > _FP16_MAX:
         return _FP16_MAX
     if v < -_FP16_MAX:
@@ -1731,23 +1753,60 @@ def _safe_half(value):
     return v
 
 
+def _validate_export_uv(value, label):
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{label} 不是有效浮点数")
+    if v != v or v == float("inf") or v == float("-inf"):
+        raise ValueError(f"{label} 不是有效浮点数")
+    if abs(v) > 8.0:
+        raise ValueError(f"{label} 超出合理范围：{v}")
+    return v
+
+
 def _pack_inverse_skin_buffers(vertices, normals, tangents, uv0, uv1, colors,
-                               faces, skin, expected_indices):
+                               faces, skin, expected_indices, materials=None):
     count = len(vertices)
     arrays = (normals, tangents, uv0, uv1, colors, skin)
     if not all(len(values) == count for values in arrays):
         raise ValueError("Inverse-skin vertex arrays have different lengths")
-    if count > 65535:
-        raise ValueError("R16_UINT inverse-skin mesh cannot exceed 65535 vertices")
     if any(len(face) != 3 for face in faces):
         raise ValueError("Inverse-skin mesh must be triangulated")
-    flat_indices = [int(index) for face in faces for index in face]
-    if len(flat_indices) > expected_indices:
-        raise ValueError(
-            f"Mesh has {len(flat_indices)} indices; draw capacity is {expected_indices}"
-        )
-    if any(index < 0 or index >= count for index in flat_indices):
-        raise ValueError("网格索引超出了导出顶点范围")
+    for face in faces:
+        for index in face:
+            if index < 0 or index >= count:
+                raise ValueError("网格索引超出了导出顶点范围")
+    # 按材质分组面,使每个材质的索引在 IB 中连续,从而导出为各自独立的 drawindexed。
+    # 皮肤/衣服等不同材质不再在同一 draw 内共享屏幕 2x2 求导块,消除 atlas mip 在
+    # 屏幕相邻处的跨材质渗色(裙角橙斑),与原版"分 draw"渲染结构一致。
+    if materials and len(materials) == count:
+        face_material = [int(materials[face[0]]) for face in faces]
+    else:
+        face_material = [0] * len(faces)
+    order = sorted(range(len(faces)), key=lambda fi: face_material[fi])
+    flat_indices = []
+    draw_ranges = []  # [{"start": int, "count": int, "material": int}, ...]
+    current_material = None
+    range_start = 0
+    for fi in order:
+        material = face_material[fi]
+        if material != current_material:
+            if current_material is not None:
+                draw_ranges.append({
+                    "start": range_start,
+                    "count": len(flat_indices) - range_start,
+                    "material": current_material,
+                })
+            current_material = material
+            range_start = len(flat_indices)
+        flat_indices.extend(int(index) for index in faces[fi])
+    if current_material is not None:
+        draw_ranges.append({
+            "start": range_start,
+            "count": len(flat_indices) - range_start,
+            "material": current_material,
+        })
 
     bind = bytearray()
     vb1 = bytearray()
@@ -1772,21 +1831,32 @@ def _pack_inverse_skin_buffers(vertices, normals, tangents, uv0, uv1, colors,
             "<3f3f4f4I4I4f", *position, *normal, *tangent,
             *bones, *corrections, *weights
         ))
-        rgba = [max(0, min(255, round(float(channel) * 255.0))) for channel in color]
+        rgba = [_safe_unorm8(channel) for channel in color]
+        u0 = _validate_export_uv(tex0[0], "UV0.u")
+        v0 = _validate_export_uv(tex0[1], "UV0.v")
+        u1 = _validate_export_uv(tex1[0], "UV1.u")
+        v1 = _validate_export_uv(tex1[1], "UV1.v")
         vb1.extend(struct.pack(
             "<4B4e", *rgba,
-            _safe_half(tex0[0]), _safe_half(1.0 - float(tex0[1])),
-            _safe_half(tex1[0]), _safe_half(1.0 - float(tex1[1])),
+            _safe_half(u0), _safe_half(1.0 - v0),
+            _safe_half(u1), _safe_half(1.0 - v1),
         ))
-    flat_indices.extend([0] * (expected_indices - len(flat_indices)))
-    ib = struct.pack(f"<{len(flat_indices)}H", *flat_indices)
-    return bytes(bind), bytes(vb1), ib
+    if len(flat_indices) < expected_indices:
+        flat_indices.extend([0] * (expected_indices - len(flat_indices)))
+    max_index = max(flat_indices, default=0)
+    if max_index > 0xFFFFFFFF:
+        raise ValueError("网格索引超过 R32_UINT 上限")
+    index_format = "R32_UINT" if max_index > 0xFFFF else "R16_UINT"
+    pack_code = "I" if index_format == "R32_UINT" else "H"
+    ib = struct.pack(f"<{len(flat_indices)}{pack_code}", *flat_indices)
+    return bytes(bind), bytes(vb1), ib, draw_ranges, index_format
 
 
 def write_inverse_skin_package(
     profile_dir, output_root, package_id, name, author, component_id,
     vertices, normals, tangents, uv0, uv1, colors, faces, skin, corrections,
-    material_textures=None,
+    material_textures=None, materials=None, alpha_modes=None, opacity_texture=None,
+    alpha_cutoffs=None,
 ):
     """Write an arbitrary-topology, bone-weighted 3Dmigoto package."""
     package_id = _sanitize_package_id(package_id)
@@ -1798,13 +1868,23 @@ def write_inverse_skin_package(
     if not config:
         raise ValueError("Profile has no inverse-skin runtime data")
     expected_indices = int(component["indices"])
-    bind, vb1, ib = _pack_inverse_skin_buffers(
-        vertices, normals, tangents, uv0, uv1, colors, faces, skin, expected_indices
+    bind, vb1, ib, draw_ranges, index_format = _pack_inverse_skin_buffers(
+        vertices, normals, tangents, uv0, uv1, colors, faces, skin, expected_indices, materials
     )
     vertex_count = len(vertices)
     source_vertex_count = int(config["sourceVertexCount"])
     coefficient_count = int(config["coefficientCount"])
     material_textures = material_textures or {}
+    opacity_texture = str(opacity_texture or "").strip()
+    alpha_cutoffs = {
+        int(slot): max(0.0, min(1.0, _safe_float(value, 0.5)))
+        for slot, value in (alpha_cutoffs or {}).items()
+    }
+    alpha_modes = {
+        int(slot): str(mode).upper()
+        for slot, mode in (alpha_modes or {}).items()
+        if str(mode).upper() in {"ALPHA_CLIP", "ALPHA_BLEND", "CLIP", "BLEND"}
+    }
 
     package_dir = Path(output_root) / package_id
     buffer_dir = package_dir / "Buffers"
@@ -1818,7 +1898,8 @@ def write_inverse_skin_package(
         struct.pack(f"<{len(flat_corrections)}f", *flat_corrections)
     )
     (buffer_dir / "Body.VB1.buf").write_bytes(vb1)
-    (buffer_dir / "Body.IB.R16_UINT.buf").write_bytes(ib)
+    ib_buffer_name = f"Body.IB.{index_format}.buf"
+    (buffer_dir / ib_buffer_name).write_bytes(ib)
     operator_source = (profile_set["root"] / config["inverseOperator"]).resolve()
     if not operator_source.is_file():
         raise FileNotFoundError(f"Inverse operator not found: {operator_source}")
@@ -1841,11 +1922,28 @@ def write_inverse_skin_package(
         "#define TARGET_VERTEX_COUNT 1", f"#define TARGET_VERTEX_COUNT {vertex_count}"
     )
     (shader_dir / "SkinCustomCS.hlsl").write_text(skin_shader, encoding="utf-8")
-
+    transparent_ranges = []
+    for item in draw_ranges:
+        mode = alpha_modes.get(int(item["material"]), "OPAQUE")
+        if mode == "CLIP":
+            mode = "ALPHA_CLIP"
+        elif mode == "BLEND":
+            mode = "ALPHA_BLEND"
+        if mode in {"ALPHA_CLIP", "ALPHA_BLEND"}:
+            transparent_ranges.append({
+                "start": int(item["start"]),
+                "count": int(item["count"]),
+                "material": int(item["material"]),
+                "mode": mode,
+                "cutoff": alpha_cutoffs.get(int(item["material"]), 0.5),
+            })
+    if transparent_ranges and not opacity_texture and f"{component_id}.baseColor" not in material_textures:
+        raise ValueError("透明材质导出需要提供透明 t0 或基础色 t0（带 alpha 的 PNG/DDS）")
     section = _safe_section(package_id)
     material_bindings = []
     material_resources = []
     material_manifest = {}
+    material_resource_names = {}
     if material_textures:
         texture_dir.mkdir(parents=True, exist_ok=True)
     for texture_key, source_file in material_textures.items():
@@ -1870,6 +1968,7 @@ def write_inverse_skin_package(
         if texture_component != component_id:
             raise ValueError(f"Texture {texture_key} does not belong to {component_id}")
         resource_name = f"{section}{semantic.title()}"
+        material_resource_names[semantic] = resource_name
         filename = f"{component_id.title()}.{semantic[0].upper() + semantic[1:]}.dds"
         shutil.copy2(source, texture_dir / filename)
         material_bindings.append(f"    {entry['slot']} = Resource{resource_name}")
@@ -1879,6 +1978,41 @@ def write_inverse_skin_package(
         material_manifest[texture_key] = {
             "slot": entry["slot"], "hash": entry["hash"], "file": f"Textures/{filename}"
         }
+    opacity_resource = None
+    opacity_manifest = None
+    if opacity_texture:
+        source = Path(opacity_texture)
+        if not source.is_file() or source.suffix.lower() != ".dds":
+            raise ValueError(f"Opacity texture must be an existing DDS: {source}")
+        if not texture_dir.is_dir():
+            texture_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{component_id.title()}.Opacity.dds"
+        shutil.copy2(source, texture_dir / filename)
+        opacity_resource = f"{section}OpacityBaseColor"
+        opacity_manifest = {"slot": "ps-t0", "file": f"Textures/{filename}"}
+        material_resources.append(
+            f"[Resource{opacity_resource}]\nfilename = Textures\\{filename}\n"
+        )
+
+    def ensure_material_resource(semantic, neutral_rgba, srgb=False):
+        resource_name = material_resource_names.get(semantic)
+        if resource_name:
+            return resource_name
+        texture_dir.mkdir(parents=True, exist_ok=True)
+        resource_name = f"{section}{semantic.title()}"
+        filename = f"{component_id.title()}.{semantic[0].upper() + semantic[1:]}.Neutral.dds"
+        write_solid_rgba8_dds(texture_dir / filename, neutral_rgba, srgb=srgb)
+        material_resource_names[semantic] = resource_name
+        material_resources.append(
+            f"[Resource{resource_name}]\nfilename = Textures\\{filename}\n"
+        )
+        material_manifest[f"{component_id}.{semantic}"] = {
+            "slot": None,
+            "hash": None,
+            "file": f"Textures/{filename}",
+            "generated": "neutral",
+        }
+        return resource_name
 
     dispatch_matrices = coefficient_count
     dispatch_vertices = (vertex_count + 63) // 64
@@ -1890,6 +2024,91 @@ def write_inverse_skin_package(
     main_first_index = int(component.get("mainFirstIndex") or 0)
     body_index_count = int(component.get("indices") or 0)
     body_title = component_id.title()
+    # 每材质一段 drawindexed:切断跨材质屏幕求导,消除 atlas mip 渗色(裙角橙斑)。
+    # 透明材质段交给后面的 CustomShader 透明 pass,不在 body shader 内绘制。
+    opaque_ranges = [
+        item for item in draw_ranges
+        if int(item["material"]) not in alpha_modes
+    ]
+    if opaque_ranges:
+        drawindexed_lines = "\n".join(
+            f"    drawindexed = {int(item['count'])}, {int(item['start'])}, 0"
+            for item in opaque_ranges
+        )
+    else:
+        drawindexed_lines = "    ; no opaque material ranges"
+    base_color_resource = opacity_resource or material_resource_names.get("baseColor", f"{section}Basecolor")
+    packed_mask_resource = None
+    shade_color_resource = None
+    transparent_sections = ""
+    transparent_runs = ""
+    scene_depth_resource = ""
+    if transparent_ranges:
+        packed_mask_resource = ensure_material_resource("packedMask", NEUTRAL_PACKED_MASK, srgb=False)
+        shade_color_resource = ensure_material_resource("shadeColor", NEUTRAL_SHADE_COLOR, srgb=False)
+        shutil.copy2(shader_root / "GMIInheritMaskA.hlsl", shader_dir / "GMIInheritMaskA.hlsl")
+        shutil.copy2(shader_root / "GMIFinal.hlsl", shader_dir / "GMIFinal.hlsl")
+        mask_runs = "\n".join(
+            f"    run = CustomShader{section}InheritMask{index}"
+            for index, _item in enumerate(transparent_ranges)
+        )
+        alpha_runs = "\n".join(
+            f"    run = CustomShader{section}AlphaBlend{index}"
+            for index, _item in enumerate(transparent_ranges)
+        )
+        transparent_runs = f"{mask_runs}\n    Resource{section}SceneDepth = copy oD\n{alpha_runs}"
+        scene_depth_resource = (
+            f"\n[Resource{section}SceneDepth]\n"
+            "; filled by copy oD before transparent color passes\n"
+        )
+    for index, item in enumerate(transparent_ranges):
+        transparent_sections += f"""
+[CustomShader{section}InheritMask{index}]
+vs = Shaders\\GMIInheritMaskA.hlsl
+ps = Shaders\\GMIInheritMaskA.hlsl
+topology = triangle_list
+cull = none
+depth_enable = true
+depth_write_mask = zero
+depth_func = greater_equal
+blend[0] = ADD ZERO ONE
+alpha[0] = ADD ZERO ONE
+blend[1] = ADD ZERO ONE
+alpha[1] = ADD ZERO ONE
+vb0 = Resource{section}SkinnedVBIA
+vb1 = Resource{section}VB1
+vb3 = Resource{section}SkinnedVBIA
+ib = Resource{section}IB
+ps-t0 = Resource{base_color_resource}
+drawindexed = {int(item["count"])}, {int(item["start"])}, 0
+post ps-t0 = null
+"""
+        transparent_sections += f"""
+[CustomShader{section}AlphaBlend{index}]
+vs = Shaders\\GMIFinal.hlsl
+ps = Shaders\\GMIFinal.hlsl
+topology = triangle_list
+cull = none
+blend[0] = disable
+blend[1] = ADD ONE INV_SRC_ALPHA
+alpha[1] = ADD ONE INV_SRC_ALPHA
+depth_enable = true
+depth_write_mask = zero
+depth_func = greater_equal
+vb0 = Resource{section}SkinnedVBIA
+vb1 = Resource{section}VB1
+vb3 = Resource{section}SkinnedVBIA
+ib = Resource{section}IB
+ps-t0 = Resource{base_color_resource}
+ps-t1 = Resource{packed_mask_resource}
+ps-t4 = Resource{shade_color_resource}
+ps-t5 = Resource{section}SceneDepth
+drawindexed = {int(item["count"])}, {int(item["start"])}, 0
+post ps-t0 = null
+post ps-t1 = null
+post ps-t4 = null
+post ps-t5 = null
+"""
     tail_skips = ""
     for tail_index, first_index in enumerate(component.get("tailFirstIndices") or []):
         tail_skips += (
@@ -1922,10 +2141,12 @@ if $enable_{section}
     vb3 = Resource{section}SkinnedVBIA
     ib = Resource{section}IB
 {chr(10).join(material_bindings)}
-    drawindexed = {body_index_count}, 0, 0
+{drawindexed_lines}
+{transparent_runs}
     handling = skip
 endif
 {tail_skips}
+{scene_depth_resource}
 
 [CustomShader{section}RecoverMatrices]
 cs = Shaders\\RecoverMatricesCS.hlsl
@@ -1948,6 +2169,8 @@ post cs-t0 = null
 post cs-t1 = null
 post cs-t2 = null
 post cs-u0 = null
+
+{transparent_sections}
 
 [Resource{section}PosedVB]
 type = Buffer
@@ -1990,8 +2213,8 @@ filename = Buffers\\Body.VB1.buf
 
 [Resource{section}IB]
 type = Buffer
-format = DXGI_FORMAT_R16_UINT
-filename = Buffers\\Body.IB.R16_UINT.buf
+format = DXGI_FORMAT_{index_format}
+filename = Buffers\\{ib_buffer_name}
 
 {chr(10).join(material_resources)}
 """
@@ -2010,8 +2233,19 @@ filename = Buffers\\Body.IB.R16_UINT.buf
         "runtime": "3dmigoto-compute",
         "vertexCount": vertex_count,
         "indexCount": len(faces) * 3,
+        "indexFormat": index_format,
         "status": "draft",
         "materials": material_manifest,
+        "opacityTexture": opacity_manifest,
+        "alphaModes": {str(slot): mode for slot, mode in sorted(alpha_modes.items())},
+        "alphaCutoffs": {str(slot): alpha_cutoffs.get(slot, 0.5) for slot in sorted(alpha_modes)},
+        "transparentRanges": transparent_ranges,
+        "transparentFallback": "gbuffer-depth-test-no-depth-write",
+        "transparentLimitations": [
+            "prioritizes projection/depth effects and clean alpha-zero cutout",
+            "semi-transparent pixels are reliable only over existing same-model coverage",
+            "true forward transparency is not generated by the plugin yet",
+        ],
     }
     _write_json(package_dir / "manifest.json", manifest)
     (package_dir / "README.md").write_text(

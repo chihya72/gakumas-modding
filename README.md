@@ -5,12 +5,14 @@
 目标：让 Mod 作者只用 Blender 和本项目的导出插件就能换装 / 换模，**不需要安装
 Unity、不制作 AssetBundle、不手写 3DMigoto 配置**。
 
-> **当前状态(v0.5.0)**:单 t0 身体的 Blender → 3DMigoto → 游戏(换模 + 动画 + 贴图 +
-> 多 mod 共存)完整闭环已达成并发布,已在跨服装实机验证。一键即可对任意 body 生成完整配置档。
-> 0.5.0 新增**分材质烘焙 t1/t4**:为自定义 atlas / MMD 等无游戏来源的模型,按 Blender 材质
-> 逐材质烘出贴合游戏观感的遮罩/阴影(皮肤珊瑚阴影、哑光皮革、织物等,预设由实机抓帧实测)。
-> 仍在完善:回归测试冻结、多组件(脸/头发)、Mod Manager。详见
-> [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md)。
+> **当前状态(v0.6.0)**:单 t0 身体的 Blender → 3DMigoto → 游戏(换模 + 动画 + 贴图 +
+> 多 mod 共存)完整闭环已达成并跨服装实机验证。一键即可对任意 body 生成完整配置档。
+> 已具备**分材质烘焙 t1/t4**(按 Blender 材质逐材质烘遮罩/阴影,预设由实机抓帧实测)、
+> 顶点 COLOR/描边安全族、以及**透明材质保守路径**(A=0 镂空干净 + 投影/遮挡正常,半透明
+> 在已有 coverage 上可靠)。仍在完善:回归测试、作者蒙皮精修工具、多组件(脸/头发)、
+> Mod Manager。完成度与计划详见
+> [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md);版本变更见
+> [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
@@ -110,22 +112,21 @@ tools/build_inverse_skin_operator.py         → 由 bind + 权重生成逆算�
 | 文档 | 内容 |
 |---|---|
 | [README.md](README.md) | 项目总览（本文） |
-| [GakumasMI_开发路线_当前草案.md](GakumasMI_开发路线_当前草案.md) | 总体产品架构与路线 |
-| [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) | 当前进度、能力对比、后续计划（**最新状态以此为准**） |
-| [blender_addon/README.md](blender_addon/README.md) | 作者插件：安装与一键工作流（0.5.0，含分材质烘焙） |
+| [CHANGELOG.md](CHANGELOG.md) | 插件版本变更日志 |
+| [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) | 当前进度、完成度、能力对比、后续计划（**最新状态以此为准**） |
+| [GakumasMI_开发路线_当前草案.md](GakumasMI_开发路线_当前草案.md) | 总体产品架构与愿景 |
+| [blender_addon/README.md](blender_addon/README.md) | 作者插件：安装与一键工作流 |
 | [3Dmigoto-MI/README.md](3Dmigoto-MI/README.md) | 运行时：安装方法与按键说明 |
 | [spec/README.md](spec/README.md) | 配置档 / manifest 的 JSON Schema |
 | [research/inverse-skin-matrix-recovery.md](research/inverse-skin-matrix-recovery.md) | 逆解矩阵方案与游戏内验证报告 |
+| [research/transparent-material-status.md](research/transparent-material-status.md) | 透明材质当前策略与结论 |
+| [research/color-scan-20260627-091033.md](research/color-scan-20260627-091033.md) | 顶点 COLOR / 描边安全族 |
+| [research/README.md](research/README.md) | research 目录完整索引 |
 
 ### 历史记录（保留证据，不代表当前实现）
 
-| 文档 | 为何保留 |
-|---|---|
-| [research/reference-framework-comparison.md](research/reference-framework-comparison.md) | 矩阵恢复成功前的同类工具调查 |
-| [research/runtime-skinning-bridge.md](research/runtime-skinning-bridge.md) | 已放弃的进程内 Runtime 路线（代码已删） |
-| [research/ttmr-cstm-0119-body-plan.md](research/ttmr-cstm-0119-body-plan.md) | 已排除的骨架重定向实验 |
-| [research/blender-plugin-ui-reference.md](research/blender-plugin-ui-reference.md) | 其它工具（GIMI/WWMI/EFMI）UI 参考 |
-| [research/baseline/](research/baseline/) · [research/hunting/](research/hunting/) | 基准场景与 Hunting 环境记录 |
+已排除路线与逐步实验记录归档在 [research/archive/](research/archive/)，索引见
+[research/README.md](research/README.md)。这些文档刻意保留，用于避免重蹈已验证失败的路线。
 
 ---
 

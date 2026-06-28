@@ -1,11 +1,12 @@
 # GakumasMI 开发路线（当前草案）
 
-> **2026-06-25 更新（v0.5.0）**：单 t0 身体的 Blender → 3DMigoto → 游戏（换模 + 动画 +
-> 贴图 + 多 mod 共存）完整闭环已达成并发布；一键即可对任意 body 生成完整配置档。0.5.0 新增
-> 分材质烘焙 t1/t4（按 Blender 材质逐材质生成遮罩/阴影，预设由实机抓帧实测）。本文为
-> 总体产品愿景，**最新执行状态、完成度与后续计划以**
-> [`research/current-status-and-roadmap.md`](research/current-status-and-roadmap.md)**为准**
-> （下方分阶段计划属早期草案，部分已完成/调整）。
+> **本文是总体产品愿景**（含早期分阶段草案，部分已完成/调整）。**最新执行状态、完成度
+> 与后续计划以** [`research/current-status-and-roadmap.md`](research/current-status-and-roadmap.md)
+> **为准**，版本变更见 [`CHANGELOG.md`](CHANGELOG.md)。
+>
+> 截至 0.6.0：单 t0 身体的 Blender → 3DMigoto → 游戏（换模 + 动画 + 贴图 + 多 mod 共存）
+> 完整闭环已达成并跨服装实机验证；一键即可对任意 body 生成完整配置档；已具备分材质
+> 烘焙 t1/t4、顶点 COLOR/描边安全族与透明材质保守路径。
 
 > **项目定位**：为《学园偶像大师》建立一套以 **3DMigoto / DX11** 为核心的视觉 Mod 体系。  
 > **目标用户**：玩家只需安装运行环境；Mod 作者主要使用 Blender，不要求安装完整 Unity、制作 AssetBundle 或手动研究 Shader Hash。  
@@ -649,7 +650,7 @@ Profile 更新可以修复：
 - [x] 建立 Profile / Manifest v1 规范、资源命名规则与自动校验脚本（`spec/`、`tools/validate-packages.ps1`）
 - [x] 完成 Blender 插件 `0.1.0`（Blender 4.2 LTS：参考 Mesh 导入、索引 Mesh 验证/导出、DDS 贴图包导出）
 - [x] 定位上游 Bone Index / Bone Weight / Bind Pose（`Geo_Body`：152 根加权骨骼，Blender 插件 0.2 已支持加权参考导入）
-- [x] 对照 EFMI / GIMI / WWMI / SRMI 的真实蒙皮切入点（见 `research/reference-framework-comparison.md`；EFMI 官方同样不支持 CPU-posed 组件 VB 换模）
+- [x] 对照 EFMI / GIMI / WWMI / SRMI 的真实蒙皮切入点（见 `research/archive/reference-framework-comparison.md`；EFMI 官方同样不支持 CPU-posed 组件 VB 换模）
 - [x] 判定 Body Draw 前是否存在 GPU 可见的骨骼矩阵或 Compute Skinning 输入：**不存在**
 - [x] 既然不存在 GPU 骨骼矩阵，放弃 GPU skinning bridge 与进程内 Runtime override，
   改用「逆解每帧矩阵 + 重蒙皮」（路线 C）。已实机验证，并于 2026-06-24 删除

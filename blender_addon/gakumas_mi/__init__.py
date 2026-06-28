@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 5, 1),
+    "version": (0, 6, 0),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "导入学马仕参考模型，并导出绑定配置档的 3DMigoto 模组",
@@ -54,8 +54,8 @@ def register():
         items=[
             ("EXTRACT", "提取 / 导入", "抓帧+资源库生成完整配置档并导入参考模型"),
             ("SKINNING", "蒙皮转权", "把配置档权重转移给作者模型"),
-            ("EXPORT", "导出模组", "校验并导出可安装模组"),
             ("TEXTURE", "材质模板", "绑定身体多贴图或单贴图替换"),
+            ("EXPORT", "导出模组", "校验并导出可安装模组"),
         ],
         default="EXTRACT",
     )
@@ -95,18 +95,43 @@ def register():
         name="风险距离", default=0.02, min=0.0001, unit="LENGTH",
         description="距离参考身体表面超过该值的顶点会标记为高风险",
     )
-    bpy.types.Scene.gmi_semantic_correction = BoolProperty(
-        name="修正手指/颈部", default=True,
-        description="使用目标模型旧主导骨组来辅助区分相邻手指和颈部",
+    bpy.types.Scene.gmi_enable_native_color_transfer = BoolProperty(
+        name="从基础色提取描边色（复刻原版）", default=False,
+        description="导出时逐顶点把该点基础色编码进 COLOR(实测原版系数),描边 VS 解出≈基础色→衣服自身"
+                    "颜色的暗化描边,贴合衣服、不死黑;ramp行/宽度/光照仍按材质预设锁定(防色块、对称)。需填基础色 t0",
     )
     bpy.types.Scene.gmi_texture_key = StringProperty(name="贴图键", default="body.baseColor")
     bpy.types.Scene.gmi_texture_file = StringProperty(name="DDS 文件", subtype="FILE_PATH")
     bpy.types.Scene.gmi_base_color_file = StringProperty(name="基础色 t0", subtype="FILE_PATH")
     bpy.types.Scene.gmi_packed_mask_file = StringProperty(name="混合遮罩 t1", subtype="FILE_PATH")
     bpy.types.Scene.gmi_shade_color_file = StringProperty(name="阴影色 t4", subtype="FILE_PATH")
+    bpy.types.Scene.gmi_opacity_texture_file = StringProperty(
+        name="透明材质 t0（可选）", subtype="FILE_PATH",
+        description="留空时透明材质使用基础色 t0；仅当透明材质需要单独 RGBA/alpha 图时填写",
+    )
     bpy.types.Scene.gmi_neutral_material = BoolProperty(
         name="中性 t1/t4", default=True,
         description="未提供 t1/t4 时自动绑定中性贴图，盖掉游戏原版遮罩/阴影对新贴图的干扰",
+    )
+    bpy.types.Scene.gmi_outline_width_mode = EnumProperty(
+        name="描边宽度",
+        description="控制描边线条的粗细(挤出宽度)",
+        items=[
+            ("KEEP", "正常描边", "正常显示描边"),
+            ("RISK_ONLY", "仅安全顶点", "只在高风险/GMI_NO_OUTLINE 顶点关闭描边"),
+            ("DISABLE_ALL", "关闭", "关闭全部描边"),
+        ],
+        default="KEEP",
+    )
+    bpy.types.Scene.gmi_vertex_color_mode = EnumProperty(
+        name="描边颜色",
+        description="描边线条的颜色来源",
+        items=[
+            ("BASECOLOR", "取自基础色", "逐顶点从基础色 t0 生成描边色(复刻原版,贴合衣服色)"),
+            ("MATERIAL_PRESET", "按材质预设", "按材质类型用预设描边色(裙=布料、皮肤=皮肤…)"),
+            ("CONSTANT_BLACK", "黑色常量", "所有描边统一黑色"),
+        ],
+        default="BASECOLOR",
     )
     bpy.types.Scene.gmi_form_shading = BoolProperty(
         name="几何AO软化阴影", default=False,
@@ -121,6 +146,15 @@ def register():
         description="分材质烘焙 t1/t4 时该材质槽使用的预设（皮肤/布料/金属…）",
         items=_material_class_items(),
         default="cloth",
+    )
+    bpy.types.Material.gmi_alpha_mode = EnumProperty(
+        name="渲染材质",
+        description="导出时该材质槽走不透明 body 路径，还是走透明材质路径",
+        items=[
+            ("OPAQUE", "不透明", "使用普通 body 路径，投影/遮挡/描边最稳定"),
+            ("ALPHA_BLEND", "透明", "使用透明材质路径，读取 RGBA alpha 并保留 A=0 镂空"),
+        ],
+        default="OPAQUE",
     )
     bpy.types.Material.gmi_material_toon = FloatProperty(
         name="明暗(阴影范围)", default=-1.0, min=-1.0, max=1.0,
@@ -143,10 +177,11 @@ def unregister():
         "gmi_extract_draw", "gmi_output_dir", "gmi_component_id",
         "gmi_source_mesh_json", "gmi_skeleton_json", "gmi_bone_remap_file",
         "gmi_unmapped_bone_fallback",
-        "gmi_transfer_risk_distance", "gmi_semantic_correction",
+        "gmi_transfer_risk_distance", "gmi_enable_native_color_transfer",
         "gmi_texture_key", "gmi_texture_file", "gmi_package_id",
         "gmi_base_color_file", "gmi_packed_mask_file", "gmi_shade_color_file",
-        "gmi_neutral_material",
+        "gmi_opacity_texture_file",
+        "gmi_neutral_material", "gmi_outline_width_mode", "gmi_vertex_color_mode",
         "gmi_form_shading", "gmi_form_strength",
         "gmi_package_name", "gmi_author",
     ):
@@ -154,6 +189,10 @@ def unregister():
             delattr(bpy.types.Scene, name)
     if hasattr(bpy.types.Material, "gmi_material_class"):
         del bpy.types.Material.gmi_material_class
+    if hasattr(bpy.types.Material, "gmi_alpha_mode"):
+        del bpy.types.Material.gmi_alpha_mode
+    if hasattr(bpy.types.Material, "gmi_alpha_cutoff"):
+        del bpy.types.Material.gmi_alpha_cutoff
     if hasattr(bpy.types.Material, "gmi_material_toon"):
         del bpy.types.Material.gmi_material_toon
     if hasattr(bpy.types.Material, "gmi_material_shade"):
