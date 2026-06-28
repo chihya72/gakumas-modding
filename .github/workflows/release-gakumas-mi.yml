@@ -1,0 +1,53 @@
+name: Release · gakumas_mi (Blender 插件)
+
+# 触发：推送形如 gakumas-mi-v0.6.0 的 tag。
+# 产物：用 tools/package_blender_addon.py 打出插件 zip 并建 GitHub Release。
+# 版本号与运行时 3dmigoto-gkms 相互独立，不同步。
+
+on:
+  push:
+    tags:
+      - "gakumas-mi-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 从 tag 提取版本号
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#gakumas-mi-v}" >> "$GITHUB_OUTPUT"
+
+      - name: 校验 tag 版本与插件源码一致
+        run: |
+          src=$(python - <<'PY'
+          import re, pathlib
+          t = pathlib.Path("gakumas_mi/__init__.py").read_text(encoding="utf-8")
+          m = re.search(r'"version"\s*:\s*\(([^)]*)\)', t)
+          print(".".join(p.strip() for p in m.group(1).split(",") if p.strip()))
+          PY
+          )
+          if [ "$src" != "${{ steps.ver.outputs.version }}" ]; then
+            echo "::error::tag 版本 ${{ steps.ver.outputs.version }} 与源码 bl_info 版本 $src 不一致"
+            exit 1
+          fi
+
+      - name: 打包插件 zip
+        run: python tools/package_blender_addon.py -o "dist/gakumas_mi-${{ steps.ver.outputs.version }}.zip"
+
+      - name: 创建 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            "dist/gakumas_mi-${{ steps.ver.outputs.version }}.zip" \
+            --title "GakumasMI Blender 插件 ${{ steps.ver.outputs.version }}" \
+            --generate-notes

@@ -1,0 +1,32 @@
+name: CI
+
+# 纯 Python / 不依赖 Blender 的冒烟测试。
+# 说明：needs-Blender 的测试（blender_smoke / material_bake_blender_smoke）和
+# 需要本地游戏抓帧的 profile_contract_smoke 无法在 CI 跑，故只跑可移植的两个。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装依赖
+        run: pip install numpy pillow
+
+      - name: 纯 core 冒烟测试
+        run: |
+          python tests/material_bake_smoke.py
+          python tests/inverse_skin_index_format_smoke.py

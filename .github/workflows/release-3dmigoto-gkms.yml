@@ -1,0 +1,54 @@
+name: Release · 3dmigoto-gkms (运行时)
+
+# 触发：推送形如 3dmigoto-gkms-v0.4.9 的 tag。
+# 产物：打包仓库内的运行时文件（自编译补丁版 d3d11.dll + d3dx.ini + ShaderFixes + Mods/README）。
+# 注意：第三方 nvapi64.dll / d3dcompiler_47.dll 不入库，故不在产物内，需用户自行补齐。
+# 版本号与插件 gakumas_mi 相互独立，不同步。
+
+on:
+  push:
+    tags:
+      - "3dmigoto-gkms-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 从 tag 提取版本号
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#3dmigoto-gkms-v}" >> "$GITHUB_OUTPUT"
+
+      - name: 打包运行时 zip
+        run: |
+          set -e
+          stage="staging/3dmigoto-gkms"
+          mkdir -p "$stage/Mods"
+          cp 3dmigoto-gkms/d3d11.dll 3dmigoto-gkms/d3dx.ini "$stage/"
+          cp -r 3dmigoto-gkms/ShaderFixes "$stage/"
+          cp 3dmigoto-gkms/Mods/README.md "$stage/Mods/"
+          (cd staging && zip -r "../3dmigoto-gkms-${{ steps.ver.outputs.version }}.zip" 3dmigoto-gkms)
+
+      - name: 写 Release 说明
+        run: |
+          cat > notes.md <<'EOF'
+          学马仕定制 3DMigoto 运行时，含**自编译补丁版 `d3d11.dll`**（修了 live 横竖屏切换闪屏）。
+
+          ⚠️ **本包不含**第三方 `nvapi64.dll` 与 `d3dcompiler_47.dll`（非自由再分发二进制）。
+          请从 3DMigoto v1.4.9 发行版或可用游戏目录补齐这两个文件，与本包一起放到游戏 `gakumas.exe` 同级目录。
+
+          安装方法与按键说明见仓库 `3dmigoto-gkms/README.md`。用 `-force-d3d11` 启动游戏。
+          EOF
+
+      - name: 创建 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            "3dmigoto-gkms-${{ steps.ver.outputs.version }}.zip" \
+            --title "3dmigoto-gkms 运行时 ${{ steps.ver.outputs.version }}" \
+            --notes-file notes.md
