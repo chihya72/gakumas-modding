@@ -33,3 +33,4 @@ jobs:
           python tests/frame_profile_extract_smoke.py
           python tests/export_buffers_regression.py
           python tests/mod_ini_contract.py
+          python tests/inverse_skin_numeric.py
