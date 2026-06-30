@@ -417,6 +417,7 @@ static void EnableCutout(void* material, float cutoff = 0.5f) {
     SetMatFloat(material, "_Blend", 0.0f);
     SetMatFloat(material, "_Mode", 0.0f);
     SetMatFloat(material, "_RenderMode", 0.0f);
+    SetMatFloat(material, "_StencilWriteMask", 96.0f);
     SetMatFloat(material, "_ZWrite", 1.0f);
     SetMatFloat(material, "_SrcBlend", 1.0f);
     SetMatFloat(material, "_DstBlend", 0.0f);
@@ -453,14 +454,6 @@ static void DumpMaterial(const char* tag, void* mat) {
         for (auto p : props) { snprintf(buf, sizeof(buf), " %s=%.1f", p, gf(mat, il2cpp_string_new(p), g_mi_getFloatStr)); line += buf; }
         Logf("%s", line.c_str());
     }
-}
-
-static bool ApplyAtlasToMaterial(void* material, void* atlas) {
-    if (!material || !atlas || !g_mi_setMainTexture) return false;
-    Logf("[tex] set mainTexture material=%p atlas=%p", material, atlas);
-    CallArr(g_mi_setMainTexture, material, atlas);
-    Logf("[tex] set mainTexture OK material=%p", material);
-    return true;
 }
 
 static bool ApplyAtlasInPlaceToMaterial(void* material) {
@@ -544,41 +537,6 @@ static bool ApplyAtlasInPlaceToMaterial(void* material) {
     return false;
 }
 
-static void* CloneMaterialWithAtlas(void* source, void* atlas) {
-    if (!source || !g_clsMaterial || !g_mi_materialCtorCopy) return source;
-    void* material = il2cpp_object_new(g_clsMaterial);
-    void* ctor = MethodPtr(g_mi_materialCtorCopy);
-    if (!material || !ctor) return source;
-    Logf("[tex] clone material source=%p new=%p", source, material);
-    reinterpret_cast<ctor_obj_t>(ctor)(material, source, g_mi_materialCtorCopy);
-    Logf("[tex] clone material OK new=%p", material);
-    if (atlas && g_mi_setMainTexture) {
-        ApplyAtlasToMaterial(material, atlas);
-    }
-    if (il2cpp_gchandle_new) il2cpp_gchandle_new(material, 1);
-    return material;
-}
-
-// Diagnostic only. Geo_Dresscurtain can exist in the scene, but it is a separate
-// renderer/material and must not be used as the body answer for ttmr-cstm-0003.
-static void* FindCutoutMaterial() {
-    if (!g_mi_findAll || !g_smrTypeObject) return nullptr;
-    void* arr = reinterpret_cast<get_obj_t>(MethodPtr(g_mi_findAll))(g_smrTypeObject, g_mi_findAll);
-    uintptr_t n = ArrayCount(arr); void** items = ArrayItems(arr);
-    for (uintptr_t i = 0; i < n; ++i) {
-        void* r = items[i]; if (!r) continue;
-        void* m = CallObj(g_mi_getSharedMesh, r); if (!m) continue;
-        if (Name(m) == "Geo_Dresscurtain") {
-            void* mats = CallObj(g_mi_getSharedMaterials, r);
-            if (ArrayCount(mats) > 0) {
-                void* mat = ArrayItems(mats)[0];
-                Logf("[mesh] cutout source = Geo_Dresscurtain material=%p", mat);
-                return mat;
-            }
-        }
-    }
-    return nullptr;
-}
 
 // External-model container parsed from a .gmim file (see export_gmim.py for the format).
 struct Gmim {
@@ -603,10 +561,13 @@ static void* CloneCutoutMaterial(void* base, float cutoff) {
         EnableCutout(base, cutoff);
         return base;
     }
+    Logf("[mesh] cutout clone step: object_new(Material) base=%p cutoff=%.3f", base, cutoff);
     void* m = il2cpp_object_new(g_clsMaterial);
     void* ctor = MethodPtr(g_mi_materialCtorCopy);
     if (!m || !ctor) { EnableCutout(base, cutoff); return base; }
+    Logf("[mesh] cutout clone step: .ctor(Material) clone=%p ctor=%p", m, ctor);
     reinterpret_cast<ctor_obj_t>(ctor)(m, base, g_mi_materialCtorCopy);
+    Logf("[mesh] cutout clone step: EnableCutout clone=%p", m);
     EnableCutout(m, cutoff);
     if (il2cpp_gchandle_new) il2cpp_gchandle_new(m, 1);
     Logf("[mesh] cloned cutout material base=%p clone=%p cutoff=%.3f", base, m, cutoff);
@@ -646,10 +607,27 @@ static bool EnsureSharedMaterials(void* renderer, const Gmim& g) {
         return true;
     }
 
-    Logf("[mesh] using Geo_Body material base=%p (Geo_Dresscurtain ignored)", base);
+    Logf("[mesh] using Geo_Body material slot[0]=%p name='%s' (opaque m_bdy)",
+         base, Name(base).c_str());
     bool atlasApplied = ApplyAtlasInPlaceToMaterial(base);
 
-    void* cutoutMat = (cutoutSubs > 0) ? CloneCutoutMaterial(base, cutoutCutoff) : nullptr;
+    void* cutoutMat = nullptr;
+    bool cutoutAtlasApplied = false;
+    if (cutoutSubs > 0) {
+        if (oldCount > 1 && oldItems && oldItems[1]) {
+            // Strict path: use the renderer's real second body material, which is
+            // the game's m_bdyco/m_bdy-co slot on costumes that support body cutout.
+            // This preserves shader variant/internal material state that cannot be
+            // recreated by mutating a clone of m_bdy.
+            cutoutMat = oldItems[1];
+            Logf("[mesh] using Geo_Body material slot[1]=%p name='%s' (real m_bdyco)",
+                 cutoutMat, Name(cutoutMat).c_str());
+            cutoutAtlasApplied = ApplyAtlasInPlaceToMaterial(cutoutMat);
+        } else {
+            Logf("[mesh] no real Geo_Body slot[1]/m_bdyco; fallback to cloned cutout material");
+            cutoutMat = CloneCutoutMaterial(base, cutoutCutoff);
+        }
+    }
 
     std::vector<void*> materials(submeshCount, base);
     for (uint32_t s = 0; s < submeshCount; ++s) {
@@ -661,8 +639,9 @@ static bool EnsureSharedMaterials(void* renderer, const Gmim& g) {
         Logf("[mesh] cannot allocate sharedMaterials[%u]", submeshCount);
         return false;
     }
-    Logf("[mesh] build sharedMaterials: %llu -> %u (opaque=base cutout=%p cutoutSubs=%u atlasInPlace=%d)",
-         (unsigned long long)oldCount, submeshCount, cutoutMat, cutoutSubs, atlasApplied ? 1 : 0);
+    Logf("[mesh] build sharedMaterials: %llu -> %u (opaque=%p cutout=%p cutoutSubs=%u atlasBase=%d atlasCutout=%d)",
+         (unsigned long long)oldCount, submeshCount, base, cutoutMat, cutoutSubs,
+         atlasApplied ? 1 : 0, cutoutAtlasApplied ? 1 : 0);
     CallArr(g_mi_setSharedMaterials, renderer, newArr);
     return true;
 }
@@ -1021,7 +1000,7 @@ static DWORD WINAPI InitThread(LPVOID) {
     g_mi_setUpdateOff  = il2cpp_class_get_method_from_name(smr, "set_updateWhenOffscreen", 1);
     g_mi_getSharedMaterials = rendererClass ? il2cpp_class_get_method_from_name(rendererClass, "get_sharedMaterials", 0) : nullptr;
     g_mi_setSharedMaterials = rendererClass ? il2cpp_class_get_method_from_name(rendererClass, "set_sharedMaterials", 1) : nullptr;
-    g_mi_materialCtorCopy = materialClass ? il2cpp_class_get_method_from_name(materialClass, ".ctor", 1) : nullptr;
+    g_mi_materialCtorCopy = FindMethodByParamName(materialClass, ".ctor", 1, "Material");
     g_mi_getMainTexture = materialClass ? il2cpp_class_get_method_from_name(materialClass, "get_mainTexture", 0) : nullptr;
     g_mi_setMainTexture = materialClass ? il2cpp_class_get_method_from_name(materialClass, "set_mainTexture", 1) : nullptr;
     g_mi_hasPropertyString = FindMethodByParamName(materialClass, "HasProperty", 1, "String");
@@ -1170,13 +1149,14 @@ static DWORD WINAPI InitThread(LPVOID) {
             }
         }
         if (!best) return nullptr;
-        if (!names.empty() && bestMatched < (int)(names.size() * 95 / 100)) {
-            Logf("[pick] best Geo_Body renderer=%p verts=%d submeshes=%d bones=%d match=%d/%llu -- not compatible enough; wait for the correct costume body",
-                 best, bestVerts, bestSubmeshes, bestBones, bestMatched, (unsigned long long)names.size());
+        int requiredMatched = names.empty() ? 0 : (int)((names.size() * 90 + 99) / 100);
+        if (!names.empty() && bestMatched < requiredMatched) {
+            Logf("[pick] best Geo_Body renderer=%p verts=%d submeshes=%d bones=%d match=%d/%llu required=%d -- not compatible enough; wait for the correct costume body",
+                 best, bestVerts, bestSubmeshes, bestBones, bestMatched, (unsigned long long)names.size(), requiredMatched);
             return nullptr;
         }
-        Logf("[pick] selected Geo_Body renderer=%p verts=%d submeshes=%d bones=%d match=%d/%llu",
-             best, bestVerts, bestSubmeshes, bestBones, bestMatched, (unsigned long long)names.size());
+        Logf("[pick] selected Geo_Body renderer=%p verts=%d submeshes=%d bones=%d match=%d/%llu required=%d",
+             best, bestVerts, bestSubmeshes, bestBones, bestMatched, (unsigned long long)names.size(), requiredMatched);
         return best;
     };
 

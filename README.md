@@ -53,7 +53,7 @@ Unity、不制作 AssetBundle、不手写 3DMigoto 配置**。
 | 用抓帧反解「T-pose 几何」 | 数学上病态（同时求几何和矩阵），噪声放大，效果差 |
 | 静态 T-pose `VB` 直接替换 | 游戏 Draw 输入已是 CPU 蒙皮结果，不跟随动画 |
 | 表面驱动 / SurfaceMap 自定义 VS | 几何可见但材质退化；已删除（见 git 历史） |
-| 进程内 IL2CPP Runtime 替换 Mesh | 违反「不进程内 Runtime」边界，且不稳定；已删除（见 git 历史） |
+| 进程内 IL2CPP Runtime 替换 Mesh 作为正式发布路径 | 维护/分发/崩溃风险高；仅保留为研究路线，正式路线仍是 3DMigoto |
 
 ---
 

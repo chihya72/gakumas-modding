@@ -1,281 +1,175 @@
 # PC IL2CPP `.gmim` runtime mesh replacement research
 
-更新：2026-06-30 · 场景：`yuika.gmim` 运行时替换 `ttmr-cstm-0003` 的 `Geo_Body`
+更新：2026-06-30 · 场景：`yuika.gmim` 运行时替换 `fktn-cstm-0001` 的 `Geo_Body`
 
 ## 0. 当前结论
 
-PC IL2CPP 注入路线已经证明：**可以把外部模型的顶点、法线、UV、分材质三角和按骨名权重带进游戏内**，
-前提是运行时把 `.gmim` 的骨名权重重映射到当前活体 `SkinnedMeshRenderer.bones[]` 的骨序。
+PC IL2CPP 注入路线已经证明：**外部模型可以在游戏运行时以真实 Unity `Mesh` 形式装入
+`SkinnedMeshRenderer.sharedMesh`**。已验证的数据包括：
 
-已实机确认：
+- 顶点、法线、UV、顶点 COLOR；
+- 多 submesh triangle index；
+- 按骨名存储的 top-4 权重；
+- 运行时按活体 `SkinnedMeshRenderer.bones[]` 重映射权重；
+- 复用原 `Geo_Body` bindposes 后跟随游戏动作。
 
-- `yuika.gmim` 可在主线程创建 Unity `Mesh` 并装回目标 `Geo_Body`。
-- 外部模型跟随游戏动作，骨名覆盖 `124/124` 时没有权重 fallback。
-- 目标服装 `ttmr-cstm-0003` 的 `Geo_Body` 是正确替换目标：`verts=20278`、`submeshes=1`、`bones=140`。
-- `yuika.gmim` 的 `30672 verts / 11 submeshes / 124 bones` 装入后可见，`tris=33598`。
-- 当前剩余问题主要是**材质/贴图注入**，不是坐标、权重、bindpose 或动画。
+透明/镂空的决定性结论是：
 
-这条路线与 3DMigoto inverse-skin 主线不同：它不从 D3D 抓帧重蒙皮，而是在 Unity/IL2CPP 层直接替换
-`SkinnedMeshRenderer.sharedMesh`。它适合继续研究“游戏内真实 Mesh 替换”能力，但还不是插件主线。
+**必须严格使用游戏原生 `Geo_Body.sharedMaterials[1] = m_bdyco`。**
 
-## 1. 运行时 `.gmim` 数据契约
+单独把 `m_bdy` 改成类似透明材质的状态不可行；透明贴图本身有 alpha，但 `m_bdy` 的 shader 路径不把
+`_BaseMap.a` 当透明处理，会把透明区域的 RGB 画出来，表现为黑底。导出阶段按 alpha 删除几何也不是
+正确方案，它只能删掉少量全透明三角，不能复刻游戏原生材质的透明/镂空行为，也会破坏作者几何。
 
-`.gmim` 当前承担一个轻量外部模型容器：
+实机成功日志：
 
-- 顶点、法线、UV；
-- 多 submesh 的 triangle index；
+```text
+[mesh] loaded D:\Games\gakumas\yuika.gmim: verts=30621 submeshes=11 bones=154 cutoutSubmeshes=6 (ver=3)
+[mesh] using Geo_Body material slot[0]=... name='m_bdy (Instance)' (opaque m_bdy)
+[tex] SetTextureID OK via _BaseMap id=73
+[mesh] using Geo_Body material slot[1]=... name='m_bdyco (Instance)' (real m_bdyco)
+[tex] SetTextureID OK via _BaseMap id=73
+[mesh] build sharedMaterials: 2 -> 11 (opaque=... cutout=... cutoutSubs=6 atlasBase=1 atlasCutout=1)
+[mesh] DONE assigned real mesh=... to renderer=...
+[probe] renderer='Geo_Body' mesh='(?)' verts=30621 submeshes=11 tris=33530 bones=166 bindposes=166
+```
+
+因此 IL2CPP 路线中透明的最小正确条件是：
+
+1. 目标服装的 `Geo_Body` 必须有原生第二材质槽 `m_bdyco`。
+2. `.gmim` 必须记录每个 submesh 的 `opaque / native-co` 标记。
+3. 运行时必须把不透明 submesh 分到 `sharedMaterials[0] = m_bdy`。
+4. 运行时必须把 native-co submesh 分到 `sharedMaterials[1] = m_bdyco`。
+5. 两个材质都要替换 `_BaseMap` 为外部 atlas；不能依赖 `mainTexture`。
+
+## 1. `.gmim` 数据契约
+
+`.gmim` 当前是实验用轻量容器：
+
+- magic `"GMIM"`；
+- `ver=3`；
+- 顶点、法线、UV、COLOR；
 - 骨名列表；
-- 每顶点最多 4 个骨权重，权重按 `.gmim` 骨名索引存储。
+- 每顶点最多 4 个权重，权重索引指向 `.gmim` 骨名表；
+- submesh triangle index；
+- 每个 submesh 的 `mode`：`0=opaque`，`1=native-co`。
 
-运行时加载后执行：
+导出端只写“实际有正权重的非 `GMI_` 顶点组”。这解释了为什么
+`C:\Users\10725\Desktop\yuika.blend` 里有更多 vertex groups / armature bones，但
+`yuika.gmim` 记录为 `bones=154`：实际被顶点权重引用的骨名就是 154 个。
+
+运行时流程：
 
 1. 读取活体 `SkinnedMeshRenderer.bones[]`，用 `Transform.name` 建 `boneName -> liveIndex`。
-2. 读取 `.gmim` 骨名，把每个顶点权重从 `.gmim` 骨序重映射到当前服装骨序。
-3. 当前服装缺失的骨，权重 fallback 到 `Hips`，防止顶点飞掉。
-4. `bindposes` 直接复用原 `Geo_Body.sharedMesh.bindposes`，天然匹配活体骨序。
-5. 主线程创建新 Unity `Mesh`：`set_vertices`、`set_normals`、`set_uv`、`set_boneWeights`、
-   `set_bindposes`、`set_subMeshCount`、`SetTriangles(int[], submesh)`。
-6. 装回目标 `SkinnedMeshRenderer.sharedMesh`。
+2. 把 `.gmim` 权重从导出骨序重映射到当前服装骨序。
+3. 缺失骨 fallback 到稳定骨，目前主要落到 `Hips`。
+4. `bindposes` 直接复用原 `Geo_Body.sharedMesh.bindposes`。
+5. 主线程创建新 Unity `Mesh` 并设置 vertices/normals/uv/colors/boneWeights/bindposes。
+6. 设置 `subMeshCount`，逐 submesh 调 `SetTriangles(int[], submesh)`。
+7. 按 `.gmim` 的 submesh mode 构造 `sharedMaterials`：`m_bdy` / `m_bdyco`。
+8. 装回 `SkinnedMeshRenderer.sharedMesh`。
 
-当前实测正确目标无 fallback：
-
-```text
-[mesh] loaded D:\Games\gakumas\yuika.gmim: verts=30672 submeshes=11 bones=124
-[pick] selected Geo_Body ... verts=20278 submeshes=1 bones=140 match=124/124
-[mesh] fallback vertices: full=0 partial=0 fallbackWeight=0.0
-[mesh] DONE assigned real mesh=... to renderer=...
-[probe] renderer='Geo_Body' mesh='(?)' verts=30672 submeshes=11 tris=33598 bones=140 bindposes=140
-```
-
-## 2. 目标 `ttmr-cstm-0003` 识别
-
-先从 3DMigoto 导出的 `mr` 目录确认 profile：
-
-- `C:\Users\10725\Desktop\mr\manifest.json`
-- `profile`: `frame-FrameAnalysis-2026-06-29-065048-body-5b34da41`
-- `conflicts`: `ttmr.cstm-0003.body.mesh`
-- `mod.ini`: `[TextureOverrideMrBody] hash = 5b34da41`
-
-因此这次 PC IL2CPP 替换目标是 `mdl_chr_ttmr-cstm-0003_body`。
-
-AssetStudio 直接解包命令：
-
-```powershell
-& "D:\GIT\AssetStudio-net10.0-win\AssetStudio.CLI.exe" `
-  "D:\GIT\Gakuen-idolmaster-ab-decrypt\output\asset_bundle\other\mdl_chr_ttmr-cstm-0003_body" `
-  "D:\GIT\gakumas-modding\build\assetstudio-ttmr-cstm-0003-json" `
-  --game Normal `
-  --unity_version 6000.0.67f1 `
-  --export_type JSON `
-  --types Mesh Material Texture2D SkinnedMeshRenderer GameObject Transform MonoBehaviour `
-  --group_assets ByType
-```
-
-AssetStudio 对 `SkinnedMeshRenderer` 有一次 EOF 读取错误，但 `Mesh`、`Material`、`Texture2D`
-已成功导出，不影响当前材质/网格判断。
-
-导出结果：
-
-- `Mesh/Geo_Body.json`
-- `Material/m_bdy.json`
-- `Texture2D/t_chr_ttmr-cstm-0003_bdy_col.json`
-- `Texture2D/t_chr_ttmr-cstm-0003_bdy_def.json`
-- `Texture2D/t_chr_ttmr-cstm-0003_bdy_rma.json`
-- `Texture2D/t_chr_ttmr-cstm-0003_bdy_sdw.json`
-- `Texture2D/t_chr_ttmr-base-0000_rmp.json`
-
-`Geo_Body.json` 关键字段：
+当前实测目标：
 
 ```text
-m_SubMeshes[0].indexCount = 76584
-m_SubMeshes[0].vertexCount = 20278
-m_VertexCount = 20278
-m_Name = Geo_Body
+游戏目标 Geo_Body: verts=18041 submeshes=2 bones=166 bindposes=166
+yuika.gmim: verts=30621 submeshes=11 bones=154 cutoutSubmeshes=6
+骨名命中: 144/154，缺失 10 个 bone_... 辅助骨，1142 个顶点存在部分 fallback
 ```
 
-这与运行时 probe 的目标完全一致：
+## 2. 材质事实
 
-```text
-[probe] renderer='Geo_Body' mesh='Geo_Body' verts=20278 submeshes=1 bones=140 bindposes=140  <== BODY
-```
+### 2.1 `m_bdy`
 
-## 3. 材质和贴图事实
+`m_bdy` 是普通 body 不透明材质。`mainTexture` 为空是正常现象，贴图通过命名属性绑定：
 
-`Material/m_bdy.json` 显示原材质名是 `m_bdy`。重要结论：**`mainTexture` 为空是正常现象**，
-这套 shader 不靠 `Material.mainTexture`，而是靠命名 `TexEnv`。
-
-`m_bdy` 的有效贴图属性：
-
-| Unity material property | Texture2D |
+| Unity material property | 语义 |
 |---|---|
-| `_BaseMap` | `t_chr_ttmr-cstm-0003_bdy_col` |
-| `_DefMap` | `t_chr_ttmr-cstm-0003_bdy_def` |
-| `_RampAddMap` | `t_chr_ttmr-cstm-0003_bdy_rma` |
-| `_RampMap` | `t_chr_ttmr-base-0000_rmp` |
-| `_ShadeMap` | `t_chr_ttmr-cstm-0003_bdy_sdw` |
+| `_BaseMap` | base color |
+| `_DefMap` | packed / def |
+| `_RampAddMap` | ramp add |
+| `_RampMap` | ramp |
+| `_ShadeMap` | shade |
 
-因此运行时不能只看 `get_mainTexture()`，应优先探测 `_BaseMap`。
+运行时必须通过 `Shader.PropertyToID("_BaseMap")` + `Material.SetTexture(int, Texture)` 替换贴图。
 
-3DMigoto `mr` 导出侧的贴图槽也吻合：
+### 2.2 `m_bdyco`
 
-| 语义 | D3D slot | 文件 |
-|---|---|---|
-| BaseColor | `ps-t0` | `Textures/Body.BaseColor.dds` |
-| PackedMask | `ps-t1` | `Textures/Body.PackedMask.dds` |
-| ShadeColor | `ps-t4` | `Textures/Body.ShadeColor.dds` |
-
-### 3.1 真正镂空参考：`fktn-cstm-0001`
-
-先前把 `ttmr-cstm-0003_body` 当成镂空参考是误判。它只有 `m_bdy`，`bdy_col` 的 alpha
-基本全是 254/255，没有真实透明信息。
-
-`C:\Users\10725\Desktop\fktn-cstm-001` 才有真实 body cutout 对照：
+`C:\Users\10725\Desktop\fktn-cstm-001` 是真实 body cutout 对照。它包含：
 
 | Material | `_BaseMap` | 关键状态 |
 |---|---|---|
 | `m_bdy` | `t_chr_fktn-cstm-0001_bdy_col` | `_ShaderType=0`, `_Cull=2` |
 | `m_bdyco` | `t_chr_fktn-cstm-0001_bdyco_col_alp` | `_ShaderType=1`, `_Cull=0` |
 
-`t_chr_fktn-cstm-0001_bdyco_col_alp.png` 的 alpha 分布约为：
+`m_bdyco` 不是 Unity 常规 alpha-blend 材质：`_Surface=0`、`_ZWrite=1`、`_SrcBlend=1`、
+`_DstBlend=0`。透明/镂空来自游戏自己的 `m_bdyco` shader/state/draw 上下文。
 
-- alpha 0：377266 像素；
-- alpha 1-253：194291 像素；
-- alpha 254：97569 像素；
-- alpha 255：379450 像素；
-- alpha < 254 合计约 54.5%。
+在 IL2CPP 路线里，严格使用 `sharedMaterials[1]` 后透明生效，证明 `m_bdyco` 是必要条件。
 
-OBJ 也能看到 `Geo_Body_0` / `Geo_Body_1` 两段，说明真实资产是通过 body + body-co
-两个材质/子网格表达镂空，而不是单一 `m_bdy` 上打开标准 Unity `_AlphaClip`。
+## 3. 已排除路线
 
-`EnableCutout()` 把材质切到更接近 `m_bdyco` 的状态：`_ShaderType=1`、`_Cull=0`、
-`_AlphaClip=0`、`_Cutoff=<author>`。
+| 路线 | 实测结果 | 结论 |
+|---|---|---|
+| 只给 `m_bdy` 换一张带 alpha 的 `_BaseMap` | 透明区显示为黑底 | `m_bdy` 不吃 `_BaseMap.a` |
+| 手动把 `m_bdy` 改成类似 `m_bdyco` 的 float/keyword 状态 | 仍不透明或黑底 | 不能复刻原生 `m_bdyco` 的完整 shader/state |
+| 自建替代 cutout 材质 | 透明行为不等价 | 不是严格原生 `m_bdyco`，不作为方案 |
+| 导出阶段按 alpha 删除透明几何 | 只能删少量全透明三角，无法处理真实材质透明 | 破坏几何，不作为透明方案 |
+| 使用 `Geo_Dresscurtain` 作为 body cutout 参考 | 材质属于独立 renderer | 与 `Geo_Body.m_bdyco` 无关 |
 
-### 已实现：per-submesh 材质拆分（2026-06-30）
+这些路线保留为避坑记录。当前唯一正确路径是：**目标 `Geo_Body` 原生双材质槽 +
+submesh 分配到真实 `m_bdyco`**。
 
-之前的硬伤是 `EnsureSharedMaterials` 把 11 个 submesh 槽**全填同一个 base 材质**，并直接对
-base 调 `EnableCutout` → 整个身体都变镂空态。现已改为复刻真实资产的 `m_bdy + m_bdyco` 拆分：
+## 4. IL2CPP 注入路线 vs 3DMigoto 路线
 
-1. **`.gmim` 升到 ver=3**，每个 submesh 带 `mode`（0=不透明 / 1=镂空co）+ `cutoff`。
-   `export_gmim.py` 按材质槽的 `gmi_alpha_mode`（NATIVE_CO/CO，与主插件同一标记）、
-   `--cutout-materials` CLI、或材质名含 `bdyco` 判定 mode。
-2. **DLL 按 mode 装配 `sharedMaterials`**：不透明 submesh → base `m_bdy`（不动，保持
-   `_ShaderType=0`）；镂空 submesh → `CloneCutoutMaterial()` 克隆 base 后只在**克隆**上
-   `EnableCutout(cutoff)`。atlas 先 in-place 贴到 base，克隆继承贴图。
+| 维度 | IL2CPP 注入 `.gmim` | 3DMigoto 正式路线 |
+|---|---|---|
+| 注入层级 | Unity/IL2CPP 层，替换 `SkinnedMeshRenderer.sharedMesh` | D3D draw 层，按 IB/VB/hash 覆盖 |
+| 网格形态 | 游戏内真实 Unity `Mesh` | GPU buffer 中的自定义 VB/IB |
+| 动画来源 | 直接使用 Unity `bones[]` + bindposes + BoneWeight | 从游戏当前帧 CPU-skinned VB0 逆解矩阵，再 GPU 重蒙皮 |
+| 外部权重 | 可直接带入，但必须按骨名映射到活体骨序；缺骨需要 fallback | 作者模型在 Blender 内转权到目标配置档骨架，再导出 |
+| 材质透明 | 必须复用原 renderer 的 `m_bdy / m_bdyco` 槽 | 已采用原生 co material section，并用游戏 `m_bdyco` draw/state 实机验证成功 |
+| 贴图 | 可通过 Unity `Material.SetTexture(_BaseMap)` 替换 | 通过 3DMigoto 资源绑定替换 `ps-t0/t1/t4` |
+| 调试可见性 | 可枚举 live renderer/bones/materials，日志直观 | 抓帧可精确看到 draw、资源槽、VS/PS、firstIndex |
+| 稳定性 | 进程内注入，受 IL2CPP API/Unity 版本/线程约束影响，崩溃风险高 | 不进 Unity 进程逻辑层，符合现有 mod 注入模型 |
+| 打包分发 | 需要 DLL 注入与本地运行时代码 | 普通 3DMigoto mod 包，用户部署成本低 |
+| 适合用途 | 研究、验证 Unity 层真实 Mesh 替换能力 | 正式插件主线与用户发布 |
 
-这样两条路线（3DMigoto 原生co / IL2CPP cutout submesh）由**同一个 Blender 材质标记**
-`gmi_alpha_mode = NATIVE_CO` 驱动。
+### IL2CPP 路线优势
 
-下一轮 F8 后理想日志：
+- 证明了外部模型权重可以在运行时按骨名带进游戏，只要 bindpose/骨序处理正确。
+- 能直接观察 `SkinnedMeshRenderer`、`bones[]`、`sharedMaterials`，适合研究游戏内部结构。
+- 对 mesh/submesh/material 的实验迭代很快，不必每次走完整 3DMigoto 打包。
 
-```text
-[mesh] loaded ...: ... cutoutSubmeshes=N (ver=3)
-[mesh] cloned cutout material base=... clone=... cutoff=0.330
-[mesh] build sharedMaterials: 1 -> 11 (opaque=base cutout=0x... cutoutSubs=N atlasInPlace=1)
-```
+### IL2CPP 路线劣势
 
-**仍是经验未知**：`_ShaderType=1` 这套状态在 Campus shader 上是否真产生 alpha discard，
-要 F8 实测。若仍不透明，再 dump 一个真实 `m_bdyco` 实例的材质状态逐项对齐（`DumpMaterial`）。
+- 需要进程内 DLL 注入，风险和维护成本高。
+- Unity/IL2CPP 方法重载、线程限制、对象生命周期都可能导致崩溃。
+- 透明仍不能绕过游戏材质结构，最终也必须严格依赖原生 `m_bdyco`。
+- 不适合作为面向普通作者/玩家的正式发布路径。
 
-## 4. 已踩坑
+### 3DMigoto 路线优势
 
-### 4.1 目标 renderer 选择
+- 已是项目正式闭环：Blender → 3DMigoto → 游戏。
+- 不进入 Unity 逻辑层，分发就是普通 mod。
+- 抓帧能稳定定位 body 与 native-co 的 draw / firstIndex / texture slots。
+- 透明已经通过原生 `m_bdyco` section 实机验证成功，与游戏自己的 shader/state 保持一致。
 
-同一画面会有多个 `Geo_Body`，不能按第一个名字匹配。当前选择策略：
+### 3DMigoto 路线劣势
 
-- 读取 `.gmim` 骨名；
-- 枚举所有 `Geo_Body` 候选；
-- 对每个候选计算 `.gmim` 骨名在该 renderer `bones[]` 中的覆盖率；
-- 选择覆盖率最高者，当前正确目标是 `match=124/124`。
+- 需要逆解每帧矩阵并重蒙皮，算法和配置档生成复杂。
+- 依赖抓帧 profile 与 hash/firstIndex，游戏资源结构变动时需要重新生成配置档。
+- 对作者而言，权重仍应在 Blender 内转到目标骨架，不能把任意外部 rig 原样当成游戏权重。
 
-### 4.2 submesh 与材质槽
+## 5. 当前定位
 
-目标 `ttmr-cstm-0003` 原身体是 `submeshes=1`，但 `yuika.gmim` 是 `submeshes=11`。
+IL2CPP `.gmim` 是**研究路线**：用于理解 Unity 层 Mesh、骨骼、材质槽和原生 `m_bdyco` 行为。
 
-已验证两种策略：
+3DMigoto 是**正式路线**：用于插件导出、用户安装、多人分发和长期维护。
 
-- 合并 11 个 submesh 到 1 个 submesh：几何完整出现，说明 mesh/skinning/bindpose/坐标链路正确。
-- 扩展 `sharedMaterials` 到 11 个槽并重复原材质：几何也能显示，能保留 `.gmim` 的 submesh 拆分。
+IL2CPP 支线的透明结论向 3DMigoto 已验证成功的正式路线收敛：
 
-当前代码采用第二种，日志：
+**不要自造透明；IL2CPP 也必须复用游戏原生 `m_bdyco` 材质段。**
 
-```text
-[mesh] expand sharedMaterials: 1 -> 11 (duplicate existing materials, atlasInPlace=0)
-[mesh] step: subMeshCount=11 + SetTriangles (target original submeshes=1, materialsReady=1)
-```
-
-### 4.3 贴图替换崩溃
-
-直接创建新 `Texture2D` 并替换材质贴图指针曾经导致游戏崩溃。参考
-`D:\chinosk6\gkms-local\app\src\main\cpp\GakumasLocalify` 后确认更稳的路线是：
-
-- 用 `Texture2D(2, 2)` 创建纹理；
-- 通过 `UnityEngine.ImageConversion.LoadImage(Texture2D, Byte[], bool markNonReadable)` 填充 PNG bytes；
-- 优先对原材质已有 texture 做 in-place `LoadImage`，少换对象指针。
-
-### 4.4 Unity material 方法重载
-
-`Material.HasProperty/GetTexture/SetTexture` 同时有 `string` 与 `int propertyID` 重载。
-只用 `il2cpp_class_get_method_from_name(name, argc)` 可能拿错重载。当前日志出现过：
-
-```text
-[tex] material has no usable mainTexture: ...; probing shader texture properties
-[tex] HasProperty(_BaseMap)=0
-[tex] HasProperty(_DefMap)=0
-...
-```
-
-这与 AssetStudio 的 `m_bdy.json` 矛盾，推断为重载解析错误或运行时材质实例不是导出态 `m_bdy`。
-
-当前修正方向：
-
-- 解析 `Shader.PropertyToID(string)`；
-- 优先用 `Material.HasProperty(int)`、`GetTexture(int)`、`SetTexture(int, Texture)`；
-- 用 `il2cpp_class_get_methods` + 参数类型名精确选择 `String` / `Int32` 版本；
-- string 版本仅作 fallback。
-
-下一轮启动日志应关注：
-
-```text
-[resolve] HasProperty(System.Int32) -> ...
-[resolve] GetTexture(System.Int32) -> ...
-[resolve] SetTexture(System.Int32) -> ...
-[resolve] PropertyToID(System.String) -> ...
-[tex] String Has/Get/Set=...  ID Has/Get/Set=...
-```
-
-按 F8 后理想日志：
-
-```text
-[tex] PropertyToID(_BaseMap)=...
-[tex] HasPropertyID(_BaseMap/...)=1
-[tex] GetTextureID(_BaseMap/...) -> ...
-[tex] LoadImage OK texture=...
-[tex] atlas applied in-place via _BaseMap
-```
-
-## 5. 当前状态
-
-| 模块 | 状态 |
-|---|---|
-| PC xinput 注入 | 可加载，日志输出正常 |
-| IL2CPP 类型/方法解析 | 可用，正在加强重载解析 |
-| 目标 body 选择 | 已按骨名覆盖率稳定选中 |
-| `.gmim` 读取 | 可用 |
-| 骨名权重重映射 | 可用，当前 `124/124` 覆盖 |
-| bindpose 处理 | 复用原 `Geo_Body`，实机可动 |
-| 多 submesh 写入 | 可用 |
-| 材质槽扩展 | 可用 |
-| atlas 贴图注入 | 已可通过 `_BaseMap` property ID 路径替换 |
-| 透明/cutout | per-submesh 材质拆分已实现（.gmim ver=3 + 克隆 m_bdyco 材质）；`_ShaderType=1` 是否真 discard 待 F8 实测 |
-
-## 6. 与“直接带外部权重进游戏”的关系
-
-可以直接带进游戏的不是“任意外部 rig 的权重”，而是满足以下条件的权重：
-
-- 权重绑定的骨名能映射到当前活体 `bones[]`；
-- bindpose 与当前活体骨架兼容，或运行时复用当前目标 bindposes；
-- 外部模型本身的坐标、尺度、姿态已对齐到当前角色空间；
-- 缺失骨要有明确 fallback 策略。
-
-`yuika.gmim` 这轮能动，是因为采用“骨名重映射 + 目标 bindpose 复用”。这不等价于异游戏 rip
-原权重天然可用；异 rig/bindpose 仍然会爆炸。对 Blender 插件主线而言，智能传权仍是更可靠的作者流程。
+更完整的 TheHerta4/SSMT4、学马 3DMigoto、学马 IL2CPP 层级对比见
+[`theherta4-gpu-vs-gakumas-cpu-vs-il2cpp.md`](theherta4-gpu-vs-gakumas-cpu-vs-il2cpp.md)。

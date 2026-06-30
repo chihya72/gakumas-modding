@@ -87,6 +87,12 @@ def loop_color(li, vi):
     c = col_attr.data[li if col_corner else vi].color
     return (float(c[0]), float(c[1]), float(c[2]), float(c[3]))
 
+# Blender RNA collections can become surprisingly fragile after loading a large
+# image in background mode. Cache the loop-facing data before loading the alpha
+# atlas so alpha culling and vertex splitting read plain Python tuples.
+uv_cache = [(float(uv.x), float(uv.y)) for uv in (item.uv for item in uv_layer.data)]
+color_cache = [loop_color(i, mesh.loops[i].vertex_index) for i in range(len(mesh.loops))]
+
 alpha_image = None
 alpha_w = alpha_h = 0
 alpha_pixels = None
@@ -134,8 +140,8 @@ def vkey(li):
     loop = mesh.loops[li]
     vi = loop.vertex_index
     n = to_unity((nmat @ loop.normal).normalized())
-    uv = uv_layer.data[li].uv
-    col = loop_color(li, vi)
+    uv = uv_cache[li]
+    col = color_cache[li]
     key = (vi, round(n[0], 4), round(n[1], 4), round(n[2], 4),
            round(uv[0], 5), round(uv[1], 5),
            round(col[0], 3), round(col[1], 3), round(col[2], 3), round(col[3], 3))
@@ -143,7 +149,7 @@ def vkey(li):
 
 for lt in mesh.loop_triangles:
     if alpha_pixels:
-        tri_uvs = [uv_layer.data[li].uv for li in lt.loops]
+        tri_uvs = [uv_cache[li] for li in lt.loops]
         center = (
             (tri_uvs[0][0] + tri_uvs[1][0] + tri_uvs[2][0]) / 3.0,
             (tri_uvs[0][1] + tri_uvs[1][1] + tri_uvs[2][1]) / 3.0,
