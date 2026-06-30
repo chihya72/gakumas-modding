@@ -5,11 +5,11 @@
 目标：让 Mod 作者只用 Blender 和本项目的导出插件就能换装 / 换模，**不需要安装
 Unity、不制作 AssetBundle、不手写 3DMigoto 配置**。
 
-> **当前状态(v0.6.0)**:单 t0 身体的 Blender → 3DMigoto → 游戏(换模 + 动画 + 贴图 +
+> **当前状态(v0.6.2)**:单 t0 身体的 Blender → 3DMigoto → 游戏(换模 + 动画 + 贴图 +
 > 多 mod 共存)完整闭环已达成并跨服装实机验证。一键即可对任意 body 生成完整配置档。
 > 已具备**分材质烘焙 t1/t4**(按 Blender 材质逐材质烘遮罩/阴影,预设由实机抓帧实测)、
-> 顶点 COLOR/描边安全族、以及**透明材质保守路径**(A=0 镂空干净 + 投影/遮挡正常,半透明
-> 在已有 coverage 上可靠)。仍在完善:回归测试、作者蒙皮精修工具、多组件(脸/头发)、
+> 顶点 COLOR/描边安全族、以及**原生 `m_bdyco` 透明材质路径**(`NATIVE_CO`, 复用游戏第二材质段)。
+> 仍在完善:回归测试、作者蒙皮精修工具、多组件(脸/头发)、
 > Mod Manager。完成度与计划详见
 > [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md);版本变更见
 > [CHANGELOG.md](CHANGELOG.md)。

@@ -15,7 +15,9 @@
 - 抓帧复核（`FrameAnalysis-2026-06-30-045108` + `mdl_chr_fktn-cstm-0001_body`）确认 `m_bdyco`
   与主 body **共用 VB0/VB1/IB**、仅 submesh 范围不同，且第二段在 5 个 VS pass 中的 4 个出现；
   NativeCo override 对全部 5 个 VS 都 `checktextureoverride = ib`。详见
-  [`research/transparent-material-status.md`](research/transparent-material-status.md) §−1。
+  [`research/transparent-material-status.md`](research/transparent-material-status.md)。
+- 补充 `m_bdyco` alpha 行为实测：低 alpha 渐变区域仍被裁切，抬到 `A=128/255` 后透明 padding
+  以黑块显示，确认当前 body-co 路线更接近 cutout/alpha test，不是连续半透明 blend。
 - 测试：`tests/mod_ini_contract.py` 删去 cutout/alpha-blend 契约，新增「旧 alpha 值回退不透明」
   与「原生 co 缺 t0 报错」；`tests/inverse_skin_index_format_smoke.py` 移除 alpha-blend 用例。
 

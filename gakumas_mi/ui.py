@@ -10,7 +10,7 @@ class GMI_PT_main(Panel):
     bl_category = "GakumasMI"
 
     def draw_header(self, context):
-        self.layout.label(text="v0.6.1 native-co")
+        self.layout.label(text="v0.6.2 native-co")
 
     def draw(self, context):
         scene = context.scene
