@@ -147,15 +147,34 @@ m_Name = Geo_Body
 OBJ 也能看到 `Geo_Body_0` / `Geo_Body_1` 两段，说明真实资产是通过 body + body-co
 两个材质/子网格表达镂空，而不是单一 `m_bdy` 上打开标准 Unity `_AlphaClip`。
 
-当前运行时实验已把 `EnableCutout()` 改成更接近 `m_bdyco` 的状态：设置 `_ShaderType=1`、
-`_Cull=0`、`_AlphaClip=0`、`_Cutoff=0.5`。下一轮 F8 日志应看到：
+`EnableCutout()` 把材质切到更接近 `m_bdyco` 的状态：`_ShaderType=1`、`_Cull=0`、
+`_AlphaClip=0`、`_Cutoff=<author>`。
+
+### 已实现：per-submesh 材质拆分（2026-06-30）
+
+之前的硬伤是 `EnsureSharedMaterials` 把 11 个 submesh 槽**全填同一个 base 材质**，并直接对
+base 调 `EnableCutout` → 整个身体都变镂空态。现已改为复刻真实资产的 `m_bdy + m_bdyco` 拆分：
+
+1. **`.gmim` 升到 ver=3**，每个 submesh 带 `mode`（0=不透明 / 1=镂空co）+ `cutoff`。
+   `export_gmim.py` 按材质槽的 `gmi_alpha_mode`（NATIVE_CO/CO，与主插件同一标记）、
+   `--cutout-materials` CLI、或材质名含 `bdyco` 判定 mode。
+2. **DLL 按 mode 装配 `sharedMaterials`**：不透明 submesh → base `m_bdy`（不动，保持
+   `_ShaderType=0`）；镂空 submesh → `CloneCutoutMaterial()` 克隆 base 后只在**克隆**上
+   `EnableCutout(cutoff)`。atlas 先 in-place 贴到 base，克隆继承贴图。
+
+这样两条路线（3DMigoto 原生co / IL2CPP cutout submesh）由**同一个 Blender 材质标记**
+`gmi_alpha_mode = NATIVE_CO` 驱动。
+
+下一轮 F8 后理想日志：
 
 ```text
-[tex] enabled Campus bdyco-like state on material=...
+[mesh] loaded ...: ... cutoutSubmeshes=N (ver=3)
+[mesh] cloned cutout material base=... clone=... cutoff=0.330
+[mesh] build sharedMaterials: 1 -> 11 (opaque=base cutout=0x... cutoutSubs=N atlasInPlace=1)
 ```
 
-如果仍然不透明，下一步应把 `.gmim` 扩展出材质名/透明标记，并在运行时给透明 submesh 分配
-真实 `m_bdyco` 风格材质，而不是把 11 个 submesh 全部重复同一个 `m_bdy`。
+**仍是经验未知**：`_ShaderType=1` 这套状态在 Campus shader 上是否真产生 alpha discard，
+要 F8 实测。若仍不透明，再 dump 一个真实 `m_bdyco` 实例的材质状态逐项对齐（`DumpMaterial`）。
 
 ## 4. 已踩坑
 
@@ -247,7 +266,7 @@ OBJ 也能看到 `Geo_Body_0` / `Geo_Body_1` 两段，说明真实资产是通�
 | 多 submesh 写入 | 可用 |
 | 材质槽扩展 | 可用 |
 | atlas 贴图注入 | 已可通过 `_BaseMap` property ID 路径替换 |
-| 透明/cutout | 正在验证 `fktn m_bdyco` 的 `_ShaderType=1` / `_Cull=0` 状态 |
+| 透明/cutout | per-submesh 材质拆分已实现（.gmim ver=3 + 克隆 m_bdyco 材质）；`_ShaderType=1` 是否真 discard 待 F8 实测 |
 
 ## 6. 与“直接带外部权重进游戏”的关系
 

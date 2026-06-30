@@ -407,12 +407,12 @@ static void SetMatKeyword(void* material, const char* keyword, bool enabled) {
 // cutout body-co material. fktn-cstm-0001 shows m_bdyco uses _ShaderType=1 and
 // _Cull=0 while _AlphaClip stays 0, so the Campus shader's own mode switch seems
 // more important than Unity's usual alpha-test keywords.
-static void EnableCutout(void* material) {
+static void EnableCutout(void* material, float cutoff = 0.5f) {
     if (!material) return;
     SetMatFloat(material, "_ShaderType", 1.0f);
     SetMatFloat(material, "_Cull", 0.0f);
     SetMatFloat(material, "_AlphaClip", 0.0f);
-    SetMatFloat(material, "_Cutoff", 0.5f);
+    SetMatFloat(material, "_Cutoff", cutoff);
     SetMatFloat(material, "_Surface", 0.0f);
     SetMatFloat(material, "_Blend", 0.0f);
     SetMatFloat(material, "_Mode", 0.0f);
@@ -513,8 +513,9 @@ static bool ApplyAtlasInPlaceToMaterial(void* material) {
                     reinterpret_cast<set_texture_id_t>(setIdPtr)(material, propertyId, atlas, g_mi_setTextureId);
                     Logf("[tex] SetTextureID OK via %s id=%d", property, propertyId);
                     // Keep game _DefMap/_ShadeMap (neutralizing them caused black).
-                    EnableCutout(material);   // alpha-clip so yuika's A=0 镂空 regions are discarded
-
+                    // NOTE: cutout state is NOT applied here anymore. The atlas is shared by the
+                    // opaque base (m_bdy) and the cloned cutout material (m_bdyco); only the clone
+                    // gets EnableCutout, so opaque submeshes stay opaque. See EnsureSharedMaterials.
                     return true;
                 }
             }
@@ -579,35 +580,89 @@ static void* FindCutoutMaterial() {
     return nullptr;
 }
 
-static bool EnsureSharedMaterials(void* renderer, uint32_t submeshCount) {
-    if (!g_mi_getSharedMaterials || !g_mi_setSharedMaterials || !g_clsMaterial || submeshCount <= 0) {
+// External-model container parsed from a .gmim file (see export_gmim.py for the format).
+struct Gmim {
+    uint32_t vcount = 0, subcount = 0, bonecount = 0;
+    std::vector<std::string> bones;
+    std::vector<float> pos, nrm, uv, col;  // vcount*3, *3, *2, *4(RGBA, ver>=2)
+    std::vector<int>   wbone;              // vcount*4 (table idx, -1=unused)
+    std::vector<float> wweight;            // vcount*4
+    std::vector<std::vector<int>> subs;    // subcount index lists
+    std::vector<uint8_t> submode;          // subcount: 0=opaque(m_bdy), 1=cutout/co(m_bdyco) -- ver>=3
+    std::vector<float>   subcutoff;        // subcount: alpha cutoff for cutout submeshes -- ver>=3
+};
+
+// Clone the opaque body material and switch the COPY into m_bdyco-like cutout state,
+// so opaque submeshes keep the untouched m_bdy while cutout/co submeshes discard A=0.
+// The clone inherits base's textures (atlas already applied in-place to base).
+static void* CloneCutoutMaterial(void* base, float cutoff) {
+    if (!base) return nullptr;
+    if (!g_clsMaterial || !g_mi_materialCtorCopy) {
+        // No copy ctor available: degrade to mutating base (whole body becomes cutout).
+        Logf("[mesh] cutout clone unavailable; mutating base material in place");
+        EnableCutout(base, cutoff);
+        return base;
+    }
+    void* m = il2cpp_object_new(g_clsMaterial);
+    void* ctor = MethodPtr(g_mi_materialCtorCopy);
+    if (!m || !ctor) { EnableCutout(base, cutoff); return base; }
+    reinterpret_cast<ctor_obj_t>(ctor)(m, base, g_mi_materialCtorCopy);
+    EnableCutout(m, cutoff);
+    if (il2cpp_gchandle_new) il2cpp_gchandle_new(m, 1);
+    Logf("[mesh] cloned cutout material base=%p clone=%p cutoff=%.3f", base, m, cutoff);
+    return m;
+}
+
+// Build a per-submesh sharedMaterials array: opaque submeshes -> base m_bdy (untouched),
+// cutout/co submeshes (g.submode[s]==1) -> a single cloned cutout material. Driven by the
+// .gmim per-submesh mode so the route matches the real m_bdy + m_bdyco split.
+static bool EnsureSharedMaterials(void* renderer, const Gmim& g) {
+    uint32_t submeshCount = g.subcount;
+    if (!g_mi_getSharedMaterials || !g_mi_setSharedMaterials || !g_clsMaterial || submeshCount == 0) {
         return false;
     }
     void* oldArr = CallObj(g_mi_getSharedMaterials, renderer);
     uintptr_t oldCount = ArrayCount(oldArr);
     void** oldItems = ArrayItems(oldArr);
-    if (oldCount >= submeshCount) {
-        Logf("[mesh] materials already cover submeshes: materials=%llu submeshes=%u",
+    void* base = (oldCount > 0 && oldItems) ? oldItems[0] : nullptr;
+    if (!base) {
+        Logf("[mesh] cannot build sharedMaterials: renderer has no source material");
+        return false;
+    }
+
+    uint32_t cutoutSubs = 0;
+    float cutoutCutoff = 0.5f;
+    for (uint32_t s = 0; s < submeshCount; ++s) {
+        if (s < g.submode.size() && g.submode[s]) {
+            ++cutoutSubs;
+            if (s < g.subcutoff.size()) cutoutCutoff = g.subcutoff[s];
+        }
+    }
+
+    // Nothing to change: target already has enough material slots and no submesh needs cutout.
+    if (oldCount >= submeshCount && cutoutSubs == 0) {
+        Logf("[mesh] materials already cover submeshes: materials=%llu submeshes=%u (no cutout)",
              (unsigned long long)oldCount, submeshCount);
         return true;
     }
-    void* fallback = (oldCount > 0 && oldItems) ? oldItems[0] : nullptr;
-    if (!fallback) {
-        Logf("[mesh] cannot expand sharedMaterials: renderer has no source material");
-        return false;
-    }
-    void* base = fallback;
-    Logf("[mesh] using Geo_Body material only base=%p (Geo_Dresscurtain ignored)", base);
+
+    Logf("[mesh] using Geo_Body material base=%p (Geo_Dresscurtain ignored)", base);
     bool atlasApplied = ApplyAtlasInPlaceToMaterial(base);
+
+    void* cutoutMat = (cutoutSubs > 0) ? CloneCutoutMaterial(base, cutoutCutoff) : nullptr;
+
     std::vector<void*> materials(submeshCount, base);
-    for (uint32_t i = 0; i < submeshCount; ++i) materials[i] = base;
+    for (uint32_t s = 0; s < submeshCount; ++s) {
+        bool isCutout = (s < g.submode.size() && g.submode[s]);
+        materials[s] = (isCutout && cutoutMat) ? cutoutMat : base;
+    }
     void* newArr = NewArr(g_clsMaterial, materials.size(), materials.data(), sizeof(void*));
     if (!newArr) {
         Logf("[mesh] cannot allocate sharedMaterials[%u]", submeshCount);
         return false;
     }
-    Logf("[mesh] expand sharedMaterials: %llu -> %u (duplicate existing materials, atlasInPlace=%d)",
-         (unsigned long long)oldCount, submeshCount, atlasApplied ? 1 : 0);
+    Logf("[mesh] build sharedMaterials: %llu -> %u (opaque=base cutout=%p cutoutSubs=%u atlasInPlace=%d)",
+         (unsigned long long)oldCount, submeshCount, cutoutMat, cutoutSubs, atlasApplied ? 1 : 0);
     CallArr(g_mi_setSharedMaterials, renderer, newArr);
     return true;
 }
@@ -663,15 +718,6 @@ static void* BuildQuadAndReplace(void* renderer) {
 }
 
 // ============================ real mesh from .gmim ==========================
-struct Gmim {
-    uint32_t vcount = 0, subcount = 0, bonecount = 0;
-    std::vector<std::string> bones;
-    std::vector<float> pos, nrm, uv, col;  // vcount*3, *3, *2, *4(RGBA, ver>=2)
-    std::vector<int>   wbone;              // vcount*4 (table idx, -1=unused)
-    std::vector<float> wweight;            // vcount*4
-    std::vector<std::vector<int>> subs;    // subcount index lists
-};
-
 static bool LoadGmim(const std::string& path, Gmim& g) {
     std::ifstream f(path, std::ios::binary);
     if (!f) { Logf("[mesh] cannot open %s", path.c_str()); return false; }
@@ -683,6 +729,16 @@ static bool LoadGmim(const std::string& path, Gmim& g) {
         uint16_t len; f.read((char*)&len, 2);
         std::string s(len, 0); f.read(&s[0], len); g.bones.push_back(s);
     }
+    // ver>=3: per-submesh render mode (0=opaque m_bdy, 1=cutout/co m_bdyco) + cutoff.
+    g.submode.assign(g.subcount, 0);
+    g.subcutoff.assign(g.subcount, 0.5f);
+    if (ver >= 3) {
+        for (uint32_t s = 0; s < g.subcount; ++s) {
+            uint8_t mode = 0; float cutoff = 0.5f;
+            f.read((char*)&mode, 1); f.read((char*)&cutoff, 4);
+            g.submode[s] = mode; g.subcutoff[s] = cutoff;
+        }
+    }
     g.pos.resize(g.vcount * 3); f.read((char*)g.pos.data(), g.vcount * 3 * 4);
     g.nrm.resize(g.vcount * 3); f.read((char*)g.nrm.data(), g.vcount * 3 * 4);
     g.uv.resize(g.vcount * 2);  f.read((char*)g.uv.data(),  g.vcount * 2 * 4);
@@ -693,7 +749,10 @@ static bool LoadGmim(const std::string& path, Gmim& g) {
         uint32_t n; f.read((char*)&n, 4);
         std::vector<int> idx(n); f.read((char*)idx.data(), n * 4); g.subs.push_back(std::move(idx));
     }
-    Logf("[mesh] loaded %s: verts=%u submeshes=%u bones=%u", path.c_str(), g.vcount, g.subcount, g.bonecount);
+    uint32_t cutoutSubs = 0;
+    for (uint32_t s = 0; s < g.subcount; ++s) if (g.submode[s]) ++cutoutSubs;
+    Logf("[mesh] loaded %s: verts=%u submeshes=%u bones=%u cutoutSubmeshes=%u (ver=%u)",
+         path.c_str(), g.vcount, g.subcount, g.bonecount, cutoutSubs, ver);
     return f.good() || f.eof();
 }
 
@@ -852,7 +911,7 @@ static void* BuildFromFileAndReplace(void* renderer) {
     void* bp = CallObj(g_mi_getBindposes, orig);
     if (bp) CallArr(g_mi_setBindposes, mesh, bp);
     int originalSubmeshes = CallInt(g_mi_subMeshCount, orig);
-    bool materialsReady = EnsureSharedMaterials(renderer, g.subcount);
+    bool materialsReady = EnsureSharedMaterials(renderer, g);
     if (!materialsReady && originalSubmeshes <= 1 && g.subcount > 1) {
         std::vector<int> merged;
         size_t total = 0;
