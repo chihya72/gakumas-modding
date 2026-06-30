@@ -1,7 +1,10 @@
-"""P0 回归：逆解模组 mod.ini 生成契约（0.5.1 多 pass + 0.6.0 透明路径）。
+"""P0 回归：逆解模组 mod.ini 生成契约（0.5.1 多 pass + 原生 co 透明路径）。
 
 用一份完全合成的最小 profile（不依赖真实游戏数据）驱动 core.write_inverse_skin_package，
-锁定 mod.ini 关键结构，防止运行时替换链/透明路径悄悄回退。CI 无 Blender 可跑。
+锁定 mod.ini 关键结构，防止运行时替换链/原生 co 路径悄悄回退。CI 无 Blender 可跑。
+
+注：0.6.x 的自建镂空(ALPHA_CLIP)/半透明(ALPHA_BLEND)路径已整体移除，只保留把第二材质段
+交给游戏原生 m_bdyco draw 的 NATIVE_CO 一条路径。
 """
 
 import importlib.util
@@ -15,7 +18,19 @@ core = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(core)
 
 
-def _write_synthetic_profile(profile_dir: Path):
+def _write_synthetic_profile(profile_dir: Path, native_section=False):
+    component = {
+        "id": "body",
+        "ibHash": "4d5dfe7b",
+        "indices": 12,
+        "mainFirstIndex": 6,
+        "tailFirstIndices": [9],
+    }
+    if native_section:
+        component["materialSections"] = [
+            {"id": "body.section0", "role": "main", "firstIndex": 6, "indexCount": 12},
+            {"id": "body.section1", "role": "secondary", "firstIndex": 9, "indexCount": 3},
+        ]
     profile = {
         "schemaVersion": 1,
         "id": "test-profile",
@@ -28,29 +43,41 @@ def _write_synthetic_profile(profile_dir: Path):
                 "inverseOperator": "Buffers/InverseOperator.R32_FLOAT.buf",
             }
         },
-        "components": [
-            {
-                "id": "body",
-                "ibHash": "4d5dfe7b",
-                "indices": 12,
-                "mainFirstIndex": 6,
-                "tailFirstIndices": [9],
-            }
-        ],
+        "components": [component],
     }
     (profile_dir / "profile.json").write_text(json.dumps(profile), encoding="utf-8")
+    body_drawcalls = {
+        "passBindings": {
+            "p0": {"draw": 1, "vertexShader": "aaaa1111"},
+            "p1": {"draw": 2, "vertexShader": "bbbb2222"},
+        }
+    }
+    if native_section:
+        body_drawcalls["sectionBindings"] = {
+            "body.section1": {
+                "role": "secondary",
+                "firstIndex": 9,
+                "indexCount": 3,
+                "representativeDraw": 3,
+                "passBindings": {
+                    "draw_000003": {"draw": 3, "vertexShader": "cccc3333", "pixelShader": "dddd4444"}
+                },
+            }
+        }
     drawcalls = {
         "components": {
-            "body": {
-                "passBindings": {
-                    "p0": {"draw": 1, "vertexShader": "aaaa1111"},
-                    "p1": {"draw": 2, "vertexShader": "bbbb2222"},
-                }
-            }
+            "body": body_drawcalls
         }
     }
     (profile_dir / "drawcall_map.json").write_text(json.dumps(drawcalls), encoding="utf-8")
-    (profile_dir / "texture_map.json").write_text(json.dumps({"textures": {}}), encoding="utf-8")
+    textures = {}
+    if native_section:
+        textures = {
+            "body.section1.baseColor": {"slot": "ps-t0", "hash": "base0001"},
+            "body.section1.packedMask": {"slot": "ps-t1", "hash": "mask0001"},
+            "body.section1.shadeColor": {"slot": "ps-t2", "hash": "shade001"},
+        }
+    (profile_dir / "texture_map.json").write_text(json.dumps({"textures": textures}), encoding="utf-8")
     (profile_dir / "Buffers").mkdir(exist_ok=True)
     (profile_dir / "Buffers" / "InverseOperator.R32_FLOAT.buf").write_bytes(b"\x00" * 16)
 
@@ -68,10 +95,10 @@ def _mesh():
     return vertices, normals, tangents, uv0, uv1, colors, faces, skin, materials
 
 
-def _build(tmp, **kwargs):
+def _build(tmp, native_section=False, **kwargs):
     profile_dir = Path(tmp) / "profile"
     profile_dir.mkdir()
-    _write_synthetic_profile(profile_dir)
+    _write_synthetic_profile(profile_dir, native_section=native_section)
     out = Path(tmp) / "out"
     v, n, t, uv0, uv1, c, faces, skin, materials = _mesh()
     pkg = core.write_inverse_skin_package(
@@ -120,47 +147,77 @@ def test_opaque_ini_contract():
     print("opaque_ini_contract OK")
 
 
-def test_transparent_ini_contract():
+def test_native_co_ini_contract():
+    """原生 co：透明材质段挪到 secondary material section，继承游戏 co shader/state。"""
     with tempfile.TemporaryDirectory() as tmp:
         opacity = Path(tmp) / "opacity.dds"
-        core.write_solid_rgba8_dds(opacity, (255, 255, 255, 128), size=4, srgb=False)
-        ini, pkg = _build(tmp, alpha_modes={1: "ALPHA_BLEND"}, opacity_texture=str(opacity))
+        core.write_solid_rgba8_dds(opacity, (255, 255, 255, 255), size=4, srgb=False)
+        ini, pkg = _build(
+            tmp,
+            native_section=True,
+            alpha_modes={1: "NATIVE_CO"},
+            opacity_texture=str(opacity),
+        )
 
-        # 材质 1 走透明路径 → 拆出 InheritMask + AlphaBlend，主体里 run 这两段
-        assert "run = CustomShaderTestModInheritMask0" in ini, ini
-        assert "run = CustomShaderTestModAlphaBlend0" in ini, ini
-        assert "SceneDepth = copy oD" in ini
+        # 主 body 只画不透明材质段，NATIVE_CO 材质段不进入主 G-buffer 自建透明路径。
+        main_sec = ini[ini.index("[TextureOverrideTestModBody]"):]
+        main_sec = main_sec[:main_sec.index("\n[TextureOverrideTestModBodyNativeCo]")]
+        assert "drawindexed = 3, 0, 0" in main_sec, main_sec
+        assert "drawindexed = 3, 3, 0" not in main_sec, main_sec
+        assert "AlphaClip" not in ini and "AlphaBlend" not in ini and "InheritMask" not in ini
 
-        # 0.6.0 透明 pass 关键状态：反向 Z + 不写深度 + 预乘 alpha
-        assert "depth_func = greater_equal" in ini
-        assert "depth_write_mask = zero" in ini
-        assert "blend[1] = ADD ONE INV_SRC_ALPHA" in ini
-        assert "Shaders\\GMIFinal.hlsl" in ini and "Shaders\\GMIInheritMaskA.hlsl" in ini
+        # co 段独立 hook secondary section，并在该 draw 上重新取当前 vb0 做 compute。
+        assert "[TextureOverrideTestModBodyNativeCo]" in ini, ini
+        native_sec = ini[ini.index("[TextureOverrideTestModBodyNativeCo]"):]
+        native_sec = native_sec[:native_sec.index("\n[", 1)] if "\n[" in native_sec[1:] else native_sec
+        assert "match_first_index = 9" in native_sec, native_sec
+        assert "ResourceTestModPosedVB = copy vb0" in native_sec, native_sec
+        assert "run = CustomShaderTestModRecoverMatrices" in native_sec, native_sec
+        assert "run = CustomShaderTestModSkinCustom" in native_sec, native_sec
+        assert "drawindexed = 3, 3, 0" in native_sec, native_sec
+        assert "handling = skip" in native_sec, native_sec
 
-        # 材质 0 仍走不透明 drawindexed；材质 1 的段移到透明 pass
-        assert "drawindexed = 3, 0, 0" in ini       # opaque mat0
-        assert "drawindexed = 3, 3, 0" in ini       # mat1 in transparent pass
+        # 贴图槽来自 body.section1；shadeColor 在本 synthetic co section 中是 ps-t2。
+        assert "ps-t0 = ResourceTestModOpacityBaseColor" in native_sec, native_sec
+        assert "ps-t1 = ResourceTestModPackedmask" in native_sec, native_sec
+        assert "ps-t2 = ResourceTestModShadecolor" in native_sec, native_sec
 
-        # 透明 shader 实际写入包内
-        assert (pkg / "Shaders" / "GMIFinal.hlsl").is_file()
-        assert (pkg / "Shaders" / "GMIInheritMaskA.hlsl").is_file()
-    print("transparent_ini_contract OK")
+        # co section 自己的 VS 也要挂 checktextureoverride；native co 接管后不再生成尾部 skip。
+        assert ini.count("checktextureoverride = ib") == 3, ini
+        assert "[TextureOverrideTestModBodyTail0]" not in ini, ini
+
+        manifest = json.loads((pkg / "manifest.json").read_text(encoding="utf-8"))
+        assert manifest["nativeCoRanges"] == [{"start": 3, "count": 3, "material": 1, "mode": "NATIVE_CO"}]
+        assert manifest["nativeCoSection"]["id"] == "body.section1"
+    print("native_co_ini_contract OK")
 
 
-def test_transparent_without_t0_rejected():
-    """透明材质但没给 t0（基础色/透明图）→ 必须报错，不能静默导出。"""
+def test_native_co_without_t0_rejected():
+    """原生 co 材质但没给 t0（基础色/透明图）→ 必须报错，不能静默导出。"""
     with tempfile.TemporaryDirectory() as tmp:
         try:
-            _build(tmp, alpha_modes={1: "ALPHA_BLEND"})
+            _build(tmp, native_section=True, alpha_modes={1: "NATIVE_CO"})
         except ValueError:
             pass
         else:
-            raise AssertionError("透明材质缺 t0 应导出失败")
-    print("transparent_without_t0_rejected OK")
+            raise AssertionError("原生 co 材质缺 t0 应导出失败")
+    print("native_co_without_t0_rejected OK")
+
+
+def test_legacy_alpha_modes_fall_back_to_opaque():
+    """旧工程里的 ALPHA_CLIP/ALPHA_BLEND 值已废弃 → 当成不透明，不再生成自建透明 pass。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        ini, _ = _build(tmp, alpha_modes={1: "ALPHA_BLEND"})
+        # 旧值被忽略：材质 1 仍按不透明 drawindexed 画，没有任何透明/co override。
+        assert "drawindexed = 3, 3, 0" in ini, ini
+        assert "AlphaClip" not in ini and "AlphaBlend" not in ini and "InheritMask" not in ini
+        assert "NativeCo" not in ini, ini
+    print("legacy_alpha_modes_fall_back_to_opaque OK")
 
 
 if __name__ == "__main__":
     test_opaque_ini_contract()
-    test_transparent_ini_contract()
-    test_transparent_without_t0_rejected()
+    test_native_co_ini_contract()
+    test_native_co_without_t0_rejected()
+    test_legacy_alpha_modes_fall_back_to_opaque()
     print("ALL mod_ini_contract OK")

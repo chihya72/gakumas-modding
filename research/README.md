@@ -13,6 +13,7 @@
 | [`current-status-and-roadmap.md`](current-status-and-roadmap.md) | **当前状态、完成度与后续计划的权威来源。** |
 | [`transparent-material-status.md`](transparent-material-status.md) | 透明材质当前策略、架构结论与抓帧证据（整合自归档的两份过程记录）。 |
 | [`inverse-skin-matrix-recovery.md`](inverse-skin-matrix-recovery.md) | 逆解每帧骨骼矩阵与任意拓扑导出的数学依据与游戏内验证。 |
+| [`pc-il2cpp-gmim-runtime-replacement.md`](pc-il2cpp-gmim-runtime-replacement.md) | PC IL2CPP `.gmim` 运行时换网格研究：骨名权重重映射、`ttmr-cstm-0003` AssetStudio 解包、材质属性结论。 |
 | [`color-scan-20260627-091033.md`](color-scan-20260627-091033.md) | 顶点 COLOR / vb1 扫描：COLOR 是区域/拓扑数据，附描边宽度安全族。 |
 | [`blender-plugin-ui-reference.md`](blender-plugin-ui-reference.md) | GIMI/WWMI/EFMI 的 UI / 作者流程参考。 |
 | [`baseline/`](baseline/) · [`hunting/`](hunting/) | 基准场景与 Hunting 环境记录。 |

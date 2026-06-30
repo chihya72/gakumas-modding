@@ -40,3 +40,7 @@ __pycache__/
 
 # Local stale backup artifacts.
 *.stale
+
+# pc-il2cpp-proxy 第三方依赖与构建产物（不入库）
+experiments/pc-il2cpp-proxy/third_party/
+experiments/pc-il2cpp-proxy/build/

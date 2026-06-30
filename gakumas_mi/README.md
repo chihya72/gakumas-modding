@@ -280,9 +280,28 @@ HSKI Body 已验证的身体贴图语义：
 
 ## 7. 透明材质
 
-材质属性 `渲染材质` 选 **透明** 即走透明路径（`gmi_alpha_mode = ALPHA_BLEND`）。当前为
-**保守路径**：优先保证 A=0 镂空干净 + 投影/遮挡正常；半透明只在「背后已有同模型/同角色
-其它几何或 coverage」的像素上可靠显示，伸出角色轮廓外、背后纯背景的半透明暂不保证。
+材质属性 `渲染材质` 有两档：
+
+- **不透明**：普通 body 路径，投影/遮挡/描边最稳定。
+- **原生co**（`NATIVE_CO`）：使用游戏原生 `m_bdyco` 第二材质段绘制，借用原版 shader/state
+  实现透明/镂空。需要当前配置档来自包含 secondary material section 的抓帧，例如 fktn
+  `m_bdyco` 的 `match_first_index = 69534`；没有 co section 的配置档会导出报错，请把该材质槽
+  改回「不透明」或重新生成配置档。
+
+> 自建的 **镂空 `ALPHA_CLIP`** 与 **半透明 `ALPHA_BLEND`** 两条路径已于 2026-06-30 移除，
+> 改为全力打磨「借用游戏原生第二材质段」这一条路。旧工程里残留的这两个值在导出时会被当成
+> **不透明**处理。
+
+### 原生co实机测试步骤
+
+1. 用包含 `m_bdyco` 的抓帧生成完整配置档；本次 fktn 抓帧生成后会在 `profile.json` 里出现
+   `body.section1`，并在 `drawcall_map.json` 里出现 `match_first_index = 69534` 对应的 section。
+2. 导入/转权作者模型后，在材质列表里把需要走 co 的材质槽设为 **原生co**。
+3. 在「身体材质」里填基础色 t0（PNG 或 DDS）。没有单独 t1/t4 时可保持「中性 t1/t4」开启。
+4. 点 `校验并导出模组`，把输出目录里的包放进游戏 3DMigoto `Mods` 目录。
+5. 进游戏观察：轮廓外透明/镂空是否显示、是否有原版 co 段残留、是否亮度叠加。若不正常，
+   保留导出的 `mod.ini` 与当前抓帧用于排查（对比第二段在各 pass 的深度/RT 绑定）。
+
 原理与边界详见 [`../research/transparent-material-status.md`](../research/transparent-material-status.md)。
 
 ## 版本与打包

@@ -45,7 +45,7 @@ from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
 from mathutils.kdtree import KDTree
 
-from . import core
+from . import core, weight_transfer
 
 
 # COLOR.b low nibble drives outline extrusion width. 0xFF keeps the neutral
@@ -492,18 +492,10 @@ def _material_slot_alpha_modes(obj):
         if material is None:
             continue
         mode = getattr(material, "gmi_alpha_mode", "OPAQUE")
-        # 旧工程可能还保存着 AUTO/ALPHA_CLIP；当前插件只有一条保守透明路径。
-        if mode in {"ALPHA_CLIP", "ALPHA_BLEND"}:
-            result[index] = "ALPHA_BLEND"
-    return result
-
-
-def _material_slot_alpha_cutoffs(obj):
-    result = {}
-    for index, mode in _material_slot_alpha_modes(obj).items():
-        material = obj.material_slots[index].material
-        cutoff = getattr(material, "gmi_alpha_cutoff", 0.5) if material else 0.5
-        result[index] = max(0.0, min(1.0, float(cutoff)))
+        # 唯一的透明路径:原生co(NATIVE_CO)走游戏原生第二材质段(m_bdyco)。
+        # 旧的镂空/半透明自建 pass 已移除,旧工程里的这些值统一回退到不透明。
+        if mode in {"NATIVE_CO", "NATIVE_SECTION", "CO"}:
+            result[index] = "NATIVE_CO"
     return result
 
 
@@ -561,6 +553,42 @@ def _object_vertex_arrays(obj):
         positions.append((float(position.x), float(position.y), float(position.z)))
         normals.append((float(normal.x), float(normal.y), float(normal.z)))
     return np.asarray(positions, dtype=np.float32), np.asarray(normals, dtype=np.float32)
+
+
+def _mesh_triangles(mesh):
+    faces = []
+    for poly in mesh.polygons:
+        vertices = list(poly.vertices)
+        if len(vertices) == 3:
+            faces.append(vertices)
+        elif len(vertices) > 3:
+            for index in range(1, len(vertices) - 1):
+                faces.append([vertices[0], vertices[index], vertices[index + 1]])
+    return faces
+
+
+def _source_weight_matrix(reference):
+    import numpy as np
+
+    groups = list(reference.vertex_groups)
+    slots = {group.index: index for index, group in enumerate(groups)}
+    weights = np.zeros((len(reference.data.vertices), len(groups)), dtype=np.float64)
+    for vertex in reference.data.vertices:
+        for item in vertex.groups:
+            slot = slots.get(item.group)
+            if slot is not None and item.weight > 0.0:
+                weights[vertex.index, slot] = float(item.weight)
+    return groups, weights
+
+
+def _write_weight_matrix(target, groups, weights, threshold=1e-8):
+    for group in groups:
+        target.vertex_groups.new(name=group.name)
+    target_groups = list(target.vertex_groups)
+    for vertex_index, row in enumerate(weights):
+        for group_index, value in enumerate(row):
+            if value > threshold:
+                target_groups[group_index].add([vertex_index], float(value), "REPLACE")
 
 
 def _normalize_numpy_vectors(values):
@@ -1339,6 +1367,111 @@ class GMI_OT_transfer_profile_weights(Operator):
             return {"CANCELLED"}
 
 
+class GMI_OT_transfer_profile_weights_smart(Operator):
+    bl_idname = "gmi.transfer_profile_weights_smart"
+    bl_label = "实验：智能传递权重 + 颜色"
+    bl_description = "实验性：用法线闸门 + Laplacian inpaint 替代最近面传权，减少薄缝跨面串权重"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        try:
+            reference = _profile_weight_reference(context)
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        target = context.active_object
+        if not (target and target.type == "MESH") or target is reference:
+            candidates = [
+                obj for obj in context.selected_objects
+                if obj.type == "MESH" and obj is not reference
+            ]
+            if len(candidates) == 1:
+                target = candidates[0]
+                context.view_layer.objects.active = target
+            elif len(candidates) > 1:
+                self.report({"ERROR"}, "选中了多个网格，请只激活作者模型那一个")
+                return {"CANCELLED"}
+            else:
+                self.report({"ERROR"}, "请把作者模型网格设为激活对象（在 3D 视图里点一下模型本体，别选参考模型）")
+                return {"CANCELLED"}
+        try:
+            import numpy as np
+
+            _sync_object_mesh_data(context, reference)
+            _sync_object_mesh_data(context, target)
+            alignment_warnings = _check_transfer_alignment(target, reference)
+            old_names = {group.index: group.name for group in target.vertex_groups}
+            old_dominant = []
+            for vertex in target.data.vertices:
+                values = [
+                    (float(item.weight), old_names[item.group])
+                    for item in vertex.groups if item.weight > 0.0 and item.group in old_names
+                ]
+                old_dominant.append(max(values)[1] if values else "")
+
+            for modifier in list(target.modifiers):
+                if modifier.type == "ARMATURE":
+                    target.modifiers.remove(modifier)
+
+            source_pos, source_nrm = _object_vertex_arrays(reference)
+            target_pos, target_nrm = _object_vertex_arrays(target)
+            target_faces = np.asarray(_mesh_triangles(target.data), dtype=np.int64)
+            if target_faces.size == 0:
+                raise ValueError("作者模型没有可用于 inpaint 的三角面")
+            groups, source_weights = _source_weight_matrix(reference)
+            result = weight_transfer.smart_weight_transfer(
+                target_pos, target_nrm, target_faces,
+                source_pos, source_nrm, source_weights,
+                max_distance=context.scene.gmi_transfer_risk_distance,
+                normal_cos_threshold=0.0,
+                inpaint_iterations=256,
+                max_influences=4,
+            )
+
+            target.vertex_groups.clear()
+            _write_weight_matrix(target, groups, result["weights"])
+            zero, truncated = _normalize_profile_weights(target, maximum=4)
+            color_transferred = _set_constant_color_attribute(target)
+            context.view_layer.objects.active = target
+            risk = _write_weight_risk_attributes(
+                target, reference, context.scene.gmi_transfer_risk_distance, old_dominant
+            )
+            target["gmi_profile_weights"] = True
+            target["gmi_profile_id"] = reference.get("gmi_profile_id", "")
+            target["gmi_profile_dir"] = reference.get("gmi_profile_dir", "")
+            target["gmi_component_id"] = reference.get("gmi_component_id", "body")
+            smart_stats = result["stats"]
+            report = {
+                "method": "SMART_NORMAL_GATE_LAPLACIAN_INPAINT",
+                "source": reference.name,
+                "target": target.name,
+                "vertices": len(target.data.vertices),
+                "zeroWeightVertices": zero,
+                "truncatedWeightTotal": truncated,
+                "alignmentWarnings": alignment_warnings,
+                "colorTransferred": color_transferred,
+                "smartTransfer": smart_stats,
+                **risk,
+            }
+            target["gmi_weight_report"] = json.dumps(report, separators=(",", ":"))
+            if zero:
+                raise ValueError(f"仍有 {len(zero)} 个顶点没有权重")
+            messages = [
+                f"实验智能传权完成；置信 {smart_stats['confidentVertices']}/"
+                f"{smart_stats['vertices']}，inpaint {smart_stats['inpaintedVertices']}，"
+                f"法线改写 {smart_stats['normalRedirected']}；",
+                f"需复核 {risk['reviewVertices']} 个顶点，"
+                f"p95 {risk['p95Distance']:.4f} m，最大 {risk['maxDistance']:.4f} m",
+            ]
+            messages.extend(alignment_warnings)
+            level = {"WARNING"} if (risk["reviewVertices"] or alignment_warnings) else {"INFO"}
+            self.report(level, "；".join(messages))
+            return {"FINISHED"}
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+
+
 class GMI_OT_select_high_risk_vertices(Operator):
     bl_idname = "gmi.select_high_risk_vertices"
     bl_label = "选择高风险顶点"
@@ -1541,7 +1674,6 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                 data["colors"] = _black_outline_colors(data["colors"])
             _, _, output_dir = _scene_paths(scene)
             alpha_modes = _material_slot_alpha_modes(obj)
-            alpha_cutoffs = _material_slot_alpha_cutoffs(obj)
             opacity_texture = (
                 _png_to_dds(bpy.path.abspath(scene.gmi_opacity_texture_file))
                 if scene.gmi_opacity_texture_file and not bpy.path.abspath(scene.gmi_opacity_texture_file).lower().endswith(".dds")
@@ -1556,7 +1688,6 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                 materials=data.get("materials"),
                 alpha_modes=alpha_modes,
                 opacity_texture=opacity_texture,
-                alpha_cutoffs=alpha_cutoffs,
             )
             core._write_json(Path(package) / "export-report.json", {
                 "automaticAncestorRemap": data["automatic_remap"],
@@ -1574,7 +1705,6 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                     for slot, color in _material_slot_color_map(obj).items()
                 },
                 "alphaModesByMaterialSlot": alpha_modes,
-                "alphaCutoffsByMaterialSlot": alpha_cutoffs,
             })
             suffix = (
                 f"；祖先骨骼自动映射 {len(data['automatic_remap'])}，"
@@ -1850,6 +1980,7 @@ CLASSES = (
     GMI_OT_import_reference,
     GMI_OT_import_weighted_reference,
     GMI_OT_transfer_profile_weights,
+    GMI_OT_transfer_profile_weights_smart,
     GMI_OT_select_high_risk_vertices,
     GMI_OT_validate_mesh,
     GMI_OT_export_mesh_mod,

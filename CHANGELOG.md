@@ -4,6 +4,21 @@
 发布包用 `python tools/package_blender_addon.py` 生成（代码版不含 Body JSON 资源库；
 加 `--with-body-lib` 可一并打包）。本地包不提交到公开仓库。
 
+## 0.6.2 — 透明路线收敛到原生 co（移除自建镂空/半透明）
+
+- **删除自建透明路径**：`渲染材质` 不再有 `镂空(ALPHA_CLIP)` / `半透明(ALPHA_BLEND)`，
+  只剩 `不透明` 与 `原生co(NATIVE_CO)`。透明/镂空统一交给游戏原生第二材质段 `m_bdyco`
+  的 draw 上下文绘制（借用原版 shader/state/贴图）。旧工程里残留的 `ALPHA_CLIP/ALPHA_BLEND`
+  值导出时按 `不透明` 处理。
+- 移除随包 shader `GMIFinal/GMIInheritMaskA/GMIAlphaBlend/GMIAlphaClip/GMIClipMRT/GMINativeClip`
+  与 `镂空阈值(gmi_alpha_cutoff)` 属性；导出不再写 `GMINativeClip{n}.hlsl`。
+- 抓帧复核（`FrameAnalysis-2026-06-30-045108` + `mdl_chr_fktn-cstm-0001_body`）确认 `m_bdyco`
+  与主 body **共用 VB0/VB1/IB**、仅 submesh 范围不同，且第二段在 5 个 VS pass 中的 4 个出现；
+  NativeCo override 对全部 5 个 VS 都 `checktextureoverride = ib`。详见
+  [`research/transparent-material-status.md`](research/transparent-material-status.md) §−1。
+- 测试：`tests/mod_ini_contract.py` 删去 cutout/alpha-blend 契约，新增「旧 alpha 值回退不透明」
+  与「原生 co 缺 t0 报错」；`tests/inverse_skin_index_format_smoke.py` 移除 alpha-blend 用例。
+
 ## 0.6.0 — 透明材质保守路径 + 文档整理
 
 - **透明材质路径固化**：材质属性新增 `渲染材质`（不透明 / 透明）。透明段从主 body

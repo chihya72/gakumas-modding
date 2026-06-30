@@ -10,7 +10,7 @@ class GMI_PT_main(Panel):
     bl_category = "GakumasMI"
 
     def draw_header(self, context):
-        self.layout.label(text="v0.5.50")
+        self.layout.label(text="v0.6.1 native-co")
 
     def draw(self, context):
         scene = context.scene
@@ -61,6 +61,7 @@ class GMI_PT_main(Panel):
         box.prop(scene, "gmi_transfer_risk_distance")
         box.prop(scene, "gmi_enable_native_color_transfer")
         box.operator("gmi.transfer_profile_weights", text="从配置档传递权重 + 颜色", icon="MOD_DATA_TRANSFER")
+        box.operator("gmi.transfer_profile_weights_smart", text="实验：智能传递权重 + 颜色", icon="MOD_DATA_TRANSFER")
         box.operator("gmi.select_high_risk_vertices", text="选择高风险顶点", icon="RESTRICT_SELECT_OFF")
         box.label(text="高风险/GMI_NO_OUTLINE 顶点导出时会关闭描边宽度", icon="ERROR")
 

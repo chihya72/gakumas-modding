@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 6, 0),
+    "version": (0, 6, 2),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "导入学马仕参考模型，并导出绑定配置档的 3DMigoto 模组",
@@ -149,10 +149,10 @@ def register():
     )
     bpy.types.Material.gmi_alpha_mode = EnumProperty(
         name="渲染材质",
-        description="导出时该材质槽走不透明 body 路径，还是走透明材质路径",
+        description="导出时该材质槽走不透明 body 路径，还是走游戏原生第二材质段(透明/镂空)",
         items=[
             ("OPAQUE", "不透明", "使用普通 body 路径，投影/遮挡/描边最稳定"),
-            ("ALPHA_BLEND", "透明", "使用透明材质路径，读取 RGBA alpha 并保留 A=0 镂空"),
+            ("NATIVE_CO", "原生co", "使用游戏原生第二材质段(m_bdyco)绘制，借用原版 shader/state 实现透明/镂空。需要配置档含 secondary material section"),
         ],
         default="OPAQUE",
     )
@@ -191,8 +191,6 @@ def unregister():
         del bpy.types.Material.gmi_material_class
     if hasattr(bpy.types.Material, "gmi_alpha_mode"):
         del bpy.types.Material.gmi_alpha_mode
-    if hasattr(bpy.types.Material, "gmi_alpha_cutoff"):
-        del bpy.types.Material.gmi_alpha_cutoff
     if hasattr(bpy.types.Material, "gmi_material_toon"):
         del bpy.types.Material.gmi_material_toon
     if hasattr(bpy.types.Material, "gmi_material_shade"):

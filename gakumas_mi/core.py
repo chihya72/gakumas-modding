@@ -699,12 +699,59 @@ def _role_for_group(draw, main_draw, ordered_draws):
     return "aux"
 
 
-def _texture_semantic(slot):
+def _texture_semantic(slot, bindings=None):
+    bindings = set(bindings or [])
+    if slot == "ps-t2":
+        return "shadeColor"
+    if slot == "ps-t4" and "ps-t2" in bindings:
+        return "t4"
     return {
         "ps-t0": "baseColor",
         "ps-t1": "packedMask",
         "ps-t4": "shadeColor",
     }.get(slot, slot.replace("ps-", ""))
+
+
+def _same_body_streams(candidate, selected):
+    return (
+        candidate.get("ibHash") == selected.get("ibHash")
+        and candidate["vertices"] == selected["vertices"]
+        and candidate.get("vbHashes", {}).get("positionNormalTangent")
+        == selected.get("vbHashes", {}).get("positionNormalTangent")
+        and candidate.get("vbHashes", {}).get("colorUv")
+        == selected.get("vbHashes", {}).get("colorUv")
+    )
+
+
+def _section_texture_slots(resources, draw, component_id, key_prefix):
+    slots = []
+    textures = {}
+    draw_bindings = {
+        binding for (resource_draw, binding), entry in resources.items()
+        if resource_draw == draw and binding.startswith("ps-t")
+    }
+    for (resource_draw, binding), entry in sorted(resources.items()):
+        if resource_draw != draw or not binding.startswith("ps-t"):
+            continue
+        semantic = _texture_semantic(binding, draw_bindings)
+        texture_key = f"{key_prefix}.{semantic}"
+        texture_file = entry.get("texture")
+        textures[texture_key] = {
+            "slot": binding,
+            "semantic": semantic,
+            "hash": entry.get("hash") or f"draw:{draw:06d}:{binding}",
+            "pixelShader": entry.get("ps"),
+            "file": texture_file.name if texture_file else None,
+            "descriptor": entry.get("descriptor", {}),
+            "component": component_id,
+        }
+        slots.append({
+            "key": texture_key,
+            "slot": binding,
+            "semantic": semantic,
+            "hash": textures[texture_key]["hash"],
+        })
+    return textures, slots
 
 
 def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body", main_draw=None):
@@ -747,6 +794,10 @@ def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body"
         and item["vertices"] == selected["vertices"]
     ]
     ordered_draws = sorted(item["draw"] for item in same_group)
+    section_group = [
+        item for item in candidates
+        if _same_body_streams(item, selected)
+    ]
 
     # 同一 body IB 的各段 StartIndexLocation:主体段 + 尾部小段(原版配件)。
     # 生成器据此 match_first_index + drawindexed 主体、skip 尾部,避免叠图/漏出。
@@ -758,6 +809,34 @@ def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body"
         if rec.get("ibHash") == body_ib
     }
     tail_first_indices = sorted(s for s in section_starts if s != main_first_index)
+    section_items = {}
+    for item in section_group:
+        start = int((item.get("drawCall") or {}).get("startIndex") or 0)
+        section_items.setdefault(start, []).append(item)
+    material_sections = []
+    for section_index, (first_index, items) in enumerate(sorted(section_items.items())):
+        representative = sorted(
+            items,
+            key=lambda value: (
+                abs(int(value["draw"]) - int(selected["draw"])),
+                int(value["draw"]) > int(selected["draw"]),
+                int(value["draw"]),
+            ),
+        )[0]
+        role = "main" if int(first_index) == main_first_index else "secondary"
+        section_id = f"{component_id}.section{section_index}"
+        material_sections.append({
+            "id": section_id,
+            "role": role,
+            "firstIndex": int(first_index),
+            "indexCount": int(representative["indices"]),
+            "draws": sorted(int(item["draw"]) for item in items),
+            "representativeDraw": int(representative["draw"]),
+            "vertexShader": representative.get("vs"),
+            "pixelShader": representative.get("ps"),
+            "textureKeyPrefix": component_id if role == "main" else section_id,
+            "pixelShaders": sorted({item.get("ps") for item in items if item.get("ps")}),
+        })
 
     layout = selected["layout"]
     vb0_hash = selected["vbHashes"].get("positionNormalTangent")
@@ -777,6 +856,7 @@ def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body"
         "indices": selected["indices"],
         "mainFirstIndex": main_first_index,
         "tailFirstIndices": tail_first_indices,
+        "materialSections": material_sections,
         "draws": ordered_draws,
         "mainDraw": selected["draw"],
         "hashNotes": {
@@ -839,6 +919,35 @@ def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body"
             },
             "streamFiles": item["resourceFiles"],
         }
+    section_bindings = {}
+    for section in material_sections:
+        bindings = {}
+        for item in sorted(
+            section_items.get(int(section["firstIndex"]), []),
+            key=lambda value: value["draw"],
+        ):
+            bindings[f"draw_{item['draw']:06d}"] = {
+                "role": section["role"],
+                "draw": item["draw"],
+                "vertexShader": item.get("vs"),
+                "pixelShader": item.get("ps"),
+                "firstIndex": int((item.get("drawCall") or {}).get("startIndex") or 0),
+                "indexCount": item["indices"],
+                "vertexCount": item["vertices"],
+                "streams": {
+                    "ib": item.get("ibHash") or f"draw:{item['draw']:06d}:ib",
+                    "vb0": item["vbHashes"].get("positionNormalTangent") or f"draw:{item['draw']:06d}:vb0",
+                    "vb1": item["vbHashes"].get("colorUv") or f"draw:{item['draw']:06d}:vb1",
+                },
+                "streamFiles": item["resourceFiles"],
+            }
+        section_bindings[section["id"]] = {
+            "role": section["role"],
+            "firstIndex": section["firstIndex"],
+            "indexCount": section["indexCount"],
+            "representativeDraw": section["representativeDraw"],
+            "passBindings": bindings,
+        }
     drawcall_map = {
         "schemaVersion": 1,
         "capture": str(capture),
@@ -847,32 +956,29 @@ def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body"
             component_id: {
                 "mainDraw": selected["draw"],
                 "passBindings": passes,
+                "sectionBindings": section_bindings,
             }
         },
     }
 
     textures = {}
     material_slots = []
-    for (draw, binding), entry in sorted(resources.items()):
-        if draw != selected["draw"] or not binding.startswith("ps-t"):
-            continue
-        semantic = _texture_semantic(binding)
-        texture_key = f"{component_id}.{semantic}"
-        texture_file = entry.get("texture")
-        textures[texture_key] = {
-            "slot": binding,
-            "semantic": semantic,
-            "hash": entry.get("hash") or f"draw:{draw:06d}:{binding}",
-            "pixelShader": entry.get("ps") or selected.get("ps"),
-            "file": texture_file.name if texture_file else None,
-            "descriptor": entry.get("descriptor", {}),
-        }
-        material_slots.append({
-            "key": texture_key,
-            "slot": binding,
-            "semantic": semantic,
-            "hash": textures[texture_key]["hash"],
-        })
+    material_section_slots = []
+    for section in material_sections:
+        section_textures, slots = _section_texture_slots(
+            resources,
+            int(section["representativeDraw"]),
+            component_id,
+            section["textureKeyPrefix"],
+        )
+        for key, value in section_textures.items():
+            value["pixelShader"] = value.get("pixelShader") or section.get("pixelShader")
+            textures[key] = value
+        section_entry = dict(section)
+        section_entry["textureSlots"] = slots
+        material_section_slots.append(section_entry)
+        if section["role"] == "main":
+            material_slots = slots
     texture_map = {
         "schemaVersion": 1,
         "capture": str(capture),
@@ -886,6 +992,7 @@ def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body"
                 "mainDraw": selected["draw"],
                 "pixelShader": selected.get("ps"),
                 "textureSlots": material_slots,
+                "materialSections": material_section_slots,
                 "note": "t0/t1/t4 语义按 Gakumas Body 模板命名；未识别槽位保留原 slot。",
             }
         },
@@ -1533,7 +1640,10 @@ def _shader_check_overrides(section, component_id, drawcalls):
     passBindings 里全部唯一 VS,每个都生成。
     """
     draw_component = drawcalls.get("components", {}).get(component_id, {})
-    bindings = draw_component.get("passBindings", {})
+    bindings = dict(draw_component.get("passBindings", {}) or {})
+    for section_data in (draw_component.get("sectionBindings", {}) or {}).values():
+        for key, value in (section_data.get("passBindings", {}) or {}).items():
+            bindings[f"section_{key}"] = value
     if not bindings:
         return ""
     seen = []
@@ -1552,6 +1662,63 @@ def _shader_check_overrides(section, component_id, drawcalls):
             "checktextureoverride = ib\n"
         )
     return "\n".join(blocks)
+
+
+def _secondary_material_sections(component, drawcalls, component_id):
+    draw_component = drawcalls.get("components", {}).get(component_id, {}) or {}
+    by_id = {
+        str(section.get("id")): dict(section)
+        for section in component.get("materialSections", []) or []
+        if section.get("id") and section.get("role") != "main"
+    }
+    for section_id, section_data in (draw_component.get("sectionBindings", {}) or {}).items():
+        if section_data.get("role") == "main":
+            continue
+        entry = by_id.setdefault(str(section_id), {"id": str(section_id), "role": section_data.get("role", "secondary")})
+        for key in ("firstIndex", "indexCount", "representativeDraw"):
+            if key in section_data and key not in entry:
+                entry[key] = section_data[key]
+        if "passBindings" in section_data:
+            entry["passBindings"] = section_data["passBindings"]
+    return sorted(
+        by_id.values(),
+        key=lambda item: (
+            int(item.get("firstIndex") or 0),
+            str(item.get("id") or ""),
+        ),
+    )
+
+
+def _select_native_co_section(component, drawcalls, component_id):
+    sections = _secondary_material_sections(component, drawcalls, component_id)
+    if not sections:
+        raise ValueError(
+            "当前 Profile 没有 secondary materialSections；无法使用原生 co 材质。"
+            "请用包含 m_bdyco/第二材质段的 FrameAnalysis 重新生成配置档，"
+            "或把该材质槽改回「不透明」走主 body 路径。"
+        )
+    return sections[0]
+
+
+def _section_texture_slot(profile_set, section_id, semantic, fallback):
+    textures = profile_set.get("textures", {}).get("textures", {}) or {}
+    entry = textures.get(f"{section_id}.{semantic}")
+    return (entry or {}).get("slot") or fallback
+
+
+def _section_material_bindings(profile_set, section_id, resources):
+    defaults = {
+        "baseColor": "ps-t0",
+        "packedMask": "ps-t1",
+        "shadeColor": "ps-t4",
+    }
+    lines = []
+    for semantic, resource_name in resources.items():
+        if not resource_name:
+            continue
+        slot = _section_texture_slot(profile_set, section_id, semantic, defaults[semantic])
+        lines.append(f"    {slot} = Resource{resource_name}")
+    return "\n".join(lines)
 
 
 
@@ -1856,7 +2023,6 @@ def write_inverse_skin_package(
     profile_dir, output_root, package_id, name, author, component_id,
     vertices, normals, tangents, uv0, uv1, colors, faces, skin, corrections,
     material_textures=None, materials=None, alpha_modes=None, opacity_texture=None,
-    alpha_cutoffs=None,
 ):
     """Write an arbitrary-topology, bone-weighted 3Dmigoto package."""
     package_id = _sanitize_package_id(package_id)
@@ -1876,14 +2042,12 @@ def write_inverse_skin_package(
     coefficient_count = int(config["coefficientCount"])
     material_textures = material_textures or {}
     opacity_texture = str(opacity_texture or "").strip()
-    alpha_cutoffs = {
-        int(slot): max(0.0, min(1.0, _safe_float(value, 0.5)))
-        for slot, value in (alpha_cutoffs or {}).items()
-    }
+    # 只剩原生 co 一条透明路径：把第二材质段交给游戏原生 m_bdyco draw 上下文绘制。
+    # 旧的镂空(ALPHA_CLIP)/半透明(ALPHA_BLEND)自建 pass 已整体移除。
     alpha_modes = {
-        int(slot): str(mode).upper()
+        int(slot): "NATIVE_CO"
         for slot, mode in (alpha_modes or {}).items()
-        if str(mode).upper() in {"ALPHA_CLIP", "ALPHA_BLEND", "CLIP", "BLEND"}
+        if str(mode).upper() in {"NATIVE_CO", "NATIVE_SECTION", "CO"}
     }
 
     package_dir = Path(output_root) / package_id
@@ -1922,23 +2086,18 @@ def write_inverse_skin_package(
         "#define TARGET_VERTEX_COUNT 1", f"#define TARGET_VERTEX_COUNT {vertex_count}"
     )
     (shader_dir / "SkinCustomCS.hlsl").write_text(skin_shader, encoding="utf-8")
-    transparent_ranges = []
+    native_co_ranges = []
     for item in draw_ranges:
-        mode = alpha_modes.get(int(item["material"]), "OPAQUE")
-        if mode == "CLIP":
-            mode = "ALPHA_CLIP"
-        elif mode == "BLEND":
-            mode = "ALPHA_BLEND"
-        if mode in {"ALPHA_CLIP", "ALPHA_BLEND"}:
-            transparent_ranges.append({
+        if alpha_modes.get(int(item["material"]), "OPAQUE") == "NATIVE_CO":
+            native_co_ranges.append({
                 "start": int(item["start"]),
                 "count": int(item["count"]),
                 "material": int(item["material"]),
-                "mode": mode,
-                "cutoff": alpha_cutoffs.get(int(item["material"]), 0.5),
+                "mode": "NATIVE_CO",
             })
-    if transparent_ranges and not opacity_texture and f"{component_id}.baseColor" not in material_textures:
-        raise ValueError("透明材质导出需要提供透明 t0 或基础色 t0（带 alpha 的 PNG/DDS）")
+    if native_co_ranges \
+            and not opacity_texture and f"{component_id}.baseColor" not in material_textures:
+        raise ValueError("原生 co 材质导出需要提供透明 t0 或基础色 t0（带 alpha 的 PNG/DDS）")
     section = _safe_section(package_id)
     material_bindings = []
     material_resources = []
@@ -2025,7 +2184,7 @@ def write_inverse_skin_package(
     body_index_count = int(component.get("indices") or 0)
     body_title = component_id.title()
     # 每材质一段 drawindexed:切断跨材质屏幕求导,消除 atlas mip 渗色(裙角橙斑)。
-    # 透明材质段交给后面的 CustomShader 透明 pass,不在 body shader 内绘制。
+    # 原生 co 材质段从主 body draw 移出,交给 NativeCo override 在游戏原生第二材质段绘制。
     opaque_ranges = [
         item for item in draw_ranges
         if int(item["material"]) not in alpha_modes
@@ -2040,77 +2199,53 @@ def write_inverse_skin_package(
     base_color_resource = opacity_resource or material_resource_names.get("baseColor", f"{section}Basecolor")
     packed_mask_resource = None
     shade_color_resource = None
-    transparent_sections = ""
-    transparent_runs = ""
-    scene_depth_resource = ""
-    if transparent_ranges:
+    native_co_section = None
+    native_co_first_indices = set()
+    native_co_override = ""
+    if native_co_ranges:
+        native_co_section = _select_native_co_section(component, drawcalls, component_id)
+        native_co_first_indices.add(int(native_co_section.get("firstIndex") or 0))
         packed_mask_resource = ensure_material_resource("packedMask", NEUTRAL_PACKED_MASK, srgb=False)
         shade_color_resource = ensure_material_resource("shadeColor", NEUTRAL_SHADE_COLOR, srgb=False)
-        shutil.copy2(shader_root / "GMIInheritMaskA.hlsl", shader_dir / "GMIInheritMaskA.hlsl")
-        shutil.copy2(shader_root / "GMIFinal.hlsl", shader_dir / "GMIFinal.hlsl")
-        mask_runs = "\n".join(
-            f"    run = CustomShader{section}InheritMask{index}"
-            for index, _item in enumerate(transparent_ranges)
+        native_section_id = str(native_co_section.get("id") or f"{component_id}.section1")
+        native_first_index = int(native_co_section.get("firstIndex") or 0)
+        native_draws = native_co_section.get("draws") or []
+        native_bindings = _section_material_bindings(
+            profile_set,
+            native_section_id,
+            {
+                "baseColor": base_color_resource,
+                "packedMask": packed_mask_resource,
+                "shadeColor": shade_color_resource,
+            },
         )
-        alpha_runs = "\n".join(
-            f"    run = CustomShader{section}AlphaBlend{index}"
-            for index, _item in enumerate(transparent_ranges)
+        native_drawindexed_lines = "\n".join(
+            f"    drawindexed = {int(item['count'])}, {int(item['start'])}, 0"
+            for item in native_co_ranges
         )
-        transparent_runs = f"{mask_runs}\n    Resource{section}SceneDepth = copy oD\n{alpha_runs}"
-        scene_depth_resource = (
-            f"\n[Resource{section}SceneDepth]\n"
-            "; filled by copy oD before transparent color passes\n"
-        )
-    for index, item in enumerate(transparent_ranges):
-        transparent_sections += f"""
-[CustomShader{section}InheritMask{index}]
-vs = Shaders\\GMIInheritMaskA.hlsl
-ps = Shaders\\GMIInheritMaskA.hlsl
-topology = triangle_list
-cull = none
-depth_enable = true
-depth_write_mask = zero
-depth_func = greater_equal
-blend[0] = ADD ZERO ONE
-alpha[0] = ADD ZERO ONE
-blend[1] = ADD ZERO ONE
-alpha[1] = ADD ZERO ONE
-vb0 = Resource{section}SkinnedVBIA
-vb1 = Resource{section}VB1
-vb3 = Resource{section}SkinnedVBIA
-ib = Resource{section}IB
-ps-t0 = Resource{base_color_resource}
-drawindexed = {int(item["count"])}, {int(item["start"])}, 0
-post ps-t0 = null
-"""
-        transparent_sections += f"""
-[CustomShader{section}AlphaBlend{index}]
-vs = Shaders\\GMIFinal.hlsl
-ps = Shaders\\GMIFinal.hlsl
-topology = triangle_list
-cull = none
-blend[0] = disable
-blend[1] = ADD ONE INV_SRC_ALPHA
-alpha[1] = ADD ONE INV_SRC_ALPHA
-depth_enable = true
-depth_write_mask = zero
-depth_func = greater_equal
-vb0 = Resource{section}SkinnedVBIA
-vb1 = Resource{section}VB1
-vb3 = Resource{section}SkinnedVBIA
-ib = Resource{section}IB
-ps-t0 = Resource{base_color_resource}
-ps-t1 = Resource{packed_mask_resource}
-ps-t4 = Resource{shade_color_resource}
-ps-t5 = Resource{section}SceneDepth
-drawindexed = {int(item["count"])}, {int(item["start"])}, 0
-post ps-t0 = null
-post ps-t1 = null
-post ps-t4 = null
-post ps-t5 = null
+        native_co_override = f"""
+[TextureOverride{section}{body_title}NativeCo]
+hash = {component['ibHash']}
+match_first_index = {native_first_index}
+if $enable_{section}
+    Resource{section}PosedVB = copy vb0
+    run = CustomShader{section}RecoverMatrices
+    run = CustomShader{section}SkinCustom
+    Resource{section}SkinnedVBIA = copy Resource{section}SkinnedVB
+    vb0 = Resource{section}SkinnedVBIA
+    vb1 = Resource{section}VB1
+    vb3 = Resource{section}SkinnedVBIA
+    ib = Resource{section}IB
+{native_bindings}
+{native_drawindexed_lines}
+    handling = skip
+endif
+; native co section: {native_section_id}; source draws: {native_draws}
 """
     tail_skips = ""
     for tail_index, first_index in enumerate(component.get("tailFirstIndices") or []):
+        if int(first_index) in native_co_first_indices:
+            continue
         tail_skips += (
             f"\n[TextureOverride{section}{body_title}Tail{tail_index}]\n"
             f"hash = {component['ibHash']}\n"
@@ -2142,11 +2277,10 @@ if $enable_{section}
     ib = Resource{section}IB
 {chr(10).join(material_bindings)}
 {drawindexed_lines}
-{transparent_runs}
     handling = skip
 endif
 {tail_skips}
-{scene_depth_resource}
+{native_co_override}
 
 [CustomShader{section}RecoverMatrices]
 cs = Shaders\\RecoverMatricesCS.hlsl
@@ -2169,8 +2303,6 @@ post cs-t0 = null
 post cs-t1 = null
 post cs-t2 = null
 post cs-u0 = null
-
-{transparent_sections}
 
 [Resource{section}PosedVB]
 type = Buffer
@@ -2238,14 +2370,9 @@ filename = Buffers\\{ib_buffer_name}
         "materials": material_manifest,
         "opacityTexture": opacity_manifest,
         "alphaModes": {str(slot): mode for slot, mode in sorted(alpha_modes.items())},
-        "alphaCutoffs": {str(slot): alpha_cutoffs.get(slot, 0.5) for slot in sorted(alpha_modes)},
-        "transparentRanges": transparent_ranges,
-        "transparentFallback": "gbuffer-depth-test-no-depth-write",
-        "transparentLimitations": [
-            "prioritizes projection/depth effects and clean alpha-zero cutout",
-            "semi-transparent pixels are reliable only over existing same-model coverage",
-            "true forward transparency is not generated by the plugin yet",
-        ],
+        "nativeCoRanges": native_co_ranges,
+        "nativeCoSection": native_co_section,
+        "transparencyStrategy": "native-co-section-only",
     }
     _write_json(package_dir / "manifest.json", manifest)
     (package_dir / "README.md").write_text(
