@@ -51,7 +51,8 @@ def write_rgba8_dds(path, width, height, rgba_bytes, srgb=True):
 # 中性材质常量:盖掉游戏原版 t1/t4 对新贴图的光照/阴影干扰。
 # t1 PackedMask: R=阴影阈值(亮) G=光滑度0(哑光) B=金属度0 A=AO255(不压暗)
 NEUTRAL_PACKED_MASK = (255, 0, 0, 255)
-# t4 ShadeColor: A=0 → 阴影叠加强度为 0,不再叠加原版阴影色
+# t4 ShadeColor: RGB 为暗色版 baseColor；A 按原生 sdw 近似二值材质遮罩。
+# 中性 t4.A=0，避免把原版 shade mask 带到自定义 atlas 上。
 NEUTRAL_SHADE_COLOR = (128, 128, 128, 0)
 
 
@@ -217,7 +218,7 @@ def rasterize_vertex_scalar(uv_tris, scalar_tris, size, dilate=8):
 
 def bake_material_maps(id_map, base_rgb8, class_per_slot, presets,
                        form_map=None, form_strength=0.0, smoothness_max=1.0,
-                       toon_override=None, toon_per_slot=None, shade_per_slot=None):
+                       toon_override=None, toon_per_slot=None):
     """按材质ID图烘焙 t1(packedMask)/t4(shadeColor)的 RGBA8 数组。
 
     id_map: (H,W) int 材质槽索引(-1=未覆盖→中性);base_rgb8: (H,W,3 或 4) uint8;
@@ -268,16 +269,83 @@ def bake_material_maps(id_map, base_rgb8, class_per_slot, presets,
         if toon_per_slot and toon_per_slot.get(slot) is not None:
             toon = toon_per_slot[slot]  # 该材质的逐材质 toon 微调,覆盖预设
         _fill(mask, toon, m1["smoothness"], m1["metallic"], m1["ao"])
-        if m4.get("fixedColor"):  # 固定阴影色(如皮肤的珊瑚色),不从底色派生
+        if m4.get("fixedColor"):  # 兼容旧预设：允许固定阴影色，不从底色派生
             t4[mask, 0], t4[mask, 1], t4[mask, 2] = m4["fixedColor"]
         else:
             t4[mask, :3] = shade_color_from_base(
                 base[mask], m4["darken"], m4["hueShiftDeg"], m4["satScale"])
-        alpha = m4["alpha"]
-        if shade_per_slot and shade_per_slot.get(slot) is not None:
-            alpha = shade_per_slot[slot]  # 逐材质阴影色强度微调
-        t4[mask, 3] = round(alpha * 255)
+        # t4.A 不暴露给作者手调；它是材质类型预设的二值结果。
+        t4[mask, 3] = round(m4["alpha"] * 255)
     return t1, t4
+
+
+def packed_mask_channel_label(channel):
+    return ("R", "G", "B", "A")[int(channel)]
+
+
+def apply_packed_mask_channel_overrides(t1_rgba8, id_map, channel_maps, *, global_if_complete=True,
+                                        material_signal_threshold=0.01):
+    """Merge external single-channel maps into a baked t1/PackedMask.
+
+    channel_maps: {0..3: (H,W) uint8}. R/G/B/A correspond to toon threshold,
+    smoothness, metallic and AO. If all four channels are present, they are
+    treated as an authored full t1 and applied globally. If only some channels
+    are present, each channel is applied per material only where that material's
+    UV area contains visible signal, so blank atlas regions do not overwrite
+    baked presets.
+
+    Returns a summary dict with mode and applied material slots.
+    """
+    import numpy as np
+
+    if not channel_maps:
+        return {"mode": "none", "applied": {}}
+    t1 = np.asarray(t1_rgba8)
+    if t1.ndim != 3 or t1.shape[2] != 4:
+        raise ValueError("t1_rgba8 must be an HxWx4 array")
+    h, w = t1.shape[:2]
+    for channel, channel_map in channel_maps.items():
+        if channel not in (0, 1, 2, 3):
+            raise ValueError(f"Unsupported t1 channel: {channel}")
+        if channel_map.shape != (h, w):
+            raise ValueError(
+                f"t1.{packed_mask_channel_label(channel)} 尺寸不匹配: "
+                f"{channel_map.shape[1]}x{channel_map.shape[0]} != {w}x{h}"
+            )
+
+    applied = {}
+    complete = set(channel_maps) == {0, 1, 2, 3}
+    if global_if_complete and complete:
+        for channel, channel_map in channel_maps.items():
+            t1[..., channel] = channel_map
+            applied[packed_mask_channel_label(channel)] = ["global"]
+        return {"mode": "complete", "applied": applied}
+
+    if id_map is None:
+        for channel, channel_map in channel_maps.items():
+            t1[..., channel] = channel_map
+            applied[packed_mask_channel_label(channel)] = ["global"]
+        return {"mode": "partial-global", "applied": applied}
+
+    ids = sorted(int(slot) for slot in np.unique(id_map) if int(slot) >= 0)
+    for channel, channel_map in channel_maps.items():
+        channel_applied = []
+        for slot in ids:
+            mask = id_map == slot
+            if not mask.any():
+                continue
+            values = channel_map[mask]
+            # Blank atlas regions are usually flat black or flat white. Real
+            # authored masks have variation or mid-range values; use that as
+            # the signal to keep missing-material regions on the baked preset.
+            varied = int(values.max()) - int(values.min()) > 1
+            mid_fraction = ((values > 0) & (values < 255)).mean()
+            if not varied and mid_fraction < material_signal_threshold:
+                continue
+            t1[mask, channel] = values
+            channel_applied.append(slot)
+        applied[packed_mask_channel_label(channel)] = channel_applied
+    return {"mode": "partial-material", "applied": applied}
 
 
 def load_profile_set(profile_dir):
@@ -646,6 +714,12 @@ def _build_frame_candidates(resources, draw_records):
             "ibByteWidth": ib.get("byteWidth"),
             "vb0ByteWidth": vb0.get("byteWidth"),
             "vb1ByteWidth": (vb1 or {}).get("byteWidth"),
+            "textureBindingCount": sum(
+                1
+                for (resource_draw, binding), entry in resources.items()
+                if resource_draw == draw and binding.startswith("ps-t")
+                and (entry.get("texture") or entry.get("dsc"))
+            ),
             "layout": layout,
             "drawCall": record,
         })
@@ -662,7 +736,7 @@ def _build_frame_candidates(resources, draw_records):
     return sorted(candidates, key=lambda item: (item["score"], item["indices"], item["draw"]), reverse=True)
 
 
-def _select_main_candidate(candidates, requested_draw=None):
+def _select_main_candidate(candidates, requested_draw=None, expected_vertex_count=None):
     if not candidates:
         raise ValueError("抓帧中没有找到可作为 Body 的 IB/VB0/VB1 候选")
     if requested_draw is not None:
@@ -677,6 +751,13 @@ def _select_main_candidate(candidates, requested_draw=None):
     # Tiny repeated helper meshes can outscore the real body by pass count alone.
     # Body draws have both streams; if such candidates exist, choose only among them.
     pool = complete or candidates
+    if expected_vertex_count:
+        expected_pool = [
+            item for item in pool
+            if int(item.get("vertices") or 0) == int(expected_vertex_count)
+        ]
+        if expected_pool:
+            pool = expected_pool
     best = pool[0]
     group = [
         item for item in pool
@@ -685,6 +766,12 @@ def _select_main_candidate(candidates, requested_draw=None):
         and item["vertices"] == best["vertices"]
     ]
     if len(group) >= 3:
+        visible = [item for item in group if int(item.get("textureBindingCount") or 0) > 0]
+        if visible:
+            return sorted(
+                visible,
+                key=lambda item: (int(item.get("textureBindingCount") or 0), int(item["draw"])),
+            )[-1]
         return sorted(group, key=lambda item: item["draw"])[len(group) // 2]
     return best
 
@@ -700,15 +787,12 @@ def _role_for_group(draw, main_draw, ordered_draws):
 
 
 def _texture_semantic(slot, bindings=None):
-    bindings = set(bindings or [])
-    if slot == "ps-t2":
-        return "shadeColor"
-    if slot == "ps-t4" and "ps-t2" in bindings:
-        return "t4"
     return {
         "ps-t0": "baseColor",
         "ps-t1": "packedMask",
         "ps-t4": "shadeColor",
+        "ps-t5": "ramp",
+        "ps-t7": "rampAdd",
     }.get(slot, slot.replace("ps-", ""))
 
 
@@ -754,7 +838,8 @@ def _section_texture_slots(resources, draw, component_id, key_prefix):
     return textures, slots
 
 
-def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body", main_draw=None):
+def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body",
+                                    main_draw=None, expected_vertex_count=None):
     """Generate a runtime-only Profile from a 3DMigoto FrameAnalysis directory.
 
     Frame dumps expose runtime GPU resources, draw calls and texture bindings. They do not
@@ -786,7 +871,11 @@ def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body"
                     "startInstance": 0,
                 })
     candidates = _build_frame_candidates(resources, draw_records)
-    selected = _select_main_candidate(candidates, main_draw if main_draw else None)
+    selected = _select_main_candidate(
+        candidates,
+        main_draw if main_draw else None,
+        expected_vertex_count=expected_vertex_count,
+    )
     same_group = [
         item for item in candidates
         if item.get("ibHash") == selected.get("ibHash")
@@ -845,7 +934,11 @@ def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body"
         "id": component_id,
         "kind": "body",
         "source": "frame-analysis-runtime",
-        "confidence": "auto-selected" if not main_draw else "manual-draw-selected",
+        "confidence": (
+            "manual-draw-selected" if main_draw
+            else "body-resource-vertex-selected" if expected_vertex_count
+            else "auto-selected"
+        ),
         "ibHash": selected.get("ibHash") or f"draw:{selected['draw']:06d}:ib",
         "vbHashes": {
             "positionNormalTangent": vb0_hash or f"draw:{selected['draw']:06d}:vb0",
@@ -1002,6 +1095,7 @@ def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body"
         "captureDir": str(capture),
         "outputDir": str(output),
         "selected": selected,
+        "expectedVertexCount": int(expected_vertex_count) if expected_vertex_count else None,
         "candidateCount": len(candidates),
         "candidates": candidates[:32],
         "warnings": [
@@ -1227,6 +1321,23 @@ def scan_body_json_library(json_dir, name_filter=None):
             **summary,
         })
     return entries
+
+
+def resolve_exact_body_json_entry(json_dir, body_resource):
+    """Return one exact body entry from the JSON library, or None.
+
+    This is used before frame-profile extraction: if the author already knows
+    the exact body resource, its vertex count is a stronger signal than generic
+    draw-size scoring.
+    """
+    body_resource = (body_resource or "").strip()
+    if not body_resource or body_resource == "unknown":
+        return None
+    entries = scan_body_json_library(json_dir, name_filter=body_resource)
+    exact = [entry for entry in entries if entry["body"] == body_resource]
+    if len(exact) == 1:
+        return dict(exact[0])
+    return None
 
 
 def resolve_body_json_resource(profile_dir, json_dir, component_id="body"):
@@ -1701,9 +1812,33 @@ def _select_native_co_section(component, drawcalls, component_id):
 
 
 def _section_texture_slot(profile_set, section_id, semantic, fallback):
-    textures = profile_set.get("textures", {}).get("textures", {}) or {}
-    entry = textures.get(f"{section_id}.{semantic}")
+    entry = _profile_material_texture_entry(profile_set, f"{section_id}.{semantic}")
     return (entry or {}).get("slot") or fallback
+
+
+def _profile_material_texture_entry(profile_set, texture_key):
+    """Return the runtime binding for a material texture key.
+
+    Older extracted profiles mislabeled the t2 environment cubemap as
+    shadeColor and left the real _ShadeMap/sdw texture under *.t4. For export,
+    shadeColor must bind to ps-t4, so transparently migrate those profiles.
+    """
+    textures = profile_set.get("textures", {}).get("textures", {}) or {}
+    entry = textures.get(texture_key)
+    prefix, _, semantic = texture_key.rpartition(".")
+    if semantic == "shadeColor":
+        t4_entry = textures.get(f"{prefix}.t4")
+        if t4_entry and t4_entry.get("slot") == "ps-t4":
+            migrated = dict(t4_entry)
+            migrated["semantic"] = "shadeColor"
+            migrated["_migratedFrom"] = f"{prefix}.t4"
+            return migrated
+        if entry and entry.get("slot") != "ps-t4":
+            migrated = dict(entry)
+            migrated["slot"] = "ps-t4"
+            migrated["_migratedFrom"] = texture_key
+            return migrated
+    return entry
 
 
 def _section_material_bindings(profile_set, section_id, resources):
@@ -1808,7 +1943,7 @@ def write_texture_package(profile_dir, output_root, package_id, name, author, te
     package_id = _sanitize_package_id(package_id)
     profile_set = load_profile_set(profile_dir)
     profile = profile_set["profile"]
-    entry = profile_set["textures"]["textures"].get(texture_key)
+    entry = _profile_material_texture_entry(profile_set, texture_key)
     if not entry:
         raise ValueError(f"Unknown texture key: {texture_key}")
     source = Path(source_file)
@@ -2095,9 +2230,8 @@ def write_inverse_skin_package(
                 "material": int(item["material"]),
                 "mode": "NATIVE_CO",
             })
-    if native_co_ranges \
-            and not opacity_texture and f"{component_id}.baseColor" not in material_textures:
-        raise ValueError("原生 co 材质导出需要提供透明 t0 或基础色 t0（带 alpha 的 PNG/DDS）")
+    if native_co_ranges and not opacity_texture:
+        raise ValueError("原生 co 材质需要单独的透明材质 t0 / m_bdyco；不会回退基础色 t0")
     section = _safe_section(package_id)
     material_bindings = []
     material_resources = []
@@ -2106,7 +2240,7 @@ def write_inverse_skin_package(
     if material_textures:
         texture_dir.mkdir(parents=True, exist_ok=True)
     for texture_key, source_file in material_textures.items():
-        entry = profile_set["textures"]["textures"].get(texture_key)
+        entry = _profile_material_texture_entry(profile_set, texture_key)
         if not entry:
             raise ValueError(f"Unknown Profile material texture: {texture_key}")
         source = Path(source_file)
@@ -2196,7 +2330,6 @@ def write_inverse_skin_package(
         )
     else:
         drawindexed_lines = "    ; no opaque material ranges"
-    base_color_resource = opacity_resource or material_resource_names.get("baseColor", f"{section}Basecolor")
     packed_mask_resource = None
     shade_color_resource = None
     native_co_section = None
@@ -2214,7 +2347,7 @@ def write_inverse_skin_package(
             profile_set,
             native_section_id,
             {
-                "baseColor": base_color_resource,
+                "baseColor": opacity_resource,
                 "packedMask": packed_mask_resource,
                 "shadeColor": shade_color_resource,
             },

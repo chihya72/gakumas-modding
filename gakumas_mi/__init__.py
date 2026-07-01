@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 6, 2),
+    "version": (0, 7, 0),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "导入学马仕参考模型，并导出绑定配置档的 3DMigoto 模组",
@@ -104,10 +104,29 @@ def register():
     bpy.types.Scene.gmi_texture_file = StringProperty(name="DDS 文件", subtype="FILE_PATH")
     bpy.types.Scene.gmi_base_color_file = StringProperty(name="基础色 t0", subtype="FILE_PATH")
     bpy.types.Scene.gmi_packed_mask_file = StringProperty(name="混合遮罩 t1", subtype="FILE_PATH")
-    bpy.types.Scene.gmi_shade_color_file = StringProperty(name="阴影色 t4", subtype="FILE_PATH")
+    bpy.types.Scene.gmi_shade_color_file = StringProperty(
+        name="暗面材质 t4/sdw", subtype="FILE_PATH",
+        description="暗面时使用的材质颜色图；RGB 应是基础色 t0 的暗化版，A 是近似二值材质遮罩，不是透明度",
+    )
+    bpy.types.Scene.gmi_t1_r_file = StringProperty(
+        name="t1.R 阴影阈值", subtype="FILE_PATH",
+        description="可选通道图；填入后写入 PackedMask.R。只填部分通道时先按材质烘焙，再只覆盖有内容的材质区域",
+    )
+    bpy.types.Scene.gmi_t1_g_file = StringProperty(
+        name="t1.G 光滑度", subtype="FILE_PATH",
+        description="可选通道图；填入后写入 PackedMask.G。四个通道都填时会整图合成完整 t1",
+    )
+    bpy.types.Scene.gmi_t1_b_file = StringProperty(
+        name="t1.B 金属度", subtype="FILE_PATH",
+        description="可选通道图；填入后写入 PackedMask.B。四个通道都填时会整图合成完整 t1",
+    )
+    bpy.types.Scene.gmi_t1_a_file = StringProperty(
+        name="t1.A AO", subtype="FILE_PATH",
+        description="可选通道图；填入后写入 PackedMask.A。四个通道都填时会整图合成完整 t1",
+    )
     bpy.types.Scene.gmi_opacity_texture_file = StringProperty(
-        name="透明材质 t0（可选）", subtype="FILE_PATH",
-        description="留空时透明材质使用基础色 t0；仅当透明材质需要单独 RGBA/alpha 图时填写",
+        name="透明材质 t0 / m_bdyco", subtype="FILE_PATH",
+        description="仅当材质槽设为原生co时填写且必填；使用透明材质自己的 t0/UV，不回退基础色 t0",
     )
     bpy.types.Scene.gmi_neutral_material = BoolProperty(
         name="中性 t1/t4", default=True,
@@ -160,10 +179,6 @@ def register():
         name="明暗(阴影范围)", default=-1.0, min=-1.0, max=1.0,
         description="-1=用预设值。即 t1 的 toon 阴影阈值:值越低=阴影越大越暗、值越高=受光越多越亮。控制这个材质明暗分界落在哪、阴影铺多大;只影响这一个材质",
     )
-    bpy.types.Material.gmi_material_shade = FloatProperty(
-        name="阴影色强度", default=-1.0, min=-1.0, max=1.0,
-        description="-1=用预设值。即 t4 阴影色(如皮肤珊瑚色)的叠加强度:越高阴影区颜色越浓、越低越淡。配合「明暗」用:明暗决定阴影铺多大,阴影色决定阴影多浓;只影响这一个材质",
-    )
     bpy.types.Scene.gmi_package_id = StringProperty(name="模组标识", default="author.hski.my-mod")
     bpy.types.Scene.gmi_package_name = StringProperty(name="模组名称", default="我的学马仕模组")
     bpy.types.Scene.gmi_author = StringProperty(name="作者", default="作者")
@@ -180,6 +195,7 @@ def unregister():
         "gmi_transfer_risk_distance", "gmi_enable_native_color_transfer",
         "gmi_texture_key", "gmi_texture_file", "gmi_package_id",
         "gmi_base_color_file", "gmi_packed_mask_file", "gmi_shade_color_file",
+        "gmi_t1_r_file", "gmi_t1_g_file", "gmi_t1_b_file", "gmi_t1_a_file",
         "gmi_opacity_texture_file",
         "gmi_neutral_material", "gmi_outline_width_mode", "gmi_vertex_color_mode",
         "gmi_form_shading", "gmi_form_strength",

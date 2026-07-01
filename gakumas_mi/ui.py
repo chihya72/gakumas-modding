@@ -10,7 +10,7 @@ class GMI_PT_main(Panel):
     bl_category = "GakumasMI"
 
     def draw_header(self, context):
-        self.layout.label(text="v0.6.2 native-co")
+        self.layout.label(text="v0.7.0 material")
 
     def draw(self, context):
         scene = context.scene
@@ -32,6 +32,7 @@ class GMI_PT_main(Panel):
         box.prop(scene, "gmi_capture_dir")             # 选项1：抓帧文件夹
         box.prop(scene, "gmi_body_json_library_dir")   # 选项2：Body JSON 资源库
         box.prop(scene, "gmi_body_resource")           # 可选：同款多角色时指定 body
+        box.prop(scene, "gmi_extract_draw")            # 可选：自动选错时强制主 Draw
         row = box.row()
         row.scale_y = 1.5
         row.operator("gmi.build_full_profile", text="① 一键生成完整配置档（注入+结构+逆算子）", icon="AUTO")
@@ -44,7 +45,6 @@ class GMI_PT_main(Panel):
         adv.label(text="高级 / 分步")
         adv.prop(scene, "gmi_component_id")
         adv.prop(scene, "gmi_extract_output_dir")
-        adv.prop(scene, "gmi_extract_draw")
         adv.operator("gmi.extract_profile_from_frame_dump", text="仅生成注入信息(runtime-only)", icon="FILE_NEW")
         adv.operator("gmi.resolve_body_json_library", text="匹配 Body JSON资源库", icon="VIEWZOOM")
         adv.operator("gmi.update_profile_from_frame_dump", text="更新配置档抓帧源", icon="FILE_REFRESH")
@@ -84,15 +84,16 @@ class GMI_PT_main(Panel):
 
     def draw_texture(self, layout, scene):
         material = layout.box()
-        material.label(text="身体材质（贴图可填 PNG 或 DDS）")
+        material.label(text="身体材质绑定（贴图可填 PNG 或 DDS）")
         material.prop(scene, "gmi_base_color_file")
         material.prop(scene, "gmi_opacity_texture_file")
-        material.label(text="留空则透明材质使用基础色 t0；仅需单独 RGBA/alpha 图时填写", icon="INFO")
+        material.label(text="如果有材质槽设为原生co时必填；对应 m_bdyco 的 t0，使用透明材质自己的 UV", icon="INFO")
         material.prop(scene, "gmi_packed_mask_file")
+        material.label(text="t1：R 阴影阈值 / G 光滑度 / B 金属度 / A AO", icon="INFO")
         material.prop(scene, "gmi_shade_color_file")
+        material.label(text="t4/sdw：RGB 是 t0 暗化版；A 是二值材质遮罩，不是透明度", icon="INFO")
         material.prop(scene, "gmi_neutral_material")
         material.label(text="只有基础色时勾「中性 t1/t4」：盖掉原版遮罩/阴影，避免叠在新贴图上", icon="INFO")
-        material.label(text="遮罩通道：R 阴影 / G 光滑度 / B 金属度 / A 环境光遮蔽")
         material.operator("gmi.create_body_material_template", text="创建身体材质模板", icon="MATERIAL")
 
         smart = layout.box()
@@ -105,14 +106,19 @@ class GMI_PT_main(Panel):
                     row.prop(slot.material, "gmi_material_class", text=slot.material.name)
                     row.prop(slot.material, "gmi_alpha_mode", text="")
                     row.prop(slot.material, "gmi_material_toon", text="明暗")
-                    row.prop(slot.material, "gmi_material_shade", text="阴影色")
         else:
             smart.label(text="选中已分材质的网格后，逐材质设「材质类型」", icon="INFO")
         smart.label(text="明暗：-1 用预设；调低阴影更大更暗，调高受光更多更亮", icon="INFO")
-        smart.label(text="阴影色：-1 用预设；调高阴影区染色更浓，调低更淡", icon="INFO")
         smart.prop(scene, "gmi_form_shading")
         if scene.gmi_form_shading:
             smart.prop(scene, "gmi_form_strength")
+        channels = smart.box()
+        channels.label(text="t1 通道输入（可选）")
+        channels.prop(scene, "gmi_t1_r_file")
+        channels.prop(scene, "gmi_t1_g_file")
+        channels.prop(scene, "gmi_t1_b_file")
+        channels.prop(scene, "gmi_t1_a_file")
+        channels.label(text="四个都填：整图合成完整 t1；只填部分：先烘焙，再覆盖有内容的材质区域", icon="INFO")
         smart.operator("gmi.bake_material_maps", text="按材质烘焙 t1/t4", icon="NODE_MATERIAL")
 
         texture = layout.box()

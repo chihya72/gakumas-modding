@@ -167,6 +167,53 @@ def test_extract_prefers_complete_body_over_repeated_tiny_helpers():
         assert report["selected"]["indices"] == 69108
 
 
+def test_extract_uses_expected_vertex_count_when_body_resource_is_known():
+    core = load_core()
+    with tempfile.TemporaryDirectory() as temp:
+        base = Path(temp)
+        capture = base / "FrameAnalysis-2026-07-01-033404"
+        output = base / "generated-profile"
+        capture.mkdir()
+
+        lines = []
+        for draw in (10, 14, 189, 212, 249, 262):
+            lines.extend([
+                f"{draw:06d} VSSetShader(hash=436f9c16af3b54cf)",
+                f"{draw:06d} PSSetShader(hash=a04da6e49886b206)",
+                f"{draw:06d} IASetIndexBuffer(format=R16_UINT, hash=8572c653)",
+                f"{draw:06d} DrawIndexedInstanced(IndexCountPerInstance:69108, InstanceCount:1, StartIndexLocation:0, BaseVertexLocation:0, StartInstanceLocation:0)",
+            ])
+            write_resource(capture, draw, "ib", "8572c653", "436f9c16af3b54cf", "a04da6e49886b206", 70008 * 2)
+            write_resource(capture, draw, "vb0", "f52d5581", "436f9c16af3b54cf", "a04da6e49886b206", 16778 * 40)
+            write_resource(capture, draw, "vb1", "54a147b5", "436f9c16af3b54cf", "a04da6e49886b206", 16778 * 12)
+        write_texture_resource(capture, 249, 0, "b5ce47cb", "436f9c16af3b54cf", "a04da6e49886b206")
+
+        for draw in (11, 16, 196, 264, 267, 269):
+            lines.extend([
+                f"{draw:06d} VSSetShader(hash=fe50b7a82b0f37be)",
+                f"{draw:06d} PSSetShader(hash=f872756c910a6eb7)",
+                f"{draw:06d} IASetIndexBuffer(format=R16_UINT, hash=db336805)",
+                f"{draw:06d} DrawIndexedInstanced(IndexCountPerInstance:71370, InstanceCount:1, StartIndexLocation:0, BaseVertexLocation:0, StartInstanceLocation:0)",
+            ])
+            write_resource(capture, draw, "ib", "db336805", "fe50b7a82b0f37be", "f872756c910a6eb7", 71370 * 2)
+            write_resource(capture, draw, "vb0", "ea9f7b6a", "fe50b7a82b0f37be", "f872756c910a6eb7", 18037 * 40)
+            write_resource(capture, draw, "vb1", "2a44c2c1", "fe50b7a82b0f37be", "f872756c910a6eb7", 18037 * 12)
+
+        (capture / "log.txt").write_text("\n".join(lines), encoding="utf-8")
+
+        report = core.extract_profile_from_frame_dump(
+            capture,
+            output,
+            expected_vertex_count=16778,
+        )
+        assert report["expectedVertexCount"] == 16778
+        assert report["selected"]["draw"] == 249
+        assert report["selected"]["ibHash"] == "8572c653"
+        assert report["selected"]["vertices"] == 16778
+        profile = core.load_json(output / "profile.json")
+        assert profile["components"][0]["confidence"] == "body-resource-vertex-selected"
+
+
 def test_records_first_index_tails_and_all_vs():
     """冻结运行时替换链修复:主体 first_index、尾部段、全部 body VS。
 
@@ -262,11 +309,12 @@ def test_extracts_secondary_material_section_with_own_textures():
 
         write_texture_resource(capture, 191, 0, "b5ce47cb", main_vs, main_ps, 2048, 2048, "BC7_UNORM_SRGB")
         write_texture_resource(capture, 191, 1, "c4bd1058", main_vs, main_ps, 2048, 2048, "BC7_UNORM")
-        write_texture_resource(capture, 191, 2, "da09fd9a", main_vs, main_ps, 2048, 2048, "BC7_UNORM_SRGB")
+        write_texture_resource(capture, 191, 2, "0ff26bed", main_vs, main_ps, 4, 4, "R8G8B8A8_UNORM")
+        write_texture_resource(capture, 191, 4, "da09fd9a", main_vs, main_ps, 2048, 2048, "BC7_UNORM_SRGB")
         write_texture_resource(capture, 187, 0, "5f7bd922", main_vs, co_ps, 1024, 1024, "BC7_UNORM_SRGB")
         write_texture_resource(capture, 187, 1, "62b78053", main_vs, co_ps, 1024, 1024, "BC7_UNORM")
-        write_texture_resource(capture, 187, 2, "9efcbcc8", main_vs, co_ps, 1024, 1024, "BC7_UNORM_SRGB")
-        write_texture_resource(capture, 187, 4, "bb5905b2", main_vs, co_ps, 4, 4, "BC7_UNORM")
+        write_texture_resource(capture, 187, 2, "0ff26bed", main_vs, co_ps, 64, 64, "R9G9B9E5_SHAREDEXP")
+        write_texture_resource(capture, 187, 4, "9efcbcc8", main_vs, co_ps, 1024, 1024, "BC7_UNORM_SRGB")
 
         (capture / "log.txt").write_text("\n".join(lines), encoding="utf-8")
 
@@ -288,20 +336,22 @@ def test_extracts_secondary_material_section_with_own_textures():
 
         texture_map = core.load_json(output / "texture_map.json")
         assert texture_map["textures"]["body.baseColor"]["hash"] == "b5ce47cb"
+        assert texture_map["textures"]["body.t2"]["hash"] == "0ff26bed"
         assert texture_map["textures"]["body.shadeColor"]["hash"] == "da09fd9a"
         assert texture_map["textures"]["body.section1.baseColor"]["hash"] == "5f7bd922"
         assert texture_map["textures"]["body.section1.packedMask"]["hash"] == "62b78053"
+        assert texture_map["textures"]["body.section1.t2"]["hash"] == "0ff26bed"
         assert texture_map["textures"]["body.section1.shadeColor"]["hash"] == "9efcbcc8"
-        assert texture_map["textures"]["body.section1.t4"]["hash"] == "bb5905b2"
 
         material_map = core.load_json(output / "material_map.json")
         secondary_slots = material_map["materials"]["body"]["materialSections"][1]["textureSlots"]
-        assert [slot["semantic"] for slot in secondary_slots] == ["baseColor", "packedMask", "shadeColor", "t4"]
+        assert [slot["semantic"] for slot in secondary_slots] == ["baseColor", "packedMask", "t2", "shadeColor"]
 
 
 if __name__ == "__main__":
     test_extract_frame_profile()
     test_resolve_body_json_exact_match_must_match_vertex_count()
     test_extract_prefers_complete_body_over_repeated_tiny_helpers()
+    test_extract_uses_expected_vertex_count_when_body_resource_is_known()
     test_records_first_index_tails_and_all_vs()
     test_extracts_secondary_material_section_with_own_textures()

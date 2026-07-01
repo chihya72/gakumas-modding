@@ -18,7 +18,12 @@ core = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(core)
 
 
-def _write_synthetic_profile(profile_dir: Path, native_section=False):
+def _write_synthetic_profile(
+    profile_dir: Path,
+    native_section=False,
+    legacy_shade_slot=False,
+    main_texture_entries=False,
+):
     component = {
         "id": "body",
         "ibHash": "4d5dfe7b",
@@ -71,12 +76,25 @@ def _write_synthetic_profile(profile_dir: Path, native_section=False):
     }
     (profile_dir / "drawcall_map.json").write_text(json.dumps(drawcalls), encoding="utf-8")
     textures = {}
+    if main_texture_entries:
+        textures.update({
+            "body.baseColor": {"slot": "ps-t0", "hash": "base-main"},
+            "body.packedMask": {"slot": "ps-t1", "hash": "mask-main"},
+            "body.shadeColor": {"slot": "ps-t4", "hash": "shade-main"},
+        })
+    if legacy_shade_slot:
+        textures.update({
+            # 旧抓帧 profile 曾把 ps-t2 环境 cubemap 误标为 shadeColor。
+            "body.shadeColor": {"slot": "ps-t2", "hash": "envcube01", "pixelShader": "dddd4444"},
+            # 真正的 _ShadeMap/sdw 在 ps-t4，导出时必须迁移到这里。
+            "body.t4": {"slot": "ps-t4", "hash": "shade000", "pixelShader": "dddd4444"},
+        })
     if native_section:
-        textures = {
+        textures.update({
             "body.section1.baseColor": {"slot": "ps-t0", "hash": "base0001"},
             "body.section1.packedMask": {"slot": "ps-t1", "hash": "mask0001"},
-            "body.section1.shadeColor": {"slot": "ps-t2", "hash": "shade001"},
-        }
+            "body.section1.shadeColor": {"slot": "ps-t4", "hash": "shade001"},
+        })
     (profile_dir / "texture_map.json").write_text(json.dumps({"textures": textures}), encoding="utf-8")
     (profile_dir / "Buffers").mkdir(exist_ok=True)
     (profile_dir / "Buffers" / "InverseOperator.R32_FLOAT.buf").write_bytes(b"\x00" * 16)
@@ -95,10 +113,15 @@ def _mesh():
     return vertices, normals, tangents, uv0, uv1, colors, faces, skin, materials
 
 
-def _build(tmp, native_section=False, **kwargs):
+def _build(tmp, native_section=False, legacy_shade_slot=False, main_texture_entries=False, **kwargs):
     profile_dir = Path(tmp) / "profile"
     profile_dir.mkdir()
-    _write_synthetic_profile(profile_dir, native_section=native_section)
+    _write_synthetic_profile(
+        profile_dir,
+        native_section=native_section,
+        legacy_shade_slot=legacy_shade_slot,
+        main_texture_entries=main_texture_entries,
+    )
     out = Path(tmp) / "out"
     v, n, t, uv0, uv1, c, faces, skin, materials = _mesh()
     pkg = core.write_inverse_skin_package(
@@ -177,10 +200,10 @@ def test_native_co_ini_contract():
         assert "drawindexed = 3, 3, 0" in native_sec, native_sec
         assert "handling = skip" in native_sec, native_sec
 
-        # 贴图槽来自 body.section1；shadeColor 在本 synthetic co section 中是 ps-t2。
+        # 贴图槽来自 body.section1；visible co section 中 shadeColor 是 ps-t4。
         assert "ps-t0 = ResourceTestModOpacityBaseColor" in native_sec, native_sec
         assert "ps-t1 = ResourceTestModPackedmask" in native_sec, native_sec
-        assert "ps-t2 = ResourceTestModShadecolor" in native_sec, native_sec
+        assert "ps-t4 = ResourceTestModShadecolor" in native_sec, native_sec
 
         # co section 自己的 VS 也要挂 checktextureoverride；native co 接管后不再生成尾部 skip。
         assert ini.count("checktextureoverride = ib") == 3, ini
@@ -193,10 +216,18 @@ def test_native_co_ini_contract():
 
 
 def test_native_co_without_t0_rejected():
-    """原生 co 材质但没给 t0（基础色/透明图）→ 必须报错，不能静默导出。"""
+    """原生 co 材质没给 m_bdyco t0 → 即使有基础色 t0 也必须报错。"""
     with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp) / "base.dds"
+        core.write_solid_rgba8_dds(base, (255, 255, 255, 255), size=4, srgb=True)
         try:
-            _build(tmp, native_section=True, alpha_modes={1: "NATIVE_CO"})
+            _build(
+                tmp,
+                native_section=True,
+                main_texture_entries=True,
+                alpha_modes={1: "NATIVE_CO"},
+                material_textures={"body.baseColor": str(base)},
+            )
         except ValueError:
             pass
         else:
@@ -215,9 +246,30 @@ def test_legacy_alpha_modes_fall_back_to_opaque():
     print("legacy_alpha_modes_fall_back_to_opaque OK")
 
 
+def test_legacy_profile_shadecolor_ps_t2_is_remapped_to_t4():
+    """旧 profile 的 body.shadeColor=ps-t2 必须自动迁移到 body.t4/ps-t4。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        shade = Path(tmp) / "shade.dds"
+        core.write_solid_rgba8_dds(shade, (96, 96, 96, 0), size=4, srgb=True)
+        ini, pkg = _build(
+            tmp,
+            legacy_shade_slot=True,
+            material_textures={"body.shadeColor": str(shade)},
+        )
+        assert "ps-t4 = ResourceTestModShadecolor" in ini, ini
+        assert "ps-t2 = ResourceTestModShadecolor" not in ini, ini
+
+        manifest = json.loads((pkg / "manifest.json").read_text(encoding="utf-8"))
+        shade_entry = manifest["materials"]["body.shadeColor"]
+        assert shade_entry["slot"] == "ps-t4", shade_entry
+        assert shade_entry["hash"] == "shade000", shade_entry
+    print("legacy_profile_shadecolor_ps_t2_is_remapped_to_t4 OK")
+
+
 if __name__ == "__main__":
     test_opaque_ini_contract()
     test_native_co_ini_contract()
     test_native_co_without_t0_rejected()
     test_legacy_alpha_modes_fall_back_to_opaque()
+    test_legacy_profile_shadecolor_ps_t2_is_remapped_to_t4()
     print("ALL mod_ini_contract OK")

@@ -54,6 +54,39 @@ GMI_CLOTH_COLOR_RGBA8 = (0, 0, 255, 0)
 GMI_CLOTH_COLOR_FLOAT = tuple(channel / 255.0 for channel in GMI_CLOTH_COLOR_RGBA8)
 
 
+def _load_image_rgba8_top_down(image_path):
+    """Load an image through Blender and return top-down RGBA8 plus dimensions."""
+    import numpy as np
+
+    image = bpy.data.images.load(image_path, check_existing=False)
+    try:
+        try:
+            image.colorspace_settings.name = "Non-Color"
+        except Exception:
+            pass
+        width, height = int(image.size[0]), int(image.size[1])
+        if width <= 0 or height <= 0:
+            raise ValueError(f"无法读取图像尺寸：{image_path}")
+        buffer = np.empty(width * height * 4, dtype=np.float32)
+        image.pixels.foreach_get(buffer)
+        buffer = np.nan_to_num(buffer, nan=0.0, posinf=1.0, neginf=0.0)
+        rgba8 = np.clip(
+            buffer.reshape(height, width, 4)[::-1] * 255.0 + 0.5, 0, 255
+        ).astype(np.uint8)
+        return rgba8, width, height
+    finally:
+        bpy.data.images.remove(image)
+
+
+def _rgba8_to_mask_channel(rgba8):
+    """Convert RGB to a single 8-bit mask channel."""
+    import numpy as np
+
+    rgb = rgba8[..., :3].astype(np.float32)
+    channel = rgb[..., 0] * 0.299 + rgb[..., 1] * 0.587 + rgb[..., 2] * 0.114
+    return np.clip(channel + 0.5, 0, 255).astype(np.uint8)
+
+
 def _scene_paths(scene):
     profile_dir = bpy.path.abspath(scene.gmi_profile_dir)
     capture_dir = bpy.path.abspath(scene.gmi_capture_dir) if scene.gmi_capture_dir else None
@@ -1106,11 +1139,20 @@ class GMI_OT_extract_profile_from_frame_dump(Operator):
         try:
             if not output_dir:
                 output_dir = str(Path(capture_dir) / "GakumasMI-profile")
+            expected_vertex_count = None
+            if scene.gmi_body_json_library_dir and scene.gmi_body_resource:
+                entry = core.resolve_exact_body_json_entry(
+                    bpy.path.abspath(scene.gmi_body_json_library_dir),
+                    scene.gmi_body_resource,
+                )
+                if entry:
+                    expected_vertex_count = entry.get("vertexCount")
             report = core.extract_profile_from_frame_dump(
                 capture_dir,
                 output_dir,
                 component_id=scene.gmi_component_id,
                 main_draw=scene.gmi_extract_draw or None,
+                expected_vertex_count=expected_vertex_count,
             )
             scene.gmi_profile_dir = output_dir
             selected = report["selected"]
@@ -1147,11 +1189,17 @@ class GMI_OT_build_full_profile(Operator):
             if not output_dir:
                 output_dir = str(Path(capture_dir) / "GakumasMI-profile")
             component_id = scene.gmi_component_id
+            expected_vertex_count = None
+            if scene.gmi_body_resource:
+                entry = core.resolve_exact_body_json_entry(library_dir, scene.gmi_body_resource)
+                if entry:
+                    expected_vertex_count = entry.get("vertexCount")
             # ① 注入信息
             core.extract_profile_from_frame_dump(
                 capture_dir, output_dir,
                 component_id=component_id,
                 main_draw=scene.gmi_extract_draw or None,
+                expected_vertex_count=expected_vertex_count,
             )
             # ②结构数据 + ③逆算子（可选指定 Body 以消歧）
             report = core.complete_inverse_skin_profile(
@@ -1762,7 +1810,7 @@ class GMI_OT_create_body_material_template(Operator):
         material["gmi_t1_packed_mask"] = bpy.path.abspath(scene.gmi_packed_mask_file) if scene.gmi_packed_mask_file else ""
         material["gmi_t4_shade_color"] = bpy.path.abspath(scene.gmi_shade_color_file) if scene.gmi_shade_color_file else ""
         material["gmi_t1_channels"] = "R=阴影阈值, G=光滑度, B=金属度, A=AO/间接光"
-        material["gmi_t4_channels"] = "RGB=阴影色, A=阴影色混合强度"
+        material["gmi_t4_channels"] = "RGB=基础色暗色版, A=原生sdw二值遮罩"
 
         nodes = material.node_tree.nodes
         principled = nodes.get("Principled BSDF")
@@ -1771,7 +1819,7 @@ class GMI_OT_create_body_material_template(Operator):
         for label, path, location in (
             ("t0 基础色 / BaseColor", scene.gmi_base_color_file, (-600, 160)),
             ("t1 混合遮罩", scene.gmi_packed_mask_file, (-600, -60)),
-            ("t4 阴影色 / ShadeColor", scene.gmi_shade_color_file, (-600, -280)),
+            ("t4 暗面材质 / ShadeMap", scene.gmi_shade_color_file, (-600, -280)),
         ):
             node = nodes.new(type="ShaderNodeTexImage")
             node.label = label
@@ -1914,11 +1962,6 @@ class GMI_OT_bake_material_maps(Operator):
             for idx, slot in enumerate(obj.material_slots)
             if slot.material is not None and slot.material.gmi_material_toon >= 0
         }
-        shade_per_slot = {
-            idx: slot.material.gmi_material_shade
-            for idx, slot in enumerate(obj.material_slots)
-            if slot.material is not None and slot.material.gmi_material_shade >= 0
-        }
         id_map = core.rasterize_material_ids(tris, mat_ids, width, dilate=8)
 
         form_map = None
@@ -1928,8 +1971,29 @@ class GMI_OT_bake_material_maps(Operator):
         t1, t4 = core.bake_material_maps(
             id_map, base8, class_per_slot, presets,
             form_map=form_map, form_strength=scene.gmi_form_strength,
-            toon_per_slot=toon_per_slot, shade_per_slot=shade_per_slot,
+            toon_per_slot=toon_per_slot,
         )
+        channel_files = {
+            0: scene.gmi_t1_r_file,
+            1: scene.gmi_t1_g_file,
+            2: scene.gmi_t1_b_file,
+            3: scene.gmi_t1_a_file,
+        }
+        channel_maps = {}
+        for channel, file_path in channel_files.items():
+            if not file_path:
+                continue
+            resolved = bpy.path.abspath(file_path)
+            rgba8, cw, ch = _load_image_rgba8_top_down(resolved)
+            if cw != width or ch != height:
+                label = core.packed_mask_channel_label(channel)
+                self.report(
+                    {"ERROR"},
+                    f"t1.{label} 通道图尺寸必须等于基础色 atlas（{width}x{height}），当前 {cw}x{ch}",
+                )
+                return {"CANCELLED"}
+            channel_maps[channel] = _rgba8_to_mask_channel(rgba8)
+        channel_summary = core.apply_packed_mask_channel_overrides(t1, id_map, channel_maps)
 
         out = Path(tempfile.gettempdir())
         t1_path = out / "gmi_baked_packedMask.dds"
@@ -1942,9 +2006,20 @@ class GMI_OT_bake_material_maps(Operator):
         covered = int((id_map >= 0).sum()) * 100 // (width * height)
         used = sorted({presets[c]["label"] for c in class_per_slot.values() if c in presets})
         form_note = "；几何AO软化阴影" if form_map is not None else ""
+        channel_note = ""
+        if channel_summary["mode"] != "none":
+            parts = []
+            for label, slots in channel_summary["applied"].items():
+                if slots == ["global"]:
+                    parts.append(f"{label}=整图")
+                elif slots:
+                    parts.append(f"{label}=材质{','.join(str(s) for s in slots)}")
+                else:
+                    parts.append(f"{label}=未覆盖")
+            channel_note = f"；通道覆盖：{' / '.join(parts)}"
         self.report(
             {"INFO"},
-            f"已烘焙 t1/t4（{covered}% UV 覆盖；材质：{'、'.join(used)}{form_note}）；"
+            f"已烘焙 t1/t4（{covered}% UV 覆盖；材质：{'、'.join(used)}{form_note}{channel_note}）；"
             f"已设为导出 t1/t4，可直接校验导出",
         )
         return {"FINISHED"}

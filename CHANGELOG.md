@@ -4,6 +4,29 @@
 发布包用 `python tools/package_blender_addon.py` 生成（代码版不含 Body JSON 资源库；
 加 `--with-body-lib` 可一并打包）。本地包不提交到公开仓库。
 
+## 0.7.0 — t1/t4 材质语义收敛与旧 Profile 防错
+
+- **修正 t4/sdw 语义**：`t4.rgb` 明确为 `t0/baseColor` 的暗面材质颜色版，用来在卡通暗面保留
+  衣服自身花纹、布料纹理和颜色；它不是投影阴影本身带图案。`t4.a` 继续按原生 `sdw`
+  近似二值材质遮罩处理，不当作透明度或连续阴影强度。
+- **修复旧 Profile 槽位坑**：旧抓帧 profile 可能把 `ps-t2` 环境 cubemap 误标为
+  `body.shadeColor`，真正的 `_ShadeMap/sdw` 则在 `body.t4 / ps-t4`。0.7.0 导出时会自动把
+  `shadeColor` 迁移到同前缀的 `t4/ps-t4`，避免暗面继续读取原服装 `sdw`，导致新衣服暗部出现
+  不属于当前服装的彩色图案。
+- **新增 t1 单通道输入**：分材质烘焙时可单独填写 `t1.R/G/B/A` 图。四个通道都填时按整图合成
+  完整 PackedMask；只填部分通道时，先按材质预设烘焙，再仅覆盖有有效内容的材质区域，避免
+  空白 atlas 黑区污染皮肤或无贴图材质。
+- **UI 文案收敛**：`t4` 在界面中改称「暗面材质 t4/sdw」。逐材质行只保留 `材质类型`、
+  `渲染材质`、`明暗`；不再暴露 `t4.A` 手调项，`t4.A` 由材质类型预设自动写入二值结果。
+- **原生 co 贴图绑定对齐游戏逻辑**：基础色 `t0` 对应 `m_bdy`，透明材质 `t0` 对应 `m_bdyco`，
+  两者各走各自 UV，互不回退。只要有材质槽设为 `原生co/NATIVE_CO`，导出时就必须提供
+  「透明材质 t0 / m_bdyco」，否则直接报错，避免把 `m_bdy` 贴图错误套到 co 材质上。
+- **抓帧主 draw 选择更稳**：自动抽 profile 时优先匹配期望顶点数和可见贴图绑定数，减少选到
+  shadow/depth/helper draw 后生成错误贴图槽位的风险。
+- 测试：`tests/mod_ini_contract.py` 新增旧 profile `shadeColor=ps-t2` 自动迁移到 `ps-t4`
+  的回归；`tests/material_bake_smoke.py` 覆盖 t1 通道覆盖和材质预设 t4.A；`tests/frame_profile_extract_smoke.py`
+  覆盖可见 draw 选择与贴图槽位语义。
+
 ## 0.6.2 — 透明路线收敛到原生 co（移除自建镂空/半透明）
 
 - **删除自建透明路径**：`渲染材质` 不再有 `镂空(ALPHA_CLIP)` / `半透明(ALPHA_BLEND)`，

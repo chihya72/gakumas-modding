@@ -39,14 +39,38 @@ t1, t4 = core.bake_material_maps(id_map, base, {0: "skin", 1: "metal"}, presets)
 assert t1[10, 60, 2] > 180 and t1[10, 5, 2] == 0, t1[10, 60].tolist()
 # 金属区光滑度高于皮肤区
 assert t1[10, 60, 1] > t1[10, 5, 1]
-# 皮肤用固定珊瑚色 shadeColor（不从底色派生）
-assert t4[10, 5, :3].tolist() == [201, 140, 104], t4[10, 5].tolist()
+# t4.RGB 从基础色派生为原图暗色版
+assert 0 < int(t4[10, 5, 0]) < int(base[10, 5, 0]), (t4[10, 5].tolist(), base[10, 5].tolist())
+assert t4[10, 5, 1] == 0 and t4[10, 5, 2] == 0, t4[10, 5].tolist()
 # 金属区 t4 从底色派生应比基础色暗（蓝通道线性亮度更低）
 assert int(t4[10, 60, 2]) < int(base[10, 60, 2]), (t4[10, 60].tolist(), base[10, 60].tolist())
-# 金属区 alpha 来自预设（0.20*255≈51）
-assert 40 <= t4[10, 60, 3] <= 60, t4[10, 60, 3]
-# 皮肤 alpha 来自预设（0.6*255≈153）
-assert 148 <= t4[10, 5, 3] <= 158, t4[10, 5, 3]
+# 原生 sdw.A 更接近二值材质遮罩：皮肤 255，非皮肤 0。
+assert t4[10, 5, 3] == 255, t4[10, 5, 3]
+assert t4[10, 60, 3] == 0, t4[10, 60, 3]
+
+# 部分通道覆盖：左侧材质是空白黑区，应保留预设；右侧有内容，覆盖 R。
+partial = t1.copy()
+r_override = np.zeros((size, size), np.uint8)
+r_override[:, 32:] = 96
+summary = core.apply_packed_mask_channel_overrides(partial, id_map, {0: r_override})
+assert summary["mode"] == "partial-material", summary
+assert summary["applied"]["R"] == [1], summary
+assert partial[10, 5, 0] == t1[10, 5, 0], (partial[10, 5].tolist(), t1[10, 5].tolist())
+assert partial[10, 60, 0] == 96, partial[10, 60].tolist()
+assert partial[10, 60, 1] == t1[10, 60, 1], "只覆盖 R 时 G 不能被污染"
+
+# 四通道齐全：视为作者提供的完整 t1，整图合成。
+complete = t1.copy()
+maps = {
+    0: np.full((size, size), 10, np.uint8),
+    1: np.full((size, size), 20, np.uint8),
+    2: np.full((size, size), 30, np.uint8),
+    3: np.full((size, size), 40, np.uint8),
+}
+summary = core.apply_packed_mask_channel_overrides(complete, id_map, maps)
+assert summary["mode"] == "complete", summary
+assert complete[10, 5].tolist() == [10, 20, 30, 40], complete[10, 5].tolist()
+assert complete[10, 60].tolist() == [10, 20, 30, 40], complete[10, 60].tolist()
 
 # 单通道极值 t4 派生应稳定（纯黑基础不报错）
 black = np.zeros((4, 4, 3), np.uint8)

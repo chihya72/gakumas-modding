@@ -178,7 +178,7 @@ GakumasMI 应该采用同类做法，但模板内容必须按 Gakumas/HSKI Profi
 
 - t0：BaseColor；
 - t1：PackedMask，当前已验证为 R 阴影阈值 / G 光滑 / B 金属 / A AO；
-- t4：ShadeColor，RGB 阴影色 / A 混合强度；
+- t4：暗面材质 / sdw，RGB 基础色暗色版 / A 近似二值材质遮罩；
 - 后续需要把 PNG/TGA 输入、DDS 格式、sRGB/UNORM、BC7/BC4/BC5 等规则写进 Profile
   和 Blender UI。
 
@@ -222,7 +222,7 @@ GakumasMI 0.3.x 已改为更接近 WWMI/EFMI 的侧边栏模式：
   - `修正手指/颈部`
   - `基础色 t0`
   - `混合遮罩 t1`
-  - `阴影色 t4`
+  - `暗面材质 t4/sdw`
 
 0.3.2 还补了几个作者流程入口：
 
@@ -322,7 +322,7 @@ WWMI/EFMI 具备复制贴图和模板化 INI 的能力。GakumasMI 已验证 HSK
 
 - `t0` BaseColor；
 - `t1` PackedMask：R 阴影、G 光滑、B 金属、A AO；
-- `t4` ShadeColor：RGB 阴影色、A 混合强度。
+- `t4` 暗面材质 / sdw：RGB 基础色暗色版、A 近似二值材质遮罩。
 
 需要补：
 

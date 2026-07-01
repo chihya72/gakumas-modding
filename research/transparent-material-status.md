@@ -1,6 +1,6 @@
 # 透明材质：当前状态与结论
 
-更新：2026-06-30
+更新：2026-07-01
 
 ## 0. 唯一当前路线
 
@@ -40,6 +40,8 @@
 - 主 body 与 body-co 使用同一 IB/VB。
 - body-co 是独立 `firstIndex / indexCount` 的 material section。
 - body-co 绑定独立贴图槽，使用游戏原生 co shader/state。
+- 导出时 `m_bdy` 的基础色 t0 与 `m_bdyco` 的透明材质 t0 必须分开绑定；两者各走各自 UV，
+  不能用主 `m_bdy` baseColor 回退填充 `m_bdyco`。
 
 结论：
 
@@ -134,6 +136,8 @@ atlasCutout=1
 - 没有原生 `m_bdyco` section 的 profile，不能导出 `NATIVE_CO` 材质。
 - 若作者需要透明/镂空，应使用包含 body-co section 的服装生成配置档。
 - 若目标服装没有 `m_bdyco`，该材质必须改回 `OPAQUE`，或更换/重建 profile。
+- 只要有材质槽设为 `NATIVE_CO`，就必须提供单独的 `m_bdyco` t0；缺失时应停止导出，
+  不能回退到 `m_bdy` 的基础色 t0。
 - `m_bdyco` 当前按 cutout 使用最可靠；不要把中间 alpha 视作可连续混合的半透明。
 
 最终原则：
