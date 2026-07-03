@@ -23,6 +23,7 @@ def _write_synthetic_profile(
     native_section=False,
     legacy_shade_slot=False,
     main_texture_entries=False,
+    slot_variants=False,
 ):
     component = {
         "id": "body",
@@ -57,6 +58,10 @@ def _write_synthetic_profile(
             "p1": {"draw": 2, "vertexShader": "bbbb2222"},
         }
     }
+    if slot_variants:
+        body_drawcalls["pixelShaders"] = ["mainps", "lowlightps"]
+        body_drawcalls["passBindings"]["p0"]["pixelShader"] = "mainps"
+        body_drawcalls["passBindings"]["p1"]["pixelShader"] = "lowlightps"
     if native_section:
         body_drawcalls["sectionBindings"] = {
             "body.section1": {
@@ -77,10 +82,17 @@ def _write_synthetic_profile(
     (profile_dir / "drawcall_map.json").write_text(json.dumps(drawcalls), encoding="utf-8")
     textures = {}
     if main_texture_entries:
+        base_entry = {"slot": "ps-t0", "hash": "base-main"}
+        mask_entry = {"slot": "ps-t1", "hash": "mask-main"}
+        shade_entry = {"slot": "ps-t4", "hash": "shade-main"}
+        if slot_variants:
+            base_entry["slotVariants"] = {"lowlightps": "ps-t1"}
+            mask_entry["slotVariants"] = {"lowlightps": "ps-t2"}
+            shade_entry["slotVariants"] = {"lowlightps": "ps-t5"}
         textures.update({
-            "body.baseColor": {"slot": "ps-t0", "hash": "base-main"},
-            "body.packedMask": {"slot": "ps-t1", "hash": "mask-main"},
-            "body.shadeColor": {"slot": "ps-t4", "hash": "shade-main"},
+            "body.baseColor": base_entry,
+            "body.packedMask": mask_entry,
+            "body.shadeColor": shade_entry,
         })
     if legacy_shade_slot:
         textures.update({
@@ -121,6 +133,7 @@ def _build(tmp, native_section=False, legacy_shade_slot=False, main_texture_entr
         native_section=native_section,
         legacy_shade_slot=legacy_shade_slot,
         main_texture_entries=main_texture_entries,
+        slot_variants=kwargs.pop("slot_variants", False),
     )
     out = Path(tmp) / "out"
     v, n, t, uv0, uv1, c, faces, skin, materials = _mesh()
@@ -201,9 +214,11 @@ def test_native_co_ini_contract():
         assert "handling = skip" in native_sec, native_sec
 
         # 贴图槽来自 body.section1；visible co section 中 shadeColor 是 ps-t4。
-        assert "ps-t0 = ResourceTestModOpacityBaseColor" in native_sec, native_sec
-        assert "ps-t1 = ResourceTestModPackedmask" in native_sec, native_sec
-        assert "ps-t4 = ResourceTestModShadecolor" in native_sec, native_sec
+        assert "ps-t0 = ResourceTestModNativeCoBasecolor" in native_sec, native_sec
+        assert "ps-t1 = ResourceTestModNativeCoPackedmask" in native_sec, native_sec
+        assert "ps-t4 = ResourceTestModNativeCoShadecolor" in native_sec, native_sec
+        assert "ResourceTestModPackedmask" not in native_sec, native_sec
+        assert "ResourceTestModShadecolor" not in native_sec, native_sec
 
         # co section 自己的 VS 也要挂 checktextureoverride；native co 接管后不再生成尾部 skip。
         assert ini.count("checktextureoverride = ib") == 3, ini
@@ -212,7 +227,57 @@ def test_native_co_ini_contract():
         manifest = json.loads((pkg / "manifest.json").read_text(encoding="utf-8"))
         assert manifest["nativeCoRanges"] == [{"start": 3, "count": 3, "material": 1, "mode": "NATIVE_CO"}]
         assert manifest["nativeCoSection"]["id"] == "body.section1"
+        assert manifest["materials"]["body.section1.packedMask"]["generated"] == "neutral"
+        assert manifest["materials"]["body.section1.shadeColor"]["generated"] == "neutral"
     print("native_co_ini_contract OK")
+
+
+def test_native_co_uses_own_t1_t4_resources():
+    """原生 co 有自己的 t0/t1/t4；不能复用 main body 的 packedMask/shadeColor。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        body_mask = tmp_path / "body_mask.dds"
+        body_shade = tmp_path / "body_shade.dds"
+        co_base = tmp_path / "co_base.dds"
+        co_mask = tmp_path / "co_mask.dds"
+        co_shade = tmp_path / "co_shade.dds"
+        core.write_solid_rgba8_dds(body_mask, (1, 2, 3, 4), size=4, srgb=False)
+        core.write_solid_rgba8_dds(body_shade, (5, 6, 7, 8), size=4, srgb=True)
+        core.write_solid_rgba8_dds(co_base, (255, 255, 255, 255), size=4, srgb=True)
+        core.write_solid_rgba8_dds(co_mask, (9, 10, 11, 12), size=4, srgb=False)
+        core.write_solid_rgba8_dds(co_shade, (13, 14, 15, 16), size=4, srgb=True)
+        ini, pkg = _build(
+            tmp,
+            native_section=True,
+            main_texture_entries=True,
+            alpha_modes={1: "NATIVE_CO"},
+            material_textures={
+                "body.packedMask": str(body_mask),
+                "body.shadeColor": str(body_shade),
+            },
+            native_co_textures={
+                "baseColor": str(co_base),
+                "packedMask": str(co_mask),
+                "shadeColor": str(co_shade),
+            },
+        )
+        main_sec = ini[ini.index("[TextureOverrideTestModBody]"):]
+        main_sec = main_sec[:main_sec.index("\n[TextureOverrideTestModBodyNativeCo]")]
+        native_sec = ini[ini.index("[TextureOverrideTestModBodyNativeCo]"):]
+        native_sec = native_sec[:native_sec.index("\n[", 1)] if "\n[" in native_sec[1:] else native_sec
+        assert "ps-t1 = ResourceTestModPackedmask" in main_sec, main_sec
+        assert "ps-t4 = ResourceTestModShadecolor" in main_sec, main_sec
+        assert "ps-t1 = ResourceTestModNativeCoPackedmask" in native_sec, native_sec
+        assert "ps-t4 = ResourceTestModNativeCoShadecolor" in native_sec, native_sec
+        assert "ResourceTestModPackedmask" not in native_sec, native_sec
+        assert "ResourceTestModShadecolor" not in native_sec, native_sec
+
+        manifest = json.loads((pkg / "manifest.json").read_text(encoding="utf-8"))
+        assert manifest["materials"]["body.section1.packedMask"]["hash"] == "mask0001"
+        assert manifest["materials"]["body.section1.shadeColor"]["hash"] == "shade001"
+        assert (pkg / "Textures" / "Body.NativeCo.PackedMask.dds").is_file()
+        assert (pkg / "Textures" / "Body.NativeCo.ShadeColor.dds").is_file()
+    print("native_co_uses_own_t1_t4_resources OK")
 
 
 def test_native_co_without_t0_rejected():
@@ -266,10 +331,48 @@ def test_legacy_profile_shadecolor_ps_t2_is_remapped_to_t4():
     print("legacy_profile_shadecolor_ps_t2_is_remapped_to_t4 OK")
 
 
+def test_pixel_shader_slot_variants_are_conditional():
+    """同一语义贴图在不同 PS 变体里可切换槽位，避免低亮度 pass 读错贴图。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        base = tmp_path / "base.dds"
+        mask = tmp_path / "mask.dds"
+        shade = tmp_path / "shade.dds"
+        core.write_solid_rgba8_dds(base, (255, 255, 255, 255), size=4, srgb=True)
+        core.write_solid_rgba8_dds(mask, (128, 102, 0, 255), size=4, srgb=False)
+        core.write_solid_rgba8_dds(shade, (96, 96, 96, 255), size=4, srgb=True)
+        ini, _ = _build(
+            tmp,
+            main_texture_entries=True,
+            slot_variants=True,
+            material_textures={
+                "body.baseColor": str(base),
+                "body.packedMask": str(mask),
+                "body.shadeColor": str(shade),
+            },
+        )
+        assert "global $gmi_TestMod_BodySlotVariant = 0" in ini, ini
+        assert "hash = mainps\nallow_duplicate_hash = true\n$gmi_TestMod_BodySlotVariant = 0" in ini, ini
+        assert "hash = lowlightps\nallow_duplicate_hash = true\n$gmi_TestMod_BodySlotVariant = 1" in ini, ini
+
+        main_sec = ini[ini.index("[TextureOverrideTestModBody]"):]
+        main_sec = main_sec[:main_sec.index("\n[CustomShaderTestModRecoverMatrices]")]
+        assert "if $gmi_TestMod_BodySlotVariant == 1" in main_sec, main_sec
+        assert "ps-t1 = ResourceTestModBasecolor" in main_sec, main_sec
+        assert "ps-t2 = ResourceTestModPackedmask" in main_sec, main_sec
+        assert "ps-t5 = ResourceTestModShadecolor" in main_sec, main_sec
+        assert "if $gmi_TestMod_BodySlotVariant == 0\n    ps-t0 = ResourceTestModBasecolor" in main_sec, main_sec
+        assert "ps-t1 = ResourceTestModPackedmask" in main_sec, main_sec
+        assert "ps-t4 = ResourceTestModShadecolor" in main_sec, main_sec
+    print("pixel_shader_slot_variants_are_conditional OK")
+
+
 if __name__ == "__main__":
     test_opaque_ini_contract()
     test_native_co_ini_contract()
+    test_native_co_uses_own_t1_t4_resources()
     test_native_co_without_t0_rejected()
     test_legacy_alpha_modes_fall_back_to_opaque()
     test_legacy_profile_shadecolor_ps_t2_is_remapped_to_t4()
+    test_pixel_shader_slot_variants_are_conditional()
     print("ALL mod_ini_contract OK")

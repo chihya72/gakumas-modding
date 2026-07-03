@@ -35,6 +35,17 @@ def write_texture_resource(root, draw, slot, resource_hash, vs, ps, width=4, hei
     )
 
 
+def write_body_json(root, body, vertex_count, index_count):
+    body_dir = root / body
+    body_dir.mkdir(parents=True)
+    (body_dir / "Geo_Body.json").write_text(json.dumps({
+        "m_Name": "Geo_Body",
+        "m_VertexCount": vertex_count,
+        "m_Indices": [0] * index_count,
+        "m_BindPose": [],
+    }), encoding="utf-8")
+
+
 def test_extract_frame_profile():
     core = load_core()
     with tempfile.TemporaryDirectory() as temp:
@@ -214,6 +225,61 @@ def test_extract_uses_expected_vertex_count_when_body_resource_is_known():
         assert profile["components"][0]["confidence"] == "body-resource-vertex-selected"
 
 
+def test_extract_uses_actor_vertex_hints_to_avoid_wrong_body():
+    core = load_core()
+    with tempfile.TemporaryDirectory() as temp:
+        base = Path(temp)
+        capture = base / "FrameAnalysis-2026-07-02-154336"
+        output = base / "generated-profile"
+        library = base / "library"
+        capture.mkdir()
+
+        write_body_json(library, "mdl_chr_shro-cstm-0081_body", 14502, 65067)
+        write_body_json(library, "mdl_chr_shro-cstm-0120_body", 133, 507)
+        write_body_json(library, "mdl_chr_othr-cstm-0000_body", 14925, 62145)
+
+        lines = []
+        for draw in (14, 26, 54, 71, 204, 206, 209):
+            lines.extend([
+                f"{draw:06d} VSSetShader(hash=fe50b7a82b0f37be)",
+                f"{draw:06d} PSSetShader(hash=f872756c910a6eb7)",
+                f"{draw:06d} IASetIndexBuffer(format=R16_UINT, hash=4d844934)",
+                f"{draw:06d} DrawIndexedInstanced(IndexCountPerInstance:62145, InstanceCount:1, StartIndexLocation:0, BaseVertexLocation:0, StartInstanceLocation:0)",
+            ])
+            write_resource(capture, draw, "ib", "4d844934", "fe50b7a82b0f37be", "f872756c910a6eb7", 62145 * 2)
+            write_resource(capture, draw, "vb0", "92d555e9", "fe50b7a82b0f37be", "f872756c910a6eb7", 14925 * 40)
+            write_resource(capture, draw, "vb1", "56c2fbfc", "fe50b7a82b0f37be", "f872756c910a6eb7", 14925 * 12)
+        write_texture_resource(capture, 206, 0, "e4076632", "fe50b7a82b0f37be", "f872756c910a6eb7")
+
+        for draw in (15, 27, 55, 69, 189, 202):
+            lines.extend([
+                f"{draw:06d} VSSetShader(hash=221c573337491c78)",
+                f"{draw:06d} PSSetShader(hash=a04da6e49886b206)",
+                f"{draw:06d} IASetIndexBuffer(format=R16_UINT, hash=31a107e6)",
+                f"{draw:06d} DrawIndexedInstanced(IndexCountPerInstance:64368, InstanceCount:1, StartIndexLocation:0, BaseVertexLocation:0, StartInstanceLocation:0)",
+            ])
+            write_resource(capture, draw, "ib", "31a107e6", "221c573337491c78", "a04da6e49886b206", 65067 * 2)
+            write_resource(capture, draw, "vb0", "3c10b6a8", "221c573337491c78", "a04da6e49886b206", 14502 * 40)
+            write_resource(capture, draw, "vb1", "09e45e19", "221c573337491c78", "a04da6e49886b206", 14502 * 12)
+        write_texture_resource(capture, 189, 0, "a1bf9709", "221c573337491c78", "a04da6e49886b206")
+
+        (capture / "log.txt").write_text("\n".join(lines), encoding="utf-8")
+        hints = core.body_json_vertex_hints(library, "shro")
+        assert hints["vertexCounts"] == [133, 14502]
+
+        report = core.extract_profile_from_frame_dump(
+            capture,
+            output,
+            expected_vertex_counts=hints["vertexCounts"],
+            body_resource="shro",
+        )
+        assert report["selected"]["ibHash"] == "31a107e6"
+        assert report["selected"]["vertices"] == 14502
+        assert report["bodyResourceHint"] == "shro"
+        profile = core.load_json(output / "profile.json")
+        assert profile["target"]["bodyResource"] == "shro"
+
+
 def test_records_first_index_tails_and_all_vs():
     """冻结运行时替换链修复:主体 first_index、尾部段、全部 body VS。
 
@@ -353,5 +419,6 @@ if __name__ == "__main__":
     test_resolve_body_json_exact_match_must_match_vertex_count()
     test_extract_prefers_complete_body_over_repeated_tiny_helpers()
     test_extract_uses_expected_vertex_count_when_body_resource_is_known()
+    test_extract_uses_actor_vertex_hints_to_avoid_wrong_body()
     test_records_first_index_tails_and_all_vs()
     test_extracts_secondary_material_section_with_own_textures()

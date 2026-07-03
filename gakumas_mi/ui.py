@@ -10,7 +10,7 @@ class GMI_PT_main(Panel):
     bl_category = "GakumasMI"
 
     def draw_header(self, context):
-        self.layout.label(text="v0.7.0 material")
+        self.layout.label(text="v0.7.1 material")
 
     def draw(self, context):
         scene = context.scene
@@ -83,21 +83,29 @@ class GMI_PT_main(Panel):
         mesh.operator("gmi.export_inverse_skin_mod", text="导出带权重 GPU 模组", icon="ARMATURE_DATA")
 
     def draw_texture(self, layout, scene):
-        material = layout.box()
-        material.label(text="身体材质绑定（贴图可填 PNG 或 DDS）")
-        material.prop(scene, "gmi_base_color_file")
-        material.prop(scene, "gmi_opacity_texture_file")
-        material.label(text="如果有材质槽设为原生co时必填；对应 m_bdyco 的 t0，使用透明材质自己的 UV", icon="INFO")
-        material.prop(scene, "gmi_packed_mask_file")
-        material.label(text="t1：R 阴影阈值 / G 光滑度 / B 金属度 / A AO", icon="INFO")
-        material.prop(scene, "gmi_shade_color_file")
-        material.label(text="t4/sdw：RGB 是 t0 暗化版；A 是二值材质遮罩，不是透明度", icon="INFO")
-        material.prop(scene, "gmi_neutral_material")
-        material.label(text="只有基础色时勾「中性 t1/t4」：盖掉原版遮罩/阴影，避免叠在新贴图上", icon="INFO")
-        material.operator("gmi.create_body_material_template", text="创建身体材质模板", icon="MATERIAL")
+        body = layout.box()
+        body.label(text="不透明 body / m_bdy")
+        body.prop(scene, "gmi_base_color_file")
+        body.prop(scene, "gmi_packed_mask_file")
+        body.prop(scene, "gmi_shade_color_file")
+        body.label(text="t1：R 阴影阈值 / G 光滑度 / B 金属度 / A AO", icon="INFO")
+        body.label(text="t4/sdw：RGB 是 t0 暗化版；A 是二值材质遮罩，不是透明度", icon="INFO")
+        body.prop(scene, "gmi_neutral_material")
+        body.label(text="body 缺 t1/t4 时可用中性贴图盖掉原版遮罩/阴影", icon="INFO")
+
+        co = layout.box()
+        co.label(text="原生 co / m_bdyco（透明材质）")
+        co.prop(scene, "gmi_opacity_texture_file")
+        co.prop(scene, "gmi_opacity_packed_mask_file")
+        co.prop(scene, "gmi_opacity_shade_color_file")
+        co.label(text="材质槽设为「原生co」时使用这一套 t0/t1/t4，不回退 body 贴图", icon="INFO")
+
+        template = layout.box()
+        template.label(text="Blender 预览材质")
+        template.operator("gmi.create_body_material_template", text="创建身体材质模板", icon="MATERIAL")
 
         smart = layout.box()
-        smart.label(text="分材质烘焙 t1/t4")
+        smart.label(text="分材质烘焙 t1/t4（按 body/co 分流）")
         obj = bpy.context.active_object
         if obj and obj.type == "MESH" and obj.material_slots:
             for slot in obj.material_slots:
@@ -113,13 +121,13 @@ class GMI_PT_main(Panel):
         if scene.gmi_form_shading:
             smart.prop(scene, "gmi_form_strength")
         channels = smart.box()
-        channels.label(text="t1 通道输入（可选）")
+        channels.label(text="body t1 通道输入（可选）")
         channels.prop(scene, "gmi_t1_r_file")
         channels.prop(scene, "gmi_t1_g_file")
         channels.prop(scene, "gmi_t1_b_file")
         channels.prop(scene, "gmi_t1_a_file")
         channels.label(text="四个都填：整图合成完整 t1；只填部分：先烘焙，再覆盖有内容的材质区域", icon="INFO")
-        smart.operator("gmi.bake_material_maps", text="按材质烘焙 t1/t4", icon="NODE_MATERIAL")
+        smart.operator("gmi.bake_material_maps", text="按材质烘焙 body/co t1/t4", icon="NODE_MATERIAL")
 
         texture = layout.box()
         texture.label(text="单贴图替换")

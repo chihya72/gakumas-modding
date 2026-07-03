@@ -1140,11 +1140,14 @@ class GMI_OT_extract_profile_from_frame_dump(Operator):
             if not output_dir:
                 output_dir = str(Path(capture_dir) / "GakumasMI-profile")
             expected_vertex_count = None
+            expected_vertex_counts = []
             if scene.gmi_body_json_library_dir and scene.gmi_body_resource:
-                entry = core.resolve_exact_body_json_entry(
+                hints = core.body_json_vertex_hints(
                     bpy.path.abspath(scene.gmi_body_json_library_dir),
                     scene.gmi_body_resource,
                 )
+                expected_vertex_counts = hints["vertexCounts"]
+                entry = hints["exact"]
                 if entry:
                     expected_vertex_count = entry.get("vertexCount")
             report = core.extract_profile_from_frame_dump(
@@ -1153,6 +1156,8 @@ class GMI_OT_extract_profile_from_frame_dump(Operator):
                 component_id=scene.gmi_component_id,
                 main_draw=scene.gmi_extract_draw or None,
                 expected_vertex_count=expected_vertex_count,
+                expected_vertex_counts=expected_vertex_counts,
+                body_resource=(scene.gmi_body_resource or None),
             )
             scene.gmi_profile_dir = output_dir
             selected = report["selected"]
@@ -1190,8 +1195,11 @@ class GMI_OT_build_full_profile(Operator):
                 output_dir = str(Path(capture_dir) / "GakumasMI-profile")
             component_id = scene.gmi_component_id
             expected_vertex_count = None
+            expected_vertex_counts = []
             if scene.gmi_body_resource:
-                entry = core.resolve_exact_body_json_entry(library_dir, scene.gmi_body_resource)
+                hints = core.body_json_vertex_hints(library_dir, scene.gmi_body_resource)
+                expected_vertex_counts = hints["vertexCounts"]
+                entry = hints["exact"]
                 if entry:
                     expected_vertex_count = entry.get("vertexCount")
             # ① 注入信息
@@ -1200,6 +1208,8 @@ class GMI_OT_build_full_profile(Operator):
                 component_id=component_id,
                 main_draw=scene.gmi_extract_draw or None,
                 expected_vertex_count=expected_vertex_count,
+                expected_vertex_counts=expected_vertex_counts,
+                body_resource=(scene.gmi_body_resource or None),
             )
             # ②结构数据 + ③逆算子（可选指定 Body 以消歧）
             report = core.complete_inverse_skin_profile(
@@ -1727,6 +1737,18 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                 if scene.gmi_opacity_texture_file and not bpy.path.abspath(scene.gmi_opacity_texture_file).lower().endswith(".dds")
                 else bpy.path.abspath(scene.gmi_opacity_texture_file) if scene.gmi_opacity_texture_file else None
             )
+            native_co_textures = {}
+            for semantic, value in (
+                ("baseColor", scene.gmi_opacity_texture_file),
+                ("packedMask", scene.gmi_opacity_packed_mask_file),
+                ("shadeColor", scene.gmi_opacity_shade_color_file),
+            ):
+                if not value:
+                    continue
+                path = bpy.path.abspath(value)
+                if not path.lower().endswith(".dds"):
+                    path = _png_to_dds(path)
+                native_co_textures[semantic] = path
             package = core.write_inverse_skin_package(
                 profile_dir, output_dir, scene.gmi_package_id, scene.gmi_package_name,
                 scene.gmi_author, scene.gmi_component_id,
@@ -1736,6 +1758,7 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                 materials=data.get("materials"),
                 alpha_modes=alpha_modes,
                 opacity_texture=opacity_texture,
+                native_co_textures=native_co_textures,
             )
             core._write_json(Path(package) / "export-report.json", {
                 "automaticAncestorRemap": data["automatic_remap"],
@@ -1743,6 +1766,7 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                 "truncatedWeightTotal": data["truncated_weight"],
                 "materialTextures": material_textures,
                 "opacityTexture": bpy.path.abspath(scene.gmi_opacity_texture_file) if scene.gmi_opacity_texture_file else "",
+                "nativeCoTextures": native_co_textures,
                 "outlineWidthMode": scene.gmi_outline_width_mode,
                 "vertexColorMode": scene.gmi_vertex_color_mode,
                 "uvLayers": data.get("uvLayers", {}),
@@ -1809,6 +1833,9 @@ class GMI_OT_create_body_material_template(Operator):
         material["gmi_t0_base_color"] = bpy.path.abspath(scene.gmi_base_color_file) if scene.gmi_base_color_file else ""
         material["gmi_t1_packed_mask"] = bpy.path.abspath(scene.gmi_packed_mask_file) if scene.gmi_packed_mask_file else ""
         material["gmi_t4_shade_color"] = bpy.path.abspath(scene.gmi_shade_color_file) if scene.gmi_shade_color_file else ""
+        material["gmi_co_t0_base_color"] = bpy.path.abspath(scene.gmi_opacity_texture_file) if scene.gmi_opacity_texture_file else ""
+        material["gmi_co_t1_packed_mask"] = bpy.path.abspath(scene.gmi_opacity_packed_mask_file) if scene.gmi_opacity_packed_mask_file else ""
+        material["gmi_co_t4_shade_color"] = bpy.path.abspath(scene.gmi_opacity_shade_color_file) if scene.gmi_opacity_shade_color_file else ""
         material["gmi_t1_channels"] = "R=阴影阈值, G=光滑度, B=金属度, A=AO/间接光"
         material["gmi_t4_channels"] = "RGB=基础色暗色版, A=原生sdw二值遮罩"
 
@@ -1817,9 +1844,12 @@ class GMI_OT_create_body_material_template(Operator):
         if principled:
             principled.label = "游戏身体主材质近似预览"
         for label, path, location in (
-            ("t0 基础色 / BaseColor", scene.gmi_base_color_file, (-600, 160)),
-            ("t1 混合遮罩", scene.gmi_packed_mask_file, (-600, -60)),
-            ("t4 暗面材质 / ShadeMap", scene.gmi_shade_color_file, (-600, -280)),
+            ("body t0 基础色 / BaseColor", scene.gmi_base_color_file, (-600, 200)),
+            ("body t1 混合遮罩", scene.gmi_packed_mask_file, (-600, 0)),
+            ("body t4 暗面材质 / ShadeMap", scene.gmi_shade_color_file, (-600, -200)),
+            ("co t0 基础色 / m_bdyco", scene.gmi_opacity_texture_file, (-950, 200)),
+            ("co t1 混合遮罩", scene.gmi_opacity_packed_mask_file, (-950, 0)),
+            ("co t4 暗面材质 / ShadeMap", scene.gmi_opacity_shade_color_file, (-950, -200)),
         ):
             node = nodes.new(type="ShaderNodeTexImage")
             node.label = label
@@ -1916,28 +1946,34 @@ class GMI_OT_bake_material_maps(Operator):
             self.report({"ERROR"}, "网格没有材质槽，请先分材质并设置每个材质的「材质类型」")
             return {"CANCELLED"}
 
-        base_path = bpy.path.abspath(scene.gmi_base_color_file)
-        if base_path.lower().endswith(".dds"):
-            self.report({"ERROR"}, "基础色请用 PNG（DDS 无法在 Blender 内读像素派生 t4）")
-            return {"CANCELLED"}
-        image = bpy.data.images.load(base_path, check_existing=False)
-        try:
+        def _load_base_texture(file_path, label):
+            path = bpy.path.abspath(file_path)
+            if path.lower().endswith(".dds"):
+                raise ValueError(f"{label} 请用 PNG（DDS 无法在 Blender 内读像素派生 t4）")
+            image = bpy.data.images.load(path, check_existing=False)
             try:
-                image.colorspace_settings.name = "Non-Color"
-            except Exception:
-                pass
-            width, height = int(image.size[0]), int(image.size[1])
-            if width != height:
-                self.report({"ERROR"}, f"基础色需为正方形（当前 {width}x{height}）")
-                return {"CANCELLED"}
-            buffer = np.empty(width * height * 4, dtype=np.float32)
-            image.pixels.foreach_get(buffer)
-            buffer = np.nan_to_num(buffer, nan=0.0, posinf=1.0, neginf=0.0)
-            base8 = np.clip(
-                buffer.reshape(height, width, 4)[::-1] * 255.0 + 0.5, 0, 255
-            ).astype(np.uint8)  # top-down，与 DDS / UV(1-v) 一致
-        finally:
-            bpy.data.images.remove(image)
+                try:
+                    image.colorspace_settings.name = "Non-Color"
+                except Exception:
+                    pass
+                w, h = int(image.size[0]), int(image.size[1])
+                if w != h:
+                    raise ValueError(f"{label} 需为正方形（当前 {w}x{h}）")
+                buffer = np.empty(w * h * 4, dtype=np.float32)
+                image.pixels.foreach_get(buffer)
+                buffer = np.nan_to_num(buffer, nan=0.0, posinf=1.0, neginf=0.0)
+                rgba8 = np.clip(
+                    buffer.reshape(h, w, 4)[::-1] * 255.0 + 0.5, 0, 255
+                ).astype(np.uint8)  # top-down，与 DDS / UV(1-v) 一致
+                return rgba8, w, h
+            finally:
+                bpy.data.images.remove(image)
+
+        try:
+            base8, width, height = _load_base_texture(scene.gmi_base_color_file, "body 基础色 t0")
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
 
         mesh.calc_loop_triangles()
         uv = mesh.uv_layers.active.data
@@ -1962,12 +1998,37 @@ class GMI_OT_bake_material_maps(Operator):
             for idx, slot in enumerate(obj.material_slots)
             if slot.material is not None and slot.material.gmi_material_toon >= 0
         }
-        id_map = core.rasterize_material_ids(tris, mat_ids, width, dilate=8)
+        alpha_modes = _material_slot_alpha_modes(obj)
+        opaque_slots = [
+            idx for idx, slot in enumerate(obj.material_slots)
+            if slot.material is not None and alpha_modes.get(idx) != "NATIVE_CO"
+        ]
+        native_co_slots = sorted(alpha_modes)
+
+        def _slot_triangle_mask(slots):
+            if not slots:
+                return np.zeros(count, dtype=bool)
+            return np.isin(mat_ids, np.asarray(slots, dtype=np.int32))
+
+        def _slot_id_map(slots, size):
+            mask = _slot_triangle_mask(slots)
+            if not mask.any():
+                return np.full((size, size), -1, dtype=np.int16)
+            return core.rasterize_material_ids(tris[mask], mat_ids[mask], size, dilate=8)
+
+        def _slot_form_map(slots, size, ao_values):
+            mask = _slot_triangle_mask(slots)
+            if not mask.any():
+                return np.full((size, size), np.nan, dtype=np.float32)
+            return core.rasterize_vertex_scalar(tris[mask], ao_values[vert_tris[mask]], size, dilate=8)
+
+        id_map = _slot_id_map(opaque_slots, width)
 
         form_map = None
+        ao = None
         if scene.gmi_form_shading:
             ao = _compute_vertex_ao(obj)
-            form_map = core.rasterize_vertex_scalar(tris, ao[vert_tris], width, dilate=8)
+            form_map = _slot_form_map(opaque_slots, width, ao)
         t1, t4 = core.bake_material_maps(
             id_map, base8, class_per_slot, presets,
             form_map=form_map, form_strength=scene.gmi_form_strength,
@@ -1998,10 +2059,43 @@ class GMI_OT_bake_material_maps(Operator):
         out = Path(tempfile.gettempdir())
         t1_path = out / "gmi_baked_packedMask.dds"
         t4_path = out / "gmi_baked_shadeColor.dds"
+        co_t1 = co_t4 = None
+        co_t1_path = co_t4_path = None
+        co_note = ""
+        if native_co_slots:
+            if not scene.gmi_opacity_texture_file:
+                self.report({"ERROR"}, "检测到原生co材质槽，需要先填写 co 基础色 t0 / m_bdyco")
+                return {"CANCELLED"}
+            try:
+                co_base8, co_width, co_height = _load_base_texture(
+                    scene.gmi_opacity_texture_file, "co 基础色 t0 / m_bdyco"
+                )
+            except Exception as exc:
+                self.report({"ERROR"}, str(exc))
+                return {"CANCELLED"}
+            co_id_map = _slot_id_map(native_co_slots, co_width)
+            co_form_map = None
+            if scene.gmi_form_shading:
+                co_form_map = _slot_form_map(native_co_slots, co_width, ao)
+            co_t1, co_t4 = core.bake_material_maps(
+                co_id_map, co_base8, class_per_slot, presets,
+                form_map=co_form_map, form_strength=scene.gmi_form_strength,
+                toon_per_slot=toon_per_slot,
+            )
+            co_t1_path = out / "gmi_baked_co_packedMask.dds"
+            co_t4_path = out / "gmi_baked_co_shadeColor.dds"
+            co_covered = int((co_id_map >= 0).sum()) * 100 // (co_width * co_height)
+            co_note = f"；co {co_covered}% UV 覆盖"
+
         core.write_rgba8_dds(t1_path, width, height, t1.tobytes(), srgb=False)
         core.write_rgba8_dds(t4_path, width, height, t4.tobytes(), srgb=True)
         scene.gmi_packed_mask_file = str(t1_path)
         scene.gmi_shade_color_file = str(t4_path)
+        if co_t1 is not None and co_t4 is not None:
+            core.write_rgba8_dds(co_t1_path, co_width, co_height, co_t1.tobytes(), srgb=False)
+            core.write_rgba8_dds(co_t4_path, co_width, co_height, co_t4.tobytes(), srgb=True)
+            scene.gmi_opacity_packed_mask_file = str(co_t1_path)
+            scene.gmi_opacity_shade_color_file = str(co_t4_path)
 
         covered = int((id_map >= 0).sum()) * 100 // (width * height)
         used = sorted({presets[c]["label"] for c in class_per_slot.values() if c in presets})
@@ -2019,7 +2113,7 @@ class GMI_OT_bake_material_maps(Operator):
             channel_note = f"；通道覆盖：{' / '.join(parts)}"
         self.report(
             {"INFO"},
-            f"已烘焙 t1/t4（{covered}% UV 覆盖；材质：{'、'.join(used)}{form_note}{channel_note}）；"
+            f"已烘焙 body t1/t4（{covered}% UV 覆盖{co_note}；材质：{'、'.join(used)}{form_note}{channel_note}）；"
             f"已设为导出 t1/t4，可直接校验导出",
         )
         return {"FINISHED"}

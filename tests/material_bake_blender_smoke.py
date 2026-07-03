@@ -29,6 +29,17 @@ png_path = Path(tempfile.gettempdir()) / "gmi_test_base.png"
 img.filepath_raw = str(png_path)
 img.file_format = "PNG"
 img.save()
+co_size = 32
+co_base = np.zeros((co_size, co_size, 4), np.float32)
+co_base[..., 1] = 0.78
+co_base[..., 3] = 1.0
+co_img = bpy.data.images.new("co_base", co_size, co_size, alpha=True)
+co_img.colorspace_settings.name = "Non-Color"
+co_img.pixels.foreach_set(co_base[::-1].reshape(-1))
+co_png_path = Path(tempfile.gettempdir()) / "gmi_test_co_base.png"
+co_img.filepath_raw = str(co_png_path)
+co_img.file_format = "PNG"
+co_img.save()
 
 # 2) 平面网格，UV 铺满，两材质各占一半
 bpy.ops.mesh.primitive_plane_add(size=2)
@@ -39,6 +50,7 @@ m_skin = bpy.data.materials.new("skin_mat")
 m_metal = bpy.data.materials.new("metal_mat")
 m_skin.gmi_material_class = "skin"
 m_metal.gmi_material_class = "metal"
+m_metal.gmi_alpha_mode = "NATIVE_CO"
 mesh.materials.append(m_skin)
 mesh.materials.append(m_metal)
 # 平面 1 个 quad，赋 slot0；细分出第二材质区
@@ -53,16 +65,24 @@ for poly in mesh.polygons:
 
 scene = bpy.context.scene
 scene.gmi_base_color_file = str(png_path)
+scene.gmi_opacity_texture_file = str(co_png_path)
 
 # 3) 烘焙
 result = bpy.ops.gmi.bake_material_maps()
 assert result == {"FINISHED"}, result
 assert scene.gmi_packed_mask_file and scene.gmi_shade_color_file
+assert scene.gmi_opacity_packed_mask_file and scene.gmi_opacity_shade_color_file
 t1_path, t4_path = scene.gmi_packed_mask_file, scene.gmi_shade_color_file
+co_t1_path, co_t4_path = scene.gmi_opacity_packed_mask_file, scene.gmi_opacity_shade_color_file
 d1 = core.inspect_dds(t1_path)
 assert (d1["width"], d1["height"]) == (size, size), d1
 assert d1["format"] == "DXGI_28", f"t1 应为 R8G8B8A8_UNORM(28)，实际 {d1['format']}"  # linear
 d4 = core.inspect_dds(t4_path)
 assert d4["format"] == "DXGI_29", f"t4 应为 R8G8B8A8_UNORM_SRGB(29)，实际 {d4['format']}"
+co_d1 = core.inspect_dds(co_t1_path)
+co_d4 = core.inspect_dds(co_t4_path)
+assert (co_d1["width"], co_d1["height"]) == (co_size, co_size), co_d1
+assert co_d1["format"] == "DXGI_28", co_d1
+assert co_d4["format"] == "DXGI_29", co_d4
 
-print("material_bake_blender_smoke OK:", t1_path, t4_path)
+print("material_bake_blender_smoke OK:", t1_path, t4_path, co_t1_path, co_t4_path)

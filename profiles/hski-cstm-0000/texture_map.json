@@ -6,6 +6,9 @@
       "hash": "950989c5",
       "slot": "ps-t0",
       "pixelShader": "9ab6fcdf2237a70a",
+      "slotVariants": {
+        "50b619789b23bd7a": "ps-t1"
+      },
       "size": [2048, 2048],
       "format": "BC7_UNORM_SRGB",
       "colorSpace": "sRGB",
@@ -15,6 +18,9 @@
       "hash": "1fefdc77",
       "slot": "ps-t1",
       "pixelShader": "9ab6fcdf2237a70a",
+      "slotVariants": {
+        "50b619789b23bd7a": "ps-t2"
+      },
       "size": [2048, 2048],
       "format": "BC7_UNORM",
       "colorSpace": "linear",
@@ -30,6 +36,9 @@
       "hash": "69492ed7",
       "slot": "ps-t4",
       "pixelShader": "9ab6fcdf2237a70a",
+      "slotVariants": {
+        "50b619789b23bd7a": "ps-t5"
+      },
       "size": [2048, 2048],
       "format": "BC7_UNORM_SRGB",
       "colorSpace": "sRGB",

@@ -19,6 +19,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ADDON_DIR = ROOT / "gakumas_mi"
+PROFILE_DIR = ROOT / "profiles"
 DIST_DIR = ROOT / "dist"
 
 
@@ -84,6 +85,12 @@ def package(output: Path | None = None, include_body_lib: bool = False) -> Path:
             zf.write(path, arcname.as_posix())
             file_count += 1
             total_bytes += path.stat().st_size
+        if PROFILE_DIR.is_dir():
+            for path in _iter_files(PROFILE_DIR):
+                arcname = Path("gakumas_mi") / "profiles" / path.relative_to(PROFILE_DIR)
+                zf.write(path, arcname.as_posix())
+                file_count += 1
+                total_bytes += path.stat().st_size
 
     print(f"已生成：{output}")
     print(f"文件数：{file_count}")

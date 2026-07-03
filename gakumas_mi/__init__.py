@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 7, 0),
+    "version": (0, 7, 1),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "导入学马仕参考模型，并导出绑定配置档的 3DMigoto 模组",
@@ -103,9 +103,9 @@ def register():
     bpy.types.Scene.gmi_texture_key = StringProperty(name="贴图键", default="body.baseColor")
     bpy.types.Scene.gmi_texture_file = StringProperty(name="DDS 文件", subtype="FILE_PATH")
     bpy.types.Scene.gmi_base_color_file = StringProperty(name="基础色 t0", subtype="FILE_PATH")
-    bpy.types.Scene.gmi_packed_mask_file = StringProperty(name="混合遮罩 t1", subtype="FILE_PATH")
+    bpy.types.Scene.gmi_packed_mask_file = StringProperty(name="body 混合遮罩 t1", subtype="FILE_PATH")
     bpy.types.Scene.gmi_shade_color_file = StringProperty(
-        name="暗面材质 t4/sdw", subtype="FILE_PATH",
+        name="body 暗面材质 t4/sdw", subtype="FILE_PATH",
         description="暗面时使用的材质颜色图；RGB 应是基础色 t0 的暗化版，A 是近似二值材质遮罩，不是透明度",
     )
     bpy.types.Scene.gmi_t1_r_file = StringProperty(
@@ -125,8 +125,16 @@ def register():
         description="可选通道图；填入后写入 PackedMask.A。四个通道都填时会整图合成完整 t1",
     )
     bpy.types.Scene.gmi_opacity_texture_file = StringProperty(
-        name="透明材质 t0 / m_bdyco", subtype="FILE_PATH",
+        name="co 基础色 t0 / m_bdyco", subtype="FILE_PATH",
         description="仅当材质槽设为原生co时填写且必填；使用透明材质自己的 t0/UV，不回退基础色 t0",
+    )
+    bpy.types.Scene.gmi_opacity_packed_mask_file = StringProperty(
+        name="co 混合遮罩 t1", subtype="FILE_PATH",
+        description="原生 co / m_bdyco 自己的 PackedMask；留空时导出会使用中性 t1，不再共用 body t1",
+    )
+    bpy.types.Scene.gmi_opacity_shade_color_file = StringProperty(
+        name="co 暗面材质 t4/sdw", subtype="FILE_PATH",
+        description="原生 co / m_bdyco 自己的暗面材质；留空时导出会使用中性 t4，不再共用 body t4",
     )
     bpy.types.Scene.gmi_neutral_material = BoolProperty(
         name="中性 t1/t4", default=True,
@@ -196,7 +204,7 @@ def unregister():
         "gmi_texture_key", "gmi_texture_file", "gmi_package_id",
         "gmi_base_color_file", "gmi_packed_mask_file", "gmi_shade_color_file",
         "gmi_t1_r_file", "gmi_t1_g_file", "gmi_t1_b_file", "gmi_t1_a_file",
-        "gmi_opacity_texture_file",
+        "gmi_opacity_texture_file", "gmi_opacity_packed_mask_file", "gmi_opacity_shade_color_file",
         "gmi_neutral_material", "gmi_outline_width_mode", "gmi_vertex_color_mode",
         "gmi_form_shading", "gmi_form_strength",
         "gmi_package_name", "gmi_author",

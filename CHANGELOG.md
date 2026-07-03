@@ -4,6 +4,33 @@
 发布包用 `python tools/package_blender_addon.py` 生成（代码版不含 Body JSON 资源库；
 加 `--with-body-lib` 可一并打包）。本地包不提交到公开仓库。
 
+## 0.7.1 — body / bdyco 材质贴图彻底分离
+
+- **修复低亮度 PS 变体贴图槽错位**：`50b619789b23bd7a` 这类低亮度 shader 中，
+  `baseColor/packedMask/shadeColor` 分别改读 `ps-t1/ps-t2/ps-t5`，其中 `ps-t4` 是深度比较槽。
+  profile 现在支持 `slotVariants`，导出 ini 会按当前 PS 自动切换槽位，避免暗光下把
+  `shadeColor` 误塞进深度槽后出现大块彩色阴影。
+- **修复原生 co 材质共用 body t1/t4 的问题**：`NATIVE_CO` 段现在绑定
+  `body.section1` 自己的 `t0/t1/t4` 资源；没有填写 co 的 `t1/t4` 时生成 co 专属中性图，
+  不再复用 `m_bdy` 的 PackedMask / ShadeMap，避免透明材质与身体材质叠出灰斑。
+- **调整材质模板 UI**：贴图绑定拆成「不透明 body / m_bdy」与「原生 co / m_bdyco」
+  两块，co 现在有独立的基础色、混合遮罩和暗面材质字段。
+- **分材质烘焙按渲染材质分流**：材质槽设为 `原生co` 时，烘焙会额外输出
+  `gmi_baked_co_packedMask.dds` 与 `gmi_baked_co_shadeColor.dds`，并写回 co 字段。co 会按
+  `m_bdyco` 自己的 atlas 尺寸烘焙，不要求与 body atlas 同尺寸。
+- **修复 UV 重叠时 co 挖空 body t1/t4**：body 与 co 现在先按材质槽过滤三角形，再分别栅格化；
+  co UV 覆盖在 body 皮肤 UV 上时，不会再把 body 的 material id 覆盖成中性洞。
+- **抓帧主 draw 选择支持短角色代号提示**：`gmi_body_resource` 填 `shro` 这类短代号时，
+  会用 Body JSON 资源库里所有匹配 body 的顶点数集合过滤候选，避免抓帧里同屏多角色时选错
+  body；完整 body 名仍走精确匹配。`tools/extract_frame_profile.py` 新增
+  `--body-json-library` / `--body-resource` 参数；提示会写进 `profile.target.bodyResource`。
+- **打包附带 profiles**：`tools/package_blender_addon.py` 会把仓库 `profiles/` 目录
+  （含 `texture_map.json` 槽位/`slotVariants` 标注）一并打进插件 ZIP 的
+  `gakumas_mi/profiles/`。
+- 测试：`tests/mod_ini_contract.py` 覆盖 co 专属 t1/t4 绑定与 `slotVariants` 条件绑定契约；
+  `tests/frame_profile_extract_smoke.py` 覆盖短代号顶点数提示；
+  `tests/material_bake_blender_smoke.py` 更新为检查 body/co 双输出。
+
 ## 0.7.0 — t1/t4 材质语义收敛与旧 Profile 防错
 
 - **修正 t4/sdw 语义**：`t4.rgb` 明确为 `t0/baseColor` 的暗面材质颜色版，用来在卡通暗面保留

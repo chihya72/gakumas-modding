@@ -736,7 +736,8 @@ def _build_frame_candidates(resources, draw_records):
     return sorted(candidates, key=lambda item: (item["score"], item["indices"], item["draw"]), reverse=True)
 
 
-def _select_main_candidate(candidates, requested_draw=None, expected_vertex_count=None):
+def _select_main_candidate(candidates, requested_draw=None, expected_vertex_count=None,
+                           expected_vertex_counts=None):
     if not candidates:
         raise ValueError("抓帧中没有找到可作为 Body 的 IB/VB0/VB1 候选")
     if requested_draw is not None:
@@ -751,10 +752,17 @@ def _select_main_candidate(candidates, requested_draw=None, expected_vertex_coun
     # Tiny repeated helper meshes can outscore the real body by pass count alone.
     # Body draws have both streams; if such candidates exist, choose only among them.
     pool = complete or candidates
+    expected_counts = {
+        int(value)
+        for value in (expected_vertex_counts or [])
+        if value
+    }
     if expected_vertex_count:
+        expected_counts.add(int(expected_vertex_count))
+    if expected_counts:
         expected_pool = [
             item for item in pool
-            if int(item.get("vertices") or 0) == int(expected_vertex_count)
+            if int(item.get("vertices") or 0) in expected_counts
         ]
         if expected_pool:
             pool = expected_pool
@@ -839,7 +847,8 @@ def _section_texture_slots(resources, draw, component_id, key_prefix):
 
 
 def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body",
-                                    main_draw=None, expected_vertex_count=None):
+                                    main_draw=None, expected_vertex_count=None,
+                                    expected_vertex_counts=None, body_resource=None):
     """Generate a runtime-only Profile from a 3DMigoto FrameAnalysis directory.
 
     Frame dumps expose runtime GPU resources, draw calls and texture bindings. They do not
@@ -875,6 +884,7 @@ def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body"
         candidates,
         main_draw if main_draw else None,
         expected_vertex_count=expected_vertex_count,
+        expected_vertex_counts=expected_vertex_counts,
     )
     same_group = [
         item for item in candidates
@@ -965,7 +975,7 @@ def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body"
         "target": {
             "actorId": "unknown",
             "costumeId": "unknown",
-            "bodyResource": "unknown",
+            "bodyResource": body_resource or "unknown",
             "note": "从 FrameAnalysis 推断；骨骼名/BindPose/权重由 Body JSON资源库自动匹配补全。",
         },
         "capture": {
@@ -1096,6 +1106,12 @@ def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body"
         "outputDir": str(output),
         "selected": selected,
         "expectedVertexCount": int(expected_vertex_count) if expected_vertex_count else None,
+        "expectedVertexCounts": sorted({
+            int(value)
+            for value in (expected_vertex_counts or [])
+            if value
+        }),
+        "bodyResourceHint": body_resource or None,
         "candidateCount": len(candidates),
         "candidates": candidates[:32],
         "warnings": [
@@ -1338,6 +1354,32 @@ def resolve_exact_body_json_entry(json_dir, body_resource):
     if len(exact) == 1:
         return dict(exact[0])
     return None
+
+
+def body_json_vertex_hints(json_dir, body_resource):
+    """Return candidate vertex counts from the body library for a user hint.
+
+    A full body name should resolve to one exact mesh. A short actor code such as
+    "shro" intentionally resolves to all matching bodies so frame extraction can
+    choose the matching runtime draw before the later AssetStudio completion step.
+    """
+    body_resource = (body_resource or "").strip()
+    if not body_resource or body_resource == "unknown":
+        return {
+            "bodyResource": body_resource,
+            "entries": [],
+            "vertexCounts": [],
+            "exact": None,
+        }
+    entries = scan_body_json_library(json_dir, name_filter=body_resource)
+    exact = [entry for entry in entries if entry["body"] == body_resource]
+    pool = exact if len(exact) == 1 else entries
+    return {
+        "bodyResource": body_resource,
+        "entries": [dict(entry) for entry in pool],
+        "vertexCounts": sorted({int(entry["vertexCount"]) for entry in pool}),
+        "exact": dict(exact[0]) if len(exact) == 1 else None,
+    }
 
 
 def resolve_body_json_resource(profile_dir, json_dir, component_id="body"):
@@ -1811,9 +1853,19 @@ def _select_native_co_section(component, drawcalls, component_id):
     return sections[0]
 
 
-def _section_texture_slot(profile_set, section_id, semantic, fallback):
+def _section_texture_slot(profile_set, section_id, semantic, fallback, pixel_shader=None):
     entry = _profile_material_texture_entry(profile_set, f"{section_id}.{semantic}")
-    return (entry or {}).get("slot") or fallback
+    return _material_texture_slot(entry, fallback, pixel_shader=pixel_shader)
+
+
+def _material_texture_slot(entry, fallback, pixel_shader=None):
+    entry = entry or {}
+    if pixel_shader:
+        variants = entry.get("slotVariants") or {}
+        slot = variants.get(str(pixel_shader).lower()) or variants.get(str(pixel_shader))
+        if slot:
+            return slot
+    return entry.get("slot") or fallback
 
 
 def _profile_material_texture_entry(profile_set, texture_key):
@@ -1833,7 +1885,7 @@ def _profile_material_texture_entry(profile_set, texture_key):
             migrated["semantic"] = "shadeColor"
             migrated["_migratedFrom"] = f"{prefix}.t4"
             return migrated
-        if entry and entry.get("slot") != "ps-t4":
+        if entry and entry.get("slot") != "ps-t4" and not entry.get("slotVariants"):
             migrated = dict(entry)
             migrated["slot"] = "ps-t4"
             migrated["_migratedFrom"] = texture_key
@@ -1841,7 +1893,7 @@ def _profile_material_texture_entry(profile_set, texture_key):
     return entry
 
 
-def _section_material_bindings(profile_set, section_id, resources):
+def _section_material_bindings(profile_set, section_id, resources, pixel_shader=None):
     defaults = {
         "baseColor": "ps-t0",
         "packedMask": "ps-t1",
@@ -1851,9 +1903,87 @@ def _section_material_bindings(profile_set, section_id, resources):
     for semantic, resource_name in resources.items():
         if not resource_name:
             continue
-        slot = _section_texture_slot(profile_set, section_id, semantic, defaults[semantic])
+        slot = _section_texture_slot(profile_set, section_id, semantic, defaults[semantic], pixel_shader=pixel_shader)
         lines.append(f"    {slot} = Resource{resource_name}")
     return "\n".join(lines)
+
+
+def _section_material_slot_variants(profile_set, section_id, resources):
+    variants = []
+    seen = set()
+    for semantic in resources.keys():
+        entry = _profile_material_texture_entry(profile_set, f"{section_id}.{semantic}") or {}
+        for shader_hash in (entry.get("slotVariants") or {}).keys():
+            shader_hash = str(shader_hash).lower()
+            if shader_hash and shader_hash not in seen:
+                seen.add(shader_hash)
+                variants.append(shader_hash)
+    return variants
+
+
+def _section_material_binding_block(profile_set, section_id, resources, variant_var=None):
+    variants = _section_material_slot_variants(profile_set, section_id, resources)
+    default_bindings = _section_material_bindings(profile_set, section_id, resources)
+    if not variants or not variant_var:
+        return default_bindings
+    blocks = []
+    for index, shader_hash in enumerate(variants, start=1):
+        blocks.append(
+            f"    if {variant_var} == {index}\n"
+            f"{_section_material_bindings(profile_set, section_id, resources, pixel_shader=shader_hash)}\n"
+            "    endif"
+        )
+    blocks.append(
+        f"    if {variant_var} == 0\n"
+        f"{default_bindings}\n"
+        "    endif"
+    )
+    return "\n".join(blocks)
+
+
+def _component_pixel_shaders(drawcalls, component_id):
+    draw_component = drawcalls.get("components", {}).get(component_id, {}) or {}
+    seen = []
+
+    def add(shader_hash):
+        shader_hash = str(shader_hash or "").lower()
+        if shader_hash and shader_hash not in seen:
+            seen.append(shader_hash)
+
+    for shader_hash in draw_component.get("pixelShaders") or []:
+        add(shader_hash)
+    for item in (draw_component.get("passBindings", {}) or {}).values():
+        add(item.get("pixelShader"))
+    for section_data in (draw_component.get("sectionBindings", {}) or {}).values():
+        for item in (section_data.get("passBindings", {}) or {}).values():
+            add(item.get("pixelShader"))
+        for shader_hash in section_data.get("pixelShaders") or []:
+            add(shader_hash)
+    return seen
+
+
+def _section_slot_variant_ini(section, component_id, profile_set, drawcalls, section_id, resources, label):
+    variants = _section_material_slot_variants(profile_set, section_id, resources)
+    if not variants:
+        return "", "", None
+    body_title = component_id.title()
+    label = _safe_section(label)
+    variant_var = f"$gmi_{section}_{label}SlotVariant"
+    variant_indices = {shader_hash: index for index, shader_hash in enumerate(variants, start=1)}
+    known_pixel_shaders = _component_pixel_shaders(drawcalls, component_id)
+    for shader_hash in variants:
+        if shader_hash not in known_pixel_shaders:
+            known_pixel_shaders.append(shader_hash)
+    blocks = []
+    for index, shader_hash in enumerate(known_pixel_shaders):
+        variant_index = variant_indices.get(shader_hash, 0)
+        blocks.append(
+            f"[ShaderOverride{section}{body_title}{label}PS{index}]\n"
+            f"hash = {shader_hash}\n"
+            "allow_duplicate_hash = true\n"
+            f"{variant_var} = {variant_index}\n"
+        )
+    return f"global {variant_var} = 0", "\n".join(blocks), variant_var
 
 
 
@@ -2158,6 +2288,7 @@ def write_inverse_skin_package(
     profile_dir, output_root, package_id, name, author, component_id,
     vertices, normals, tangents, uv0, uv1, colors, faces, skin, corrections,
     material_textures=None, materials=None, alpha_modes=None, opacity_texture=None,
+    native_co_textures=None,
 ):
     """Write an arbitrary-topology, bone-weighted 3Dmigoto package."""
     package_id = _sanitize_package_id(package_id)
@@ -2177,6 +2308,9 @@ def write_inverse_skin_package(
     coefficient_count = int(config["coefficientCount"])
     material_textures = material_textures or {}
     opacity_texture = str(opacity_texture or "").strip()
+    native_co_textures = dict(native_co_textures or {})
+    if opacity_texture and not native_co_textures.get("baseColor"):
+        native_co_textures["baseColor"] = opacity_texture
     # 只剩原生 co 一条透明路径：把第二材质段交给游戏原生 m_bdyco draw 上下文绘制。
     # 旧的镂空(ALPHA_CLIP)/半透明(ALPHA_BLEND)自建 pass 已整体移除。
     alpha_modes = {
@@ -2230,13 +2364,18 @@ def write_inverse_skin_package(
                 "material": int(item["material"]),
                 "mode": "NATIVE_CO",
             })
-    if native_co_ranges and not opacity_texture:
+    if native_co_ranges and not native_co_textures.get("baseColor"):
         raise ValueError("原生 co 材质需要单独的透明材质 t0 / m_bdyco；不会回退基础色 t0")
     section = _safe_section(package_id)
     material_bindings = []
     material_resources = []
     material_manifest = {}
     material_resource_names = {}
+    native_co_section = None
+    native_section_id = None
+    if native_co_ranges:
+        native_co_section = _select_native_co_section(component, drawcalls, component_id)
+        native_section_id = str(native_co_section.get("id") or f"{component_id}.section1")
     if material_textures:
         texture_dir.mkdir(parents=True, exist_ok=True)
     for texture_key, source_file in material_textures.items():
@@ -2264,28 +2403,57 @@ def write_inverse_skin_package(
         material_resource_names[semantic] = resource_name
         filename = f"{component_id.title()}.{semantic[0].upper() + semantic[1:]}.dds"
         shutil.copy2(source, texture_dir / filename)
-        material_bindings.append(f"    {entry['slot']} = Resource{resource_name}")
         material_resources.append(
             f"[Resource{resource_name}]\nfilename = Textures\\{filename}\n"
         )
         material_manifest[texture_key] = {
             "slot": entry["slot"], "hash": entry["hash"], "file": f"Textures/{filename}"
         }
-    opacity_resource = None
     opacity_manifest = None
-    if opacity_texture:
-        source = Path(opacity_texture)
-        if not source.is_file() or source.suffix.lower() != ".dds":
-            raise ValueError(f"Opacity texture must be an existing DDS: {source}")
-        if not texture_dir.is_dir():
-            texture_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"{component_id.title()}.Opacity.dds"
-        shutil.copy2(source, texture_dir / filename)
-        opacity_resource = f"{section}OpacityBaseColor"
-        opacity_manifest = {"slot": "ps-t0", "file": f"Textures/{filename}"}
+    native_co_resource_names = {}
+
+    def add_native_co_resource(semantic, source_file=None, neutral_rgba=None, srgb=False):
+        if semantic in native_co_resource_names:
+            return native_co_resource_names[semantic]
+        texture_dir.mkdir(parents=True, exist_ok=True)
+        resource_name = f"{section}NativeCo{semantic.title()}"
+        if source_file:
+            source = Path(source_file)
+            if not source.is_file() or source.suffix.lower() != ".dds":
+                raise ValueError(f"Native co {semantic} texture must be an existing DDS: {source}")
+            entry = _profile_material_texture_entry(profile_set, f"{native_section_id}.{semantic}") or {}
+            description = inspect_dds(source)
+            expected_size = entry.get("size")
+            if expected_size and [description["width"], description["height"]] != expected_size:
+                raise ValueError(
+                    f"{native_section_id}.{semantic} must be {expected_size[0]}x{expected_size[1]}, got "
+                    f"{description['width']}x{description['height']}"
+                )
+            if entry.get("format") and description["format"] != entry["format"]:
+                raise ValueError(
+                    f"{native_section_id}.{semantic} must be {entry['format']}, got {description['format']}"
+                )
+            filename = f"{component_id.title()}.NativeCo.{semantic[0].upper() + semantic[1:]}.dds"
+            shutil.copy2(source, texture_dir / filename)
+            material_manifest[f"{native_section_id}.{semantic}"] = {
+                "slot": entry.get("slot"),
+                "hash": entry.get("hash"),
+                "file": f"Textures/{filename}",
+            }
+        else:
+            filename = f"{component_id.title()}.NativeCo.{semantic[0].upper() + semantic[1:]}.Neutral.dds"
+            write_solid_rgba8_dds(texture_dir / filename, neutral_rgba, srgb=srgb)
+            material_manifest[f"{native_section_id}.{semantic}"] = {
+                "slot": None,
+                "hash": None,
+                "file": f"Textures/{filename}",
+                "generated": "neutral",
+            }
+        native_co_resource_names[semantic] = resource_name
         material_resources.append(
-            f"[Resource{opacity_resource}]\nfilename = Textures\\{filename}\n"
+            f"[Resource{resource_name}]\nfilename = Textures\\{filename}\n"
         )
+        return resource_name
 
     def ensure_material_resource(semantic, neutral_rgba, srgb=False):
         resource_name = material_resource_names.get(semantic)
@@ -2309,9 +2477,28 @@ def write_inverse_skin_package(
 
     dispatch_matrices = coefficient_count
     dispatch_vertices = (vertex_count + 63) // 64
-    shader_checks = _shader_check_overrides(section, component_id, drawcalls)
-    if not shader_checks:
+    shader_check_blocks = [_shader_check_overrides(section, component_id, drawcalls)]
+    if not shader_check_blocks[0]:
         raise ValueError("Profile drawcall_map 没有可用于 checktextureoverride 的 VS pass")
+    slot_variant_globals = []
+    main_variant_global, main_slot_overrides, main_slot_variant_var = _section_slot_variant_ini(
+        section,
+        component_id,
+        profile_set,
+        drawcalls,
+        component_id,
+        material_resource_names,
+        "Body",
+    )
+    if main_variant_global:
+        slot_variant_globals.append(main_variant_global)
+        shader_check_blocks.append(main_slot_overrides)
+    material_bindings = _section_material_binding_block(
+        profile_set,
+        component_id,
+        material_resource_names,
+        variant_var=main_slot_variant_var,
+    )
     # 主体段可能不在 IB 偏移 0(随服装而变),原版 draw 用其 StartIndex 采我们从 0 起的
     # 自定义 IB 会越界 → 跳过原 draw、用 drawindexed 从 0 画满整网格。
     main_first_index = int(component.get("mainFirstIndex") or 0)
@@ -2332,25 +2519,48 @@ def write_inverse_skin_package(
         drawindexed_lines = "    ; no opaque material ranges"
     packed_mask_resource = None
     shade_color_resource = None
-    native_co_section = None
     native_co_first_indices = set()
     native_co_override = ""
     if native_co_ranges:
-        native_co_section = _select_native_co_section(component, drawcalls, component_id)
         native_co_first_indices.add(int(native_co_section.get("firstIndex") or 0))
-        packed_mask_resource = ensure_material_resource("packedMask", NEUTRAL_PACKED_MASK, srgb=False)
-        shade_color_resource = ensure_material_resource("shadeColor", NEUTRAL_SHADE_COLOR, srgb=False)
-        native_section_id = str(native_co_section.get("id") or f"{component_id}.section1")
+        opacity_resource = add_native_co_resource("baseColor", native_co_textures.get("baseColor"), srgb=True)
+        opacity_manifest = material_manifest.get(f"{native_section_id}.baseColor")
+        packed_mask_resource = add_native_co_resource(
+            "packedMask",
+            native_co_textures.get("packedMask"),
+            neutral_rgba=NEUTRAL_PACKED_MASK,
+            srgb=False,
+        )
+        shade_color_resource = add_native_co_resource(
+            "shadeColor",
+            native_co_textures.get("shadeColor"),
+            neutral_rgba=NEUTRAL_SHADE_COLOR,
+            srgb=False,
+        )
         native_first_index = int(native_co_section.get("firstIndex") or 0)
         native_draws = native_co_section.get("draws") or []
-        native_bindings = _section_material_bindings(
+        native_resources = {
+            "baseColor": opacity_resource,
+            "packedMask": packed_mask_resource,
+            "shadeColor": shade_color_resource,
+        }
+        native_variant_global, native_slot_overrides, native_slot_variant_var = _section_slot_variant_ini(
+            section,
+            component_id,
+            profile_set,
+            drawcalls,
+            native_section_id,
+            native_resources,
+            "NativeCo",
+        )
+        if native_variant_global:
+            slot_variant_globals.append(native_variant_global)
+            shader_check_blocks.append(native_slot_overrides)
+        native_bindings = _section_material_binding_block(
             profile_set,
             native_section_id,
-            {
-                "baseColor": opacity_resource,
-                "packedMask": packed_mask_resource,
-                "shadeColor": shade_color_resource,
-            },
+            native_resources,
+            variant_var=native_slot_variant_var,
         )
         native_drawindexed_lines = "\n".join(
             f"    drawindexed = {int(item['count'])}, {int(item['start'])}, 0"
@@ -2389,10 +2599,13 @@ endif
         )
     # Buffer TextureOverride 需要由相关 ShaderOverride 显式 checktextureoverride。
     # 只登记 IB hash 会显示 resource matched，但不会稳定执行 draw-time 替换。
+    shader_checks = "\n".join(block for block in shader_check_blocks if block)
+    slot_variant_constants = "\n".join(slot_variant_globals)
     ini = f"""; Generated by GakumasMI Blender Add-on (inverse-skin weighted mesh)
 
 [Constants]
 global $enable_{section} = 1
+{slot_variant_constants}
 
 {shader_checks}
 
@@ -2408,7 +2621,7 @@ if $enable_{section}
     vb1 = Resource{section}VB1
     vb3 = Resource{section}SkinnedVBIA
     ib = Resource{section}IB
-{chr(10).join(material_bindings)}
+{material_bindings}
 {drawindexed_lines}
     handling = skip
 endif

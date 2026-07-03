@@ -31,14 +31,26 @@ def main():
         default=0,
         help="手动指定主 Draw 编号；0 表示自动选择候选",
     )
+    parser.add_argument("--body-json-library", type=Path, help="AssetStudio body JSON资源库目录")
+    parser.add_argument("--body-resource", default="", help="角色代号或完整 body 名，如 shro")
     args = parser.parse_args()
 
     core = _load_core()
+    expected_vertex_count = None
+    expected_vertex_counts = []
+    if args.body_json_library and args.body_resource:
+        hints = core.body_json_vertex_hints(args.body_json_library, args.body_resource)
+        expected_vertex_counts = hints["vertexCounts"]
+        if hints["exact"]:
+            expected_vertex_count = hints["exact"].get("vertexCount")
     report = core.extract_profile_from_frame_dump(
         args.capture,
         args.output,
         component_id=args.component,
         main_draw=args.draw or None,
+        expected_vertex_count=expected_vertex_count,
+        expected_vertex_counts=expected_vertex_counts,
+        body_resource=(args.body_resource or None),
     )
     selected = report["selected"]
     print(f"生成完成：{args.output}")
