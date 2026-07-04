@@ -100,8 +100,6 @@ jobs:
           $prev = if ($idx -ge 0 -and $idx -lt $tags.Count - 1) { $tags[$idx + 1] } else { "" }
 
           $fixed = @'
-          学马仕定制 3DMigoto 游戏 mod 插件 + Mod 包管理器，**一个安装包搞定**。
-
           ## 安装
           运行 `GakumasModManager-Setup-<版本>.exe`，在目录页选择**游戏根目录**（`gakumas.exe` 所在文件夹）。安装程序会：
           - 把 3DMigoto 加载器（自编译补丁版 `d3d11.dll` + 官方匹配版 `nvapi64.dll`/`d3dcompiler_47.dll` + `d3dx.ini`/`ShaderFixes/`）平铺进游戏根目录；
