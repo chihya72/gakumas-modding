@@ -37,6 +37,11 @@ gakumas_mi/resources/assetstudio-body-json/
 # Python/Blender caches.
 __pycache__/
 *.py[cod]
+.pytest_cache/
+
+# .NET / WPF build outputs.
+bin/
+obj/
 
 # Local stale backup artifacts.
 *.stale

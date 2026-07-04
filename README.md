@@ -5,12 +5,16 @@
 目标：让 Mod 作者只用 Blender 和本项目的导出插件就能换装 / 换模，**不需要安装
 Unity、不制作 AssetBundle、不手写 3DMigoto 配置**。
 
-> **当前状态(v0.7.0)**:单 t0 身体的 Blender → 3DMigoto → 游戏(换模 + 动画 + 贴图 +
+**范围与边界**：只做模型、贴图、材质、Renderer 显隐等**视觉 Mod**；文本汉化、游戏逻辑、
+数值修改不纳入本项目。玩家侧只需安装运行环境（`3dmigoto-gkms` + `mod-manager`）。
+
+> **当前状态(v0.7.2)**:单 t0 身体的 Blender → 3DMigoto → 游戏(换模 + 动画 + 贴图 +
 > 多 mod 共存)完整闭环已达成并跨服装实机验证。一键即可对任意 body 生成完整配置档。
 > 已具备**分材质烘焙 t1/t4**(t1 四通道可选输入，t4/sdw 从基础色派生暗面材质图)、
 > 顶点 COLOR/描边安全族、以及**原生 `m_bdyco` 透明材质路径**(`NATIVE_CO`, 复用游戏第二材质段)。
+> 材质槽位已改为**运行时靠全局地标贴图自动判布局**(0.7.2,弃用逐 PS 枚举,作者不碰 PS hash)。
 > 仍在完善:回归测试、作者蒙皮精修工具、多组件(脸/头发)、
-> Mod Manager。完成度与计划详见
+> Mod Manager(`mod-manager/`,WPF 骨架已跑通)。完成度与计划详见
 > [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md);版本变更见
 > [CHANGELOG.md](CHANGELOG.md)。
 
@@ -71,6 +75,8 @@ profiles/                   各角色 / 服装的配置档（drawcall / 材质 /
 tests/                      冒烟测试与数据契约测试
 research/                   研究记录与路线（含已排除路线的历史证据）
 3dmigoto-gkms/              游戏 mod 插件（自编译 d3d11.dll + d3dx.ini + ShaderFixes）
+mod-manager/                使用者侧 Mod 包管理器（WPF/Stylet，随 3dmigoto-gkms 发布）
+experiments/pc-il2cpp-proxy/ PC IL2CPP 换网格探针（研究路线，非主线）
 ```
 
 仅本地、不入库的工作数据（已在 `.gitignore` 中）：
@@ -112,11 +118,12 @@ tools/build_inverse_skin_operator.py         → 由 bind + 权重生成逆算�
 | 文档 | 内容 |
 |---|---|
 | [README.md](README.md) | 项目总览（本文） |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | **仓库规范**：结构/命名/文档/提交/发布（新建文件前必读） |
 | [CHANGELOG.md](CHANGELOG.md) | 插件版本变更日志 |
 | [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) | 当前进度、完成度、能力对比、后续计划（**最新状态以此为准**） |
-| [GakumasMI_开发路线_当前草案.md](GakumasMI_开发路线_当前草案.md) | 总体产品架构与愿景 |
 | [gakumas_mi/README.md](gakumas_mi/README.md) | 作者插件：安装与一键工作流 |
 | [3dmigoto-gkms/README.md](3dmigoto-gkms/README.md) | 游戏 mod 插件：安装方法与按键说明 |
+| [mod-manager/README.md](mod-manager/README.md) · [mod-manager/docs/plan.md](mod-manager/docs/plan.md) | 使用者侧包管理器：运行方法与规划 |
 | [research/inverse-skin-matrix-recovery.md](research/inverse-skin-matrix-recovery.md) | 逆解矩阵方案与游戏内验证报告 |
 | [research/transparent-material-status.md](research/transparent-material-status.md) | 透明材质当前策略与结论 |
 | [research/color-scan-20260627-091033.md](research/color-scan-20260627-091033.md) | 顶点 COLOR / 描边安全族 |
