@@ -106,12 +106,7 @@ jobs:
           - 把 **Mod 管理器**装到 `<游戏根目录>\GakumasModManager\`，可勾选创建桌面快捷方式；
           - `d3dx.ini` 与 `Mods/` 若已存在则不覆盖（保护你的配置和已装 mod）。
 
-          ## 前置：.NET 8 Desktop Runtime
-          Mod 管理器需依赖 **.NET 8 Desktop Runtime（Windows x64）**：
-          https://dotnet.microsoft.com/download/dotnet/8.0
-          安装程序结束时会自动检测，缺失则提示打开下载页。
-
-          d3d11.dll 修了 live 横竖屏切换闪屏；`nvapi64.dll`/`d3dcompiler_47.dll` 构建时从官方 bo3b/3Dmigoto 1.4.9 release 取得，版本匹配。
+          Mod 管理器需依赖 .NET 8 Desktop Runtime（Windows x64）：https://dotnet.microsoft.com/download/dotnet/8.0
           '@
 
           $notes = "## 本版更新`n`n$tagBody`n`n$fixed"
