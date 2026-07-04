@@ -4,6 +4,32 @@
 发布包用 `python tools/package_blender_addon.py` 生成（代码版不含 Body JSON 资源库；
 加 `--with-body-lib` 可一并打包）。本地包不提交到公开仓库。
 
+## 0.7.2 — 运行时全局布局自动探测（彻底弃用 PS 枚举）
+
+- **不再枚举 pixel shader hash。** 游戏按光照把 `baseColor/packedMask/shadeColor`
+  重排到不同 `ps-tN` 槽（0.7.1 靠 `slotVariants` 逐 PS 登记，新场景一冒新 PS 就漏），
+  现改为**运行时靠全局 body 地标贴图 `0ff26bed` 的槽位自动判布局**：
+  - 地标在 `ps-t2` → 布局 **A**：`t0/t1/t4`（含自定义 shade）
+  - 地标在 `ps-t3` → 布局 **B**：`t1/t2/t5`（唯一挪动 base/mask、会导致「棋盘格全身错乱」的变体）
+  - 都不中 → **C/未知**：只绑 `t0/t1`，不绑自定义 shade（安全兜底，base/mask 永远对，
+    绝不错乱/消失）。
+  新场景、新服装、新角色全部自动覆盖，作者只需 base/mask/shade 三张贴图，**永不碰 PS hash**。
+- **导出 ini 结构变化**：`[Constants]` 加 `$gmi_<Mod>_layout` / `_probe` 全局；新增
+  `[CommandList<Mod>DetectLayout]`（`checktextureoverride = ps-t2 / ps-t3` 探地标）与自包含的
+  `[TextureOverride<Mod>BodyLayoutLandmark]`（`hash = 0ff26bed` + 由 IB hash 派生的
+  `match_priority`，多 mod 同装不冲突）。主体段与 native co 段都改成按 `$..._layout` 的三分支绑定。
+- **移除 0.7.1 的逐 PS `slotVariant` 机制**：`core.py` 删除 `_section_slot_variant_ini`、
+  `_section_material_binding_block` 等 5 个函数，新增 `_landmark_layout_sections` /
+  `_landmark_binding_block`。TextureOverride 的重复 hash 用 `match_priority` 消歧
+  （`allow_duplicate_hash` 只对 ShaderOverride 合法，放 TextureOverride 上会告警）。
+- 已在 `D:/Games/gakumas/Mods/` 的 6 个活跃 mod 上手工验证：干净重启后 3DMigoto 日志
+  无 `Unrecognised entry` / `Duplicate TextureOverride` 告警，暗光/正常/镜面场景均正常。
+- 测试：`tests/mod_ini_contract.py` 的 `test_pixel_shader_slot_variants_are_conditional`
+  改写为 `test_body_layout_is_runtime_autodetected`，断言地标探测三分支结构（7/7 通过）。
+- 详细复盘（FrameAnalysis/AssetRipper 反查、镜面 `1a922dbd/55266f0f` 排除、gmi_common
+  共享方案的取舍）见
+  [`research/session-20260704-gmi-global-layout-and-mirror.md`](research/session-20260704-gmi-global-layout-and-mirror.md)。
+
 ## 0.7.1 — body / bdyco 材质贴图彻底分离
 
 - **修复低亮度 PS 变体贴图槽错位**：`50b619789b23bd7a` 这类低亮度 shader 中，

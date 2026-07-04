@@ -1893,98 +1893,83 @@ def _profile_material_texture_entry(profile_set, texture_key):
     return entry
 
 
-def _section_material_bindings(profile_set, section_id, resources, pixel_shader=None):
-    defaults = {
-        "baseColor": "ps-t0",
-        "packedMask": "ps-t1",
-        "shadeColor": "ps-t4",
-    }
-    lines = []
-    for semantic, resource_name in resources.items():
-        if not resource_name:
-            continue
-        slot = _section_texture_slot(profile_set, section_id, semantic, defaults[semantic], pixel_shader=pixel_shader)
-        lines.append(f"    {slot} = Resource{resource_name}")
-    return "\n".join(lines)
+# --- Runtime texture-slot layout auto-detect (replaces per-PS slot variants) ---
+# The game repacks base/mask/shade into different ps-tN slots per lighting shader.
+# Instead of enumerating pixel-shader hashes, detect the layout at draw time from a
+# global body landmark texture (hash 0ff26bed) that the engine always binds:
+#   landmark at ps-t2 -> layout A (base t0, mask t1, shade t4)
+#   landmark at ps-t3 -> layout B (base t1, mask t2, shade t5)  <- only B moves base/mask
+#   neither           -> layout C/unknown (base t0, mask t1, no custom shade) -- safe
+# This needs no per-costume or per-scene shader hash and degrades gracefully.
+GMI_BODY_LAYOUT_LANDMARK = "0ff26bed"
 
 
-def _section_material_slot_variants(profile_set, section_id, resources):
-    variants = []
-    seen = set()
-    for semantic in resources.keys():
-        entry = _profile_material_texture_entry(profile_set, f"{section_id}.{semantic}") or {}
-        for shader_hash in (entry.get("slotVariants") or {}).keys():
-            shader_hash = str(shader_hash).lower()
-            if shader_hash and shader_hash not in seen:
-                seen.add(shader_hash)
-                variants.append(shader_hash)
-    return variants
-
-
-def _section_material_binding_block(profile_set, section_id, resources, variant_var=None):
-    variants = _section_material_slot_variants(profile_set, section_id, resources)
-    default_bindings = _section_material_bindings(profile_set, section_id, resources)
-    if not variants or not variant_var:
-        return default_bindings
-    blocks = []
-    for index, shader_hash in enumerate(variants, start=1):
-        blocks.append(
-            f"    if {variant_var} == {index}\n"
-            f"{_section_material_bindings(profile_set, section_id, resources, pixel_shader=shader_hash)}\n"
-            "    endif"
-        )
-    blocks.append(
-        f"    if {variant_var} == 0\n"
-        f"{default_bindings}\n"
-        "    endif"
+def _landmark_layout_sections(section, match_priority):
+    """DetectLayout command list + the landmark probe TextureOverride (once per mod)."""
+    return (
+        f"[CommandList{section}DetectLayout]\n"
+        f"$gmi_{section}_layout = 0\n"
+        f"$gmi_{section}_probe = 0\n"
+        f"checktextureoverride = ps-t2\n"
+        f"if $gmi_{section}_probe == 1\n"
+        f"    $gmi_{section}_layout = 2\n"
+        f"endif\n"
+        f"$gmi_{section}_probe = 0\n"
+        f"checktextureoverride = ps-t3\n"
+        f"if $gmi_{section}_probe == 1\n"
+        f"    $gmi_{section}_layout = 1\n"
+        f"endif\n\n"
+        f"[TextureOverride{section}BodyLayoutLandmark]\n"
+        f"; fires when the global body landmark {GMI_BODY_LAYOUT_LANDMARK} is bound;\n"
+        f"; DetectLayout reads its slot (ps-t2=A / ps-t3=B). match_priority disambiguates\n"
+        f"; the shared hash when several body mods are installed.\n"
+        f"hash = {GMI_BODY_LAYOUT_LANDMARK}\n"
+        f"match_priority = {match_priority}\n"
+        f"$gmi_{section}_probe = 1\n"
     )
-    return "\n".join(blocks)
 
 
-def _component_pixel_shaders(drawcalls, component_id):
-    draw_component = drawcalls.get("components", {}).get(component_id, {}) or {}
-    seen = []
+def _landmark_binding_block(section, resources, indent="    "):
+    """Per-section slot binding driven by $gmi_<section>_layout (see above)."""
+    base = resources.get("baseColor")
+    mask = resources.get("packedMask")
+    shade = resources.get("shadeColor")
+    out = [f"{indent}run = CommandList{section}DetectLayout"]
+    # layout 0 = C / unknown: base+mask at t0/t1, no custom shade (safe fallback)
+    out.append(f"{indent}if $gmi_{section}_layout == 0")
+    if base:
+        out.append(f"{indent}    ps-t0 = Resource{base}")
+    if mask:
+        out.append(f"{indent}    ps-t1 = Resource{mask}")
+    out.append(f"{indent}endif")
+    # layout 2 = A: t0/t1/t4
+    out.append(f"{indent}if $gmi_{section}_layout == 2")
+    if base:
+        out.append(f"{indent}    ps-t0 = Resource{base}")
+    if mask:
+        out.append(f"{indent}    ps-t1 = Resource{mask}")
+    if shade:
+        out.append(f"{indent}    ps-t4 = Resource{shade}")
+    out.append(f"{indent}endif")
+    # layout 1 = B: t1/t2/t5
+    out.append(f"{indent}if $gmi_{section}_layout == 1")
+    if base:
+        out.append(f"{indent}    ps-t1 = Resource{base}")
+    if mask:
+        out.append(f"{indent}    ps-t2 = Resource{mask}")
+    if shade:
+        out.append(f"{indent}    ps-t5 = Resource{shade}")
+    out.append(f"{indent}endif")
+    return "\n".join(out)
 
-    def add(shader_hash):
-        shader_hash = str(shader_hash or "").lower()
-        if shader_hash and shader_hash not in seen:
-            seen.append(shader_hash)
 
-    for shader_hash in draw_component.get("pixelShaders") or []:
-        add(shader_hash)
-    for item in (draw_component.get("passBindings", {}) or {}).values():
-        add(item.get("pixelShader"))
-    for section_data in (draw_component.get("sectionBindings", {}) or {}).values():
-        for item in (section_data.get("passBindings", {}) or {}).values():
-            add(item.get("pixelShader"))
-        for shader_hash in section_data.get("pixelShaders") or []:
-            add(shader_hash)
-    return seen
-
-
-def _section_slot_variant_ini(section, component_id, profile_set, drawcalls, section_id, resources, label):
-    variants = _section_material_slot_variants(profile_set, section_id, resources)
-    if not variants:
-        return "", "", None
-    body_title = component_id.title()
-    label = _safe_section(label)
-    variant_var = f"$gmi_{section}_{label}SlotVariant"
-    variant_indices = {shader_hash: index for index, shader_hash in enumerate(variants, start=1)}
-    known_pixel_shaders = _component_pixel_shaders(drawcalls, component_id)
-    for shader_hash in variants:
-        if shader_hash not in known_pixel_shaders:
-            known_pixel_shaders.append(shader_hash)
-    blocks = []
-    for index, shader_hash in enumerate(known_pixel_shaders):
-        variant_index = variant_indices.get(shader_hash, 0)
-        blocks.append(
-            f"[ShaderOverride{section}{body_title}{label}PS{index}]\n"
-            f"hash = {shader_hash}\n"
-            "allow_duplicate_hash = true\n"
-            f"{variant_var} = {variant_index}\n"
-        )
-    return f"global {variant_var} = 0", "\n".join(blocks), variant_var
-
+def _landmark_match_priority(ib_hash):
+    """Stable per-costume priority from the IB hash so independently generated mods
+    rarely collide on the shared landmark hash (0..65535)."""
+    try:
+        return int(str(ib_hash)[:8], 16) % 65536
+    except (ValueError, TypeError):
+        return 0
 
 
 def _sanitize_package_id(value):
@@ -2480,25 +2465,9 @@ def write_inverse_skin_package(
     shader_check_blocks = [_shader_check_overrides(section, component_id, drawcalls)]
     if not shader_check_blocks[0]:
         raise ValueError("Profile drawcall_map 没有可用于 checktextureoverride 的 VS pass")
-    slot_variant_globals = []
-    main_variant_global, main_slot_overrides, main_slot_variant_var = _section_slot_variant_ini(
-        section,
-        component_id,
-        profile_set,
-        drawcalls,
-        component_id,
-        material_resource_names,
-        "Body",
-    )
-    if main_variant_global:
-        slot_variant_globals.append(main_variant_global)
-        shader_check_blocks.append(main_slot_overrides)
-    material_bindings = _section_material_binding_block(
-        profile_set,
-        component_id,
-        material_resource_names,
-        variant_var=main_slot_variant_var,
-    )
+    landmark_priority = _landmark_match_priority(component['ibHash'])
+    landmark_sections = _landmark_layout_sections(section, landmark_priority)
+    material_bindings = _landmark_binding_block(section, material_resource_names)
     # 主体段可能不在 IB 偏移 0(随服装而变),原版 draw 用其 StartIndex 采我们从 0 起的
     # 自定义 IB 会越界 → 跳过原 draw、用 drawindexed 从 0 画满整网格。
     main_first_index = int(component.get("mainFirstIndex") or 0)
@@ -2544,24 +2513,7 @@ def write_inverse_skin_package(
             "packedMask": packed_mask_resource,
             "shadeColor": shade_color_resource,
         }
-        native_variant_global, native_slot_overrides, native_slot_variant_var = _section_slot_variant_ini(
-            section,
-            component_id,
-            profile_set,
-            drawcalls,
-            native_section_id,
-            native_resources,
-            "NativeCo",
-        )
-        if native_variant_global:
-            slot_variant_globals.append(native_variant_global)
-            shader_check_blocks.append(native_slot_overrides)
-        native_bindings = _section_material_binding_block(
-            profile_set,
-            native_section_id,
-            native_resources,
-            variant_var=native_slot_variant_var,
-        )
+        native_bindings = _landmark_binding_block(section, native_resources)
         native_drawindexed_lines = "\n".join(
             f"    drawindexed = {int(item['count'])}, {int(item['start'])}, 0"
             for item in native_co_ranges
@@ -2600,13 +2552,14 @@ endif
     # Buffer TextureOverride 需要由相关 ShaderOverride 显式 checktextureoverride。
     # 只登记 IB hash 会显示 resource matched，但不会稳定执行 draw-time 替换。
     shader_checks = "\n".join(block for block in shader_check_blocks if block)
-    slot_variant_constants = "\n".join(slot_variant_globals)
     ini = f"""; Generated by GakumasMI Blender Add-on (inverse-skin weighted mesh)
 
 [Constants]
 global $enable_{section} = 1
-{slot_variant_constants}
+global $gmi_{section}_layout = 0
+global $gmi_{section}_probe = 0
 
+{landmark_sections}
 {shader_checks}
 
 [TextureOverride{section}{component_id.title()}]

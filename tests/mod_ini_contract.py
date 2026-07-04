@@ -331,8 +331,8 @@ def test_legacy_profile_shadecolor_ps_t2_is_remapped_to_t4():
     print("legacy_profile_shadecolor_ps_t2_is_remapped_to_t4 OK")
 
 
-def test_pixel_shader_slot_variants_are_conditional():
-    """同一语义贴图在不同 PS 变体里可切换槽位，避免低亮度 pass 读错贴图。"""
+def test_body_layout_is_runtime_autodetected():
+    """body PS 按光照重排贴图槽:运行时靠全局地标 0ff26bed 的槽位自动判 A/B/C,不枚举 PS。"""
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         base = tmp_path / "base.dds"
@@ -344,27 +344,40 @@ def test_pixel_shader_slot_variants_are_conditional():
         ini, _ = _build(
             tmp,
             main_texture_entries=True,
-            slot_variants=True,
+            slot_variants=True,  # 旧的 PS 变体 profile 数据现在应被地标机制取代、不再产出
             material_textures={
                 "body.baseColor": str(base),
                 "body.packedMask": str(mask),
                 "body.shadeColor": str(shade),
             },
         )
-        assert "global $gmi_TestMod_BodySlotVariant = 0" in ini, ini
-        assert "hash = mainps\nallow_duplicate_hash = true\n$gmi_TestMod_BodySlotVariant = 0" in ini, ini
-        assert "hash = lowlightps\nallow_duplicate_hash = true\n$gmi_TestMod_BodySlotVariant = 1" in ini, ini
+        # 旧的 per-PS slotVariant 机制彻底消失
+        assert "BodySlotVariant" not in ini, ini
+        # 运行时布局变量 + 全局地标探测
+        assert "global $gmi_TestMod_layout = 0" in ini, ini
+        assert "global $gmi_TestMod_probe = 0" in ini, ini
+        detect = ini[ini.index("[CommandListTestModDetectLayout]"):]
+        detect = detect[:detect.index("\n[")]
+        assert "checktextureoverride = ps-t2" in detect and "$gmi_TestMod_layout = 2" in detect, detect
+        assert "checktextureoverride = ps-t3" in detect and "$gmi_TestMod_layout = 1" in detect, detect
+        assert "[TextureOverrideTestModBodyLayoutLandmark]" in ini, ini
+        assert "hash = 0ff26bed" in ini and "match_priority = " in ini, ini
+        assert "$gmi_TestMod_probe = 1" in ini, ini
 
         main_sec = ini[ini.index("[TextureOverrideTestModBody]"):]
         main_sec = main_sec[:main_sec.index("\n[CustomShaderTestModRecoverMatrices]")]
-        assert "if $gmi_TestMod_BodySlotVariant == 1" in main_sec, main_sec
+        assert "run = CommandListTestModDetectLayout" in main_sec, main_sec
+        # C/默认(layout 0):仅 base/mask 在 t0/t1,不绑自定义 shade
+        assert "if $gmi_TestMod_layout == 0" in main_sec, main_sec
+        # A(layout 2): t0/t1/t4
+        assert "if $gmi_TestMod_layout == 2" in main_sec, main_sec
+        assert "ps-t4 = ResourceTestModShadecolor" in main_sec, main_sec
+        # B(layout 1): base/mask 挪到 t1/t2, shade 到 t5
+        assert "if $gmi_TestMod_layout == 1" in main_sec, main_sec
         assert "ps-t1 = ResourceTestModBasecolor" in main_sec, main_sec
         assert "ps-t2 = ResourceTestModPackedmask" in main_sec, main_sec
         assert "ps-t5 = ResourceTestModShadecolor" in main_sec, main_sec
-        assert "if $gmi_TestMod_BodySlotVariant == 0\n    ps-t0 = ResourceTestModBasecolor" in main_sec, main_sec
-        assert "ps-t1 = ResourceTestModPackedmask" in main_sec, main_sec
-        assert "ps-t4 = ResourceTestModShadecolor" in main_sec, main_sec
-    print("pixel_shader_slot_variants_are_conditional OK")
+    print("body_layout_is_runtime_autodetected OK")
 
 
 if __name__ == "__main__":
@@ -374,5 +387,5 @@ if __name__ == "__main__":
     test_native_co_without_t0_rejected()
     test_legacy_alpha_modes_fall_back_to_opaque()
     test_legacy_profile_shadecolor_ps_t2_is_remapped_to_t4()
-    test_pixel_shader_slot_variants_are_conditional()
+    test_body_layout_is_runtime_autodetected()
     print("ALL mod_ini_contract OK")
