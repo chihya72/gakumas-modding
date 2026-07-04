@@ -47,10 +47,10 @@ jobs:
             $repoPath = "3dmigoto-gkms/$f"
             if (Test-Path $repoPath) {
               $repo = (Get-Item $repoPath).Length
-              Write-Host "$f: upstream=$up repo=$repo"
+              Write-Host "${f}: upstream=$up repo=$repo"
               if ($up -ne $repo) { Write-Warning "$f 上游($up)与仓库($repo)大小不一致，请人工确认" }
             } else {
-              Write-Host "$f: upstream=$up repo=<not committed>"
+              Write-Host "${f}: upstream=$up repo=<not committed>"
             }
           }
 
