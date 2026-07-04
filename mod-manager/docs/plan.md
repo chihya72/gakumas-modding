@@ -32,23 +32,22 @@ Blender 插件继续只负责"作者产出包"；管理器负责"包的启停、
 
 ## 3. 包格式约定（现状 + 扩展）
 
-Blender 插件导出的包已有（`manifest.json`，schemaVersion 1）：
+Blender 插件（gakumas_mi ≥0.7.3）导出的包（`manifest.json`，schemaVersion 2）：
 
 | 字段 | 现状 | 管理器用途 |
 |---|---|---|
 | `id` / `name` / `author` | ✅ 已写入 | 列表展示 |
-| `version` | ⚠️ 硬编码 `"0.1.0"`（core.py:2705） | 展示；需要插件侧开放填写 |
-| `profile` / `targets` / `conflicts` | ✅ | 冲突检测 |
+| `version` | ⚠️ 硬编码 `"0.1.0"` | 展示；需要插件侧开放填写 |
+| `targets` | ✅ 被替换的游戏模型资源名（如 `mdl_chr_hski-cstm-0000_body`） | 「目标」列展示——让用户知道替换了哪个游戏 body/hair/face |
+| `cover` | ✅ 导出必填（包内 `cover.png`） | 详情面板渲染缩略图 |
+| `profile` / `conflicts` | ✅ | 冲突检测 |
 | `materials`（语义 → slot/原贴图 hash/文件） | ✅ | 完整性校验（引用文件是否存在） |
 | `alphaModes` / `nativeCoRanges` / `nativeCoSection` | ✅ | ini 重生成 |
 
-**扩展（schemaVersion 2，向后兼容 v1）**：
+预览图约定：导出面板「预览图」字段必填（png/jpg/webp）；插件对过大图自动缩到 ≤1024px、
+上限 2MB（建议 4:3 或 16:9），复制为包内 `cover.png` 并写入 `manifest.cover`。
 
-- `cover`：封面图约定——包根目录 `cover.png`（建议 4:3 或 16:9，≤1MB），
-  manifest 可选 `"cover": "cover.png"` 字段；没有则管理器显示占位图。
-- `description`：一句话简介。
-- Blender 插件侧配套小改动（0.7.x 后续版本）：导出面板加「模组版本」「封面图」
-  「简介」三个可选字段；不填不报错。
+待办（插件侧，未阻塞管理器）：开放「模组版本」「简介(description)」可填字段。
 
 ## 4. 核心功能设计
 

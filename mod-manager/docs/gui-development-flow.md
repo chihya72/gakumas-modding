@@ -239,7 +239,7 @@ public sealed record OperationResult(
 |---|---|
 | 扫描 | 空 Mods、正常 GakumasMI、通用 3DMigoto、损坏 JSON、DISABLED 前缀 |
 | 启停 | 启用、禁用、重名冲突、路径不存在、重复操作 |
-| manifest | v1、未来 v2、缺 cover、缺 version、materials 文件缺失 |
+| manifest | v1/v2、目标为游戏资源名、缺 cover（旧包/手工包）、缺 version、materials 文件缺失 |
 | DDS | 正常 DDS、缺失 DDS、格式不匹配、读取失败 |
 | d3dx.ini | 正常写入、字段缺失、注释保留、备份清理、回滚 |
 | 冲突 | 无冲突、两个包冲突、禁用包不参与冲突 |

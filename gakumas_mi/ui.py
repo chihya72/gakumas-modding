@@ -72,6 +72,7 @@ class GMI_PT_main(Panel):
         package.prop(scene, "gmi_package_id")
         package.prop(scene, "gmi_package_name")
         package.prop(scene, "gmi_author")
+        package.prop(scene, "gmi_cover_image")
 
         mesh = layout.box()
         mesh.label(text="网格导出")

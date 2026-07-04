@@ -35,6 +35,30 @@ def _png_to_dds(image_path):
         bpy.data.images.remove(image)
 
 
+def _prepare_cover_image(path, max_dim=1024):
+    """预览图过大时用 Blender 缩到 ≤max_dim 边长并存临时 PNG；否则原样返回。"""
+    try:
+        image = bpy.data.images.load(path, check_existing=False)
+    except RuntimeError as exc:
+        raise ValueError(f"无法读取预览图：{exc}")
+    try:
+        width, height = int(image.size[0]), int(image.size[1])
+        if width <= 0 or height <= 0:
+            raise ValueError(f"预览图尺寸无效：{path}")
+        if max(width, height) <= max_dim:
+            return path
+        scale = max_dim / max(width, height)
+        image.scale(max(1, int(width * scale)), max(1, int(height * scale)))
+        handle = tempfile.NamedTemporaryFile(delete=False, suffix=".png", prefix="gmi_cover_")
+        handle.close()
+        image.filepath_raw = handle.name
+        image.file_format = "PNG"
+        image.save()
+        return handle.name
+    finally:
+        bpy.data.images.remove(image)
+
+
 def _neutral_material_dds(semantic):
     """生成临时的中性 t1/t4 DDS，盖掉游戏原版遮罩/阴影对新贴图的干扰。"""
     rgba = core.NEUTRAL_PACKED_MASK if semantic == "packedMask" else core.NEUTRAL_SHADE_COLOR
@@ -1749,6 +1773,11 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                 if not path.lower().endswith(".dds"):
                     path = _png_to_dds(path)
                 native_co_textures[semantic] = path
+            cover_src = bpy.path.abspath(scene.gmi_cover_image) if scene.gmi_cover_image else ""
+            if not cover_src:
+                self.report({"ERROR"}, "必须提供 mod 预览图：请在导出面板选择「预览图」后再导出。")
+                return {"CANCELLED"}
+            cover_path = _prepare_cover_image(cover_src)
             package = core.write_inverse_skin_package(
                 profile_dir, output_dir, scene.gmi_package_id, scene.gmi_package_name,
                 scene.gmi_author, scene.gmi_component_id,
@@ -1759,6 +1788,7 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                 alpha_modes=alpha_modes,
                 opacity_texture=opacity_texture,
                 native_co_textures=native_co_textures,
+                cover_image=cover_path,
             )
             core._write_json(Path(package) / "export-report.json", {
                 "automaticAncestorRemap": data["automatic_remap"],

@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 7, 2),
+    "version": (0, 7, 3),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "导入学马仕参考模型，并导出绑定配置档的 3DMigoto 模组",
@@ -190,6 +190,10 @@ def register():
     bpy.types.Scene.gmi_package_id = StringProperty(name="模组标识", default="author.hski.my-mod")
     bpy.types.Scene.gmi_package_name = StringProperty(name="模组名称", default="我的学马仕模组")
     bpy.types.Scene.gmi_author = StringProperty(name="作者", default="作者")
+    bpy.types.Scene.gmi_cover_image = StringProperty(
+        name="预览图", subtype="FILE_PATH",
+        description="mod 封面/预览图（png/jpg/webp，导出必填；过大会自动缩到 ≤1024px、上限 2MB）",
+    )
 
 
 def unregister():
@@ -207,7 +211,7 @@ def unregister():
         "gmi_opacity_texture_file", "gmi_opacity_packed_mask_file", "gmi_opacity_shade_color_file",
         "gmi_neutral_material", "gmi_outline_width_mode", "gmi_vertex_color_mode",
         "gmi_form_shading", "gmi_form_strength",
-        "gmi_package_name", "gmi_author",
+        "gmi_package_name", "gmi_author", "gmi_cover_image",
     ):
         if hasattr(bpy.types.Scene, name):
             delattr(bpy.types.Scene, name)

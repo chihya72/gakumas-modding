@@ -2269,11 +2269,42 @@ def _pack_inverse_skin_buffers(vertices, normals, tangents, uv0, uv1, colors,
     return bytes(bind), bytes(vb1), ib, draw_ranges, index_format
 
 
+_COVER_EXTS = (".png", ".jpg", ".jpeg", ".webp")
+_COVER_MAX_BYTES = 2 * 1024 * 1024
+
+
+def _prepare_cover(package_dir, cover_image):
+    """校验预览图并复制进包，返回包内文件名。要求：存在、png/jpg/webp、≤2MB。"""
+    value = str(cover_image or "").strip()
+    if not value:
+        raise ValueError("必须提供 mod 预览图（cover）：导出前在面板选择预览图。")
+    src = Path(value)
+    if not src.is_file():
+        raise ValueError(f"预览图文件不存在：{src}")
+    ext = src.suffix.lower()
+    if ext not in _COVER_EXTS:
+        raise ValueError(f"预览图格式不支持：{ext or '无扩展名'}（请用 png/jpg/webp）")
+    size = src.stat().st_size
+    if size > _COVER_MAX_BYTES:
+        raise ValueError(
+            f"预览图过大：{size / 1024 / 1024:.1f}MB，上限 2MB（建议 512–1024px、≤1MB）"
+        )
+    head = src.read_bytes()[:12]
+    is_png = head.startswith(b"\x89PNG\r\n\x1a\n")
+    is_jpg = head.startswith(b"\xff\xd8\xff")
+    is_webp = head[:4] == b"RIFF" and head[8:12] == b"WEBP"
+    if not (is_png or is_jpg or is_webp):
+        raise ValueError("预览图不是有效的 png/jpg/webp 文件")
+    dest_name = "cover" + ext
+    shutil.copyfile(src, Path(package_dir) / dest_name)
+    return dest_name
+
+
 def write_inverse_skin_package(
     profile_dir, output_root, package_id, name, author, component_id,
     vertices, normals, tangents, uv0, uv1, colors, faces, skin, corrections,
     material_textures=None, materials=None, alpha_modes=None, opacity_texture=None,
-    native_co_textures=None,
+    native_co_textures=None, cover_image=None,
 ):
     """Write an arbitrary-topology, bone-weighted 3Dmigoto package."""
     package_id = _sanitize_package_id(package_id)
@@ -2651,15 +2682,21 @@ filename = Buffers\\{ib_buffer_name}
 """
     (package_dir / "mod.ini").write_text(ini, encoding="utf-8")
     target = profile["target"]
+    cover_name = _prepare_cover(package_dir, cover_image)
+    # 目标改成被替换的游戏内模型资源名（如 mdl_chr_hski-cstm-0000_body），
+    # 让用户直接看到本 mod 替换了游戏里的哪个 body/hair/face。缺资源名时回退到旧语义。
+    resource_field = {"body": "bodyResource", "hair": "hairResource", "face": "faceResource"}.get(component_id)
+    replaced_resource = (target.get(resource_field) if resource_field else None) or f"{component_id}.weightedMesh"
     manifest = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "id": package_id,
         "name": name,
         "version": "0.1.0",
         "author": author,
         "type": "inverse-skin-mesh-replacement",
         "profile": profile["id"],
-        "targets": [f"{component_id}.weightedMesh"],
+        "targets": [replaced_resource],
+        "cover": cover_name,
         "conflicts": [f"{target['actorId']}.{target['costumeId']}.{component_id}.mesh"],
         "runtime": "3dmigoto-compute",
         "vertexCount": vertex_count,

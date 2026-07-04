@@ -41,7 +41,11 @@ def _write_synthetic_profile(
         "schemaVersion": 1,
         "id": "test-profile",
         "status": "synthetic",
-        "target": {"actorId": "test", "costumeId": "cstm-0000"},
+        "target": {
+            "actorId": "test",
+            "costumeId": "cstm-0000",
+            "bodyResource": "mdl_chr_test-cstm-0000_body",
+        },
         "skinning": {
             "inverseSkin": {
                 "sourceVertexCount": 4,
@@ -137,12 +141,19 @@ def _build(tmp, native_section=False, legacy_shade_slot=False, main_texture_entr
     )
     out = Path(tmp) / "out"
     v, n, t, uv0, uv1, c, faces, skin, materials = _mesh()
+    kwargs.setdefault("cover_image", _dummy_cover(Path(tmp)))
     pkg = core.write_inverse_skin_package(
         profile_dir, out, "test.mod", "Test", "Author", "body",
         v, n, t, uv0, uv1, c, faces, skin, corrections=[],
         materials=materials, **kwargs,
     )
     return (pkg / "mod.ini").read_text(encoding="utf-8"), pkg
+
+
+def _dummy_cover(tmp: Path) -> str:
+    cover = tmp / "cover.png"
+    cover.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 40)  # 合法 PNG 签名即可（core 不解码）
+    return str(cover)
 
 
 def test_opaque_ini_contract():
@@ -380,8 +391,28 @@ def test_body_layout_is_runtime_autodetected():
     print("body_layout_is_runtime_autodetected OK")
 
 
+def test_manifest_target_is_body_resource_and_cover():
+    with tempfile.TemporaryDirectory() as tmp:
+        _, pkg = _build(tmp)
+        manifest = json.loads((pkg / "manifest.json").read_text(encoding="utf-8"))
+        assert manifest["schemaVersion"] == 2, manifest
+        # 目标显示被替换的游戏 body 资源名，而非旧的 body.weightedMesh
+        assert manifest["targets"] == ["mdl_chr_test-cstm-0000_body"], manifest["targets"]
+        assert manifest["cover"] == "cover.png", manifest
+        assert (pkg / "cover.png").is_file()
+    # 预览图必填：缺了要报错
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            _build(tmp, cover_image="")
+            assert False, "expected missing cover to raise"
+        except ValueError:
+            pass
+    print("manifest_target_is_body_resource_and_cover OK")
+
+
 if __name__ == "__main__":
     test_opaque_ini_contract()
+    test_manifest_target_is_body_resource_and_cover()
     test_native_co_ini_contract()
     test_native_co_uses_own_t1_t4_resources()
     test_native_co_without_t0_rejected()

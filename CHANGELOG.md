@@ -4,6 +4,18 @@
 发布包用 `python tools/package_blender_addon.py` 生成（代码版不含 Body JSON 资源库；
 加 `--with-body-lib` 可一并打包）。本地包不提交到公开仓库。
 
+## 0.7.3 — manifest 面向包管理器：目标显示游戏资源名 + 强制预览图
+
+- **导出 manifest `targets` 改为被替换的游戏内模型资源名**（如 `mdl_chr_hski-cstm-0000_body`），
+  取自 profile `target.bodyResource/hairResource/faceResource`（按组件），而非旧的
+  `body.weightedMesh`。让用户在包管理器里直接看到本 mod 替换了游戏里的哪个 body/hair/face；
+  profile 缺资源名时回退旧语义。`schemaVersion` 升到 2，新增 `cover` 字段。
+- **导出强制附预览图**：导出面板新增「预览图」字段（`gmi_cover_image`，png/jpg/webp），
+  不填直接报错取消。`core._prepare_cover` 校验存在/格式/magic 字节/≤2MB 并复制为包内
+  `cover.png`；operator 侧对过大图用 Blender 自动缩到 ≤1024px 再入包（合理限制体积）。
+- 测试：`tests/mod_ini_contract.py` 新增 `test_manifest_target_is_body_resource_and_cover`，
+  断言 `targets` 为游戏资源名、`cover` 落盘、缺预览图报错（7→8 项，全绿）。
+
 ## 0.7.2 — 运行时全局布局自动探测（彻底弃用 PS 枚举）
 
 - **不再枚举 pixel shader hash。** 游戏按光照把 `baseColor/packedMask/shadeColor`
