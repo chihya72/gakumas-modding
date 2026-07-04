@@ -10,16 +10,17 @@
 
 ## 1. 界面拆解
 
-参考图可以拆成 6 个长期维护模块：
+界面拆成以下长期维护模块（单页布局，无多页导航）：
 
 | 区域 | 用户价值 | 工程模块 |
 |---|---|---|
-| 左侧导航 | 固定入口，降低功能膨胀后的迷路感 | `navigation` |
-| 顶部工具栏 | 选择游戏目录、刷新、搜索、F10 重载 | `workspace_state` / `game_path` |
+| 顶部工具栏 | 选择游戏目录、刷新、F10 重载 | `workspace_state` / `game_path` |
 | Mod 列表 | 管理 Mods 目录里的所有包 | `mod_scanner` / `mod_table_model` |
 | 右侧详情 | 查看 manifest、完整性、冲突、启停操作 | `package_detail` / `package_actions` |
-| 3DMigoto 快捷设置 | 常用 d3dx.ini 配置，不暴露全文编辑复杂度 | `d3dx_config` |
-| 底部日志 | 让用户知道工具做了什么、失败在哪里 | `app_log` |
+| 底部日志 | 让用户知道工具做了什么、失败在哪里；按级别筛选 | `app_log` |
+
+> 早期参考图里的左侧导航、筛选标签、搜索框、抓帧补全卡片均为占位，从未接线且已随范围收敛移除
+> （单页工具不需要多页导航；抓帧补全 2026-07-04 移出范围）。本表只列真正实现的模块。
 
 开发原则：先让每个模块拥有稳定的数据接口，再逐步替换 UI 细节。UI 可以重画，数据契约不要频繁漂移。
 
@@ -43,12 +44,15 @@ mod-manager/
       ModPackage.cs           # ModPackage / ValidationIssue / PackageStatus
       LogEntry.cs
     Services/
-      AsstProxy.cs            # ViewModel 调用的业务门面
-      ScannerService.cs       # 扫描 Mods 目录
-      PackageActions.cs       # 启用/禁用/备份 mod.ini
-      D3dxConfigService.cs    # d3dx.ini 结构化读写
+      AsstProxy.cs            # ViewModel 调用的业务门面（含打开日志/键位说明）
+      ScannerService.cs       # 扫描 Mods 目录 + conflict key 检测
+      PackageActionsService.cs # 启用/禁用（DISABLED 前缀改名）
+      PackageInstallService.cs # 拖拽安装（文件夹/zip 进 Mods）
+      SettingsService.cs      # 游戏路径记忆（settings.json）
       ReloadGameService.cs    # F10 重载
-      ConflictService.cs      # conflict key 检测
+      AppLogService.cs        # 日志文件写入
+    Converters/
+      CoverImageConverter.cs  # 封面图 OnLoad 读入（不锁文件）
     Core/
       NativeMethods.cs        # LibraryImport 原生 DLL 边界
     Res/
@@ -111,14 +115,14 @@ public sealed record OperationResult(
 
 交付：
 
-- 主窗口、左侧导航、顶部工具栏、Mod 列表、右侧详情、底部日志全部可见。
+- 主窗口、顶部工具栏、Mod 列表、右侧详情、底部日志全部可见。
 - 白色 + 橙黄色主题 token 固化到 `Res/Theme.xaml` / `Res/Style.xaml`。
 - 窗口缩放时布局不崩，列表和详情面板保持可读。
 
 验收：
 
 - 无真实文件操作。
-- 切换筛选标签、选择列表行、右侧详情同步更新。
+- 选择列表行、右侧详情同步更新。
 - 截图对比参考图，确认视觉方向正确。
 
 ### 阶段 B：真实扫描，只读模式
@@ -157,22 +161,17 @@ public sealed record OperationResult(
 - 不编辑 `d3dx.ini` 就能完成启停。
 - 操作失败时不留下半改名状态。
 
-### 阶段 D：d3dx.ini 快捷设置
+### 阶段 D：d3dx.ini / 键位（已收敛为不做图形化设置页）
 
-目标：把图中的 Hunting、F8、F10、备份数量做成可靠的小面板。
+> 原计划做 d3dx.ini 快捷设置面板（Hunting/备份/回滚），后废弃：d3dx.ini 有 ~87 项、
+> 大半是 mod 作者抓帧快捷键与高级兼容项，图形化暴露风险大于收益，且用户明确不要原文编辑。
 
-交付：
+现状交付：
 
-- 结构化读取 `[Hunting]`、抓帧键、重载键、include/exclude 关键项。
-- 每次写入前创建 `d3dx.ini.bak.<timestamp>`。
-- 保留最近 N 份备份。
-- 只读原文查看和“打开文件”兜底入口。
-
-验收：
-
-- 对不同换行、注释、缺失字段的 d3dx.ini fixture 做测试。
-- 写入后不破坏无关段落。
-- 备份路径和日志明确可追踪。
+- 插件默认 `hunting=2`：F10/F8/F9 可用但绿色调试 HUD 默认关闭（小键盘 0 临时开）。
+- 随插件发 `键位说明.txt`（游戏根目录）讲清键位；管理器「键位说明」按钮打开它。
+- 「打开 3DMigoto 日志」按钮打开游戏目录 `d3d11_log.txt`（需 `[Logging] calls=1`）。
+- 管理器不写 d3dx.ini（无设置面板、无备份/回滚 UI）。
 
 ### 阶段 E：右侧详情完善与冲突检测
 
@@ -198,7 +197,7 @@ public sealed record OperationResult(
 
 不要先追求像素级还原。建议按下面顺序落地：
 
-1. 布局稳定：左导航、顶部栏、主列表、右详情、底部日志。
+1. 布局稳定：顶部栏、主列表、右详情、底部日志。
 2. 状态稳定：扫描中、空列表、损坏包、无游戏目录、操作失败。
 3. 操作稳定：启用、禁用、刷新、F10、备份。
 4. 视觉完善：封面、橙黄色选中态、状态标签、图标按钮。
@@ -244,7 +243,7 @@ public sealed record OperationResult(
 | DDS | 正常 DDS、缺失 DDS、格式不匹配、读取失败 |
 | d3dx.ini | 正常写入、字段缺失、注释保留、备份清理、回滚 |
 | 冲突 | 无冲突、两个包冲突、禁用包不参与冲突 |
-| UI | 无目录、扫描中、筛选、搜索、选中项消失、窗口缩放 |
+| UI | 无目录、扫描中、选中项消失、窗口缩放 |
 
 ## 8. 发布前稳定性清单
 

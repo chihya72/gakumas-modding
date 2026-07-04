@@ -11,11 +11,7 @@ public sealed class RootViewModel : Screen
     private readonly IAppLogService _logService;
     private ModPackage? _selectedPackage;
     private string _gamePath = "";
-    private string _d3dxIniPath = "";
-    private string _huntingMode = "1";
-    private string _frameAnalysisKey = "F8";
-    private string _reloadKey = "F10";
-    private int _backupKeepCount = 10;
+    private string _modsPath = "";
 
     public RootViewModel(IModManagerCore core, IAppLogService logService)
     {
@@ -23,17 +19,10 @@ public sealed class RootViewModel : Screen
         _logService = logService;
         DisplayName = "Gakumas Mod Manager";
 
-        NavigationItems = ["首页", "Mods", "抓帧", "设置", "备份"];
-        Filters = ["全部", "已启用", "有冲突", "损坏", "GakumasMI 包", "通用 3DMigoto"];
-
         GamePath = core.GetDefaultGamePath();
         RefreshPackages();
         AddLog($"日志文件：{_logService.LogFilePath}");
     }
-
-    public IReadOnlyList<string> NavigationItems { get; }
-
-    public IReadOnlyList<string> Filters { get; }
 
     public ObservableCollection<ModPackage> Packages { get; } = [];
 
@@ -43,38 +32,6 @@ public sealed class RootViewModel : Screen
     {
         get => _gamePath;
         set => SetAndNotify(ref _gamePath, value);
-    }
-
-    public string SearchText { get; set; } = "";
-
-    public string D3dxIniPath
-    {
-        get => _d3dxIniPath;
-        set => SetAndNotify(ref _d3dxIniPath, value);
-    }
-
-    public string HuntingMode
-    {
-        get => _huntingMode;
-        set => SetAndNotify(ref _huntingMode, value);
-    }
-
-    public string FrameAnalysisKey
-    {
-        get => _frameAnalysisKey;
-        set => SetAndNotify(ref _frameAnalysisKey, value);
-    }
-
-    public string ReloadKey
-    {
-        get => _reloadKey;
-        set => SetAndNotify(ref _reloadKey, value);
-    }
-
-    public int BackupKeepCount
-    {
-        get => _backupKeepCount;
-        set => SetAndNotify(ref _backupKeepCount, value);
     }
 
     public string SummaryText
@@ -110,9 +67,29 @@ public sealed class RootViewModel : Screen
         RefreshPackages(null);
     }
 
+    public void BrowseGamePath()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "选择游戏根目录（gakumas.exe 所在文件夹）或其 Mods 目录",
+        };
+        if (!string.IsNullOrWhiteSpace(GamePath) && System.IO.Directory.Exists(GamePath))
+        {
+            dialog.InitialDirectory = GamePath;
+        }
+
+        if (dialog.ShowDialog() == true)
+        {
+            GamePath = dialog.FolderName;
+            RefreshPackages();
+        }
+    }
+
     private void RefreshPackages(string? preferredDirectoryPath)
     {
+        _core.SaveGamePath(GamePath);
         var result = _core.ScanGameDirectory(GamePath);
+        _modsPath = result.ModsPath;
 
         Packages.Clear();
         foreach (var package in result.Packages)
@@ -127,7 +104,6 @@ public sealed class RootViewModel : Screen
                 preferredDirectoryPath,
                 StringComparison.OrdinalIgnoreCase)) ?? Packages.FirstOrDefault();
         NotifyOfPropertyChange(nameof(SummaryText));
-        RefreshD3dxSettings();
 
         AddLog($"扫描完成，扫描到 {Packages.Count} 个包");
         if (result.Issues.Count > 0)
@@ -166,15 +142,43 @@ public sealed class RootViewModel : Screen
         AddLog(result.Message, result.Severity);
     }
 
-    public void BackupD3dxIni()
+    public void InstallDroppedPaths(IReadOnlyList<string> paths)
     {
-        var result = _core.BackupD3dxIni(GamePath, BackupKeepCount);
+        if (paths.Count == 0)
+        {
+            return;
+        }
+
+        var result = _core.InstallPackages(_modsPath, paths);
+        AddLog(result.Message, result.Severity);
+        if (result.Ok)
+        {
+            RefreshPackages();
+        }
+    }
+
+    public void OpenSelectedPackageFolder()
+    {
+        if (SelectedPackage is null)
+        {
+            AddLog("未选择 Mod 包，无法打开目录。", "Warning");
+            return;
+        }
+
+        var result = _core.OpenPackageFolder(SelectedPackage);
         AddLog(result.Message, result.Severity);
     }
 
-    public void LearnSlotVariants()
+    public void OpenD3dmigotoLog()
     {
-        AddLog("准备从抓帧学习 slotVariants");
+        var result = _core.OpenD3dmigotoLog(GamePath);
+        AddLog(result.Message, result.Severity);
+    }
+
+    public void OpenShortcutsDoc()
+    {
+        var result = _core.OpenShortcutsDoc(GamePath);
+        AddLog(result.Message, result.Severity);
     }
 
     public void ClearLogs()
@@ -194,15 +198,5 @@ public sealed class RootViewModel : Screen
         var entry = new LogEntry(DateTime.Now.ToString("HH:mm:ss"), message, level);
         Logs.Insert(0, entry);
         _logService.Append(entry);
-    }
-
-    private void RefreshD3dxSettings()
-    {
-        var settings = _core.LoadD3dxSettings(GamePath);
-        D3dxIniPath = settings.D3dxIniPath;
-        HuntingMode = settings.HuntingMode;
-        FrameAnalysisKey = settings.FrameAnalysisKey;
-        ReloadKey = settings.ReloadKey;
-        BackupKeepCount = settings.BackupKeepCount;
     }
 }

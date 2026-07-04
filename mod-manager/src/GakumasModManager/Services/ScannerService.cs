@@ -31,7 +31,9 @@ public sealed class ScannerService : IScannerService
         }
 
         var packages = new List<ModPackage>();
-        foreach (var directory in Directory.EnumerateDirectories(modsPath).OrderBy(Path.GetFileName))
+        // 按显示名（去掉 DISABLED 前缀）排序，这样启用/禁用改名不会让 mod 在列表里跳位。
+        foreach (var directory in Directory.EnumerateDirectories(modsPath)
+                     .OrderBy(dir => DisplayNameFromDirectory(Path.GetFileName(dir)!), StringComparer.OrdinalIgnoreCase))
         {
             var package = ScanPackageDirectory(directory);
             if (package is not null)
@@ -62,7 +64,10 @@ public sealed class ScannerService : IScannerService
     private static ModPackage? ScanPackageDirectory(string directory)
     {
         var manifestPath = Path.Combine(directory, "manifest.json");
+        // 与 d3dx.ini 的 `exclude_recursive = desktop.ini` 对齐：游戏不加载 desktop.ini，
+        // 只含它的目录不是 mod（否则 Windows 自动生成的 desktop.ini 会被误识别成通用包）。
         var iniFiles = Directory.EnumerateFiles(directory, "*.ini", SearchOption.TopDirectoryOnly)
+            .Where(path => !string.Equals(Path.GetFileName(path), "desktop.ini", StringComparison.OrdinalIgnoreCase))
             .OrderBy(Path.GetFileName)
             .ToArray();
 

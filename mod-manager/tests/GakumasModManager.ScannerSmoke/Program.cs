@@ -84,10 +84,16 @@ try
     Directory.CreateDirectory(broken);
     File.WriteAllText(Path.Combine(broken, "manifest.json"), "{ broken json");
 
+    // 只含 Windows desktop.ini 的目录不是 mod（游戏也 exclude_recursive = desktop.ini）
+    var desktopOnly = Path.Combine(mods, "Not A Mod");
+    Directory.CreateDirectory(desktopOnly);
+    File.WriteAllText(Path.Combine(desktopOnly, "desktop.ini"), "[.ShellClassInfo]");
+
     var scanner = new ScannerService();
     var result = scanner.ScanGameDirectory(game);
 
     Assert(result.Packages.Count == 5, "expected five packages");
+    Assert(!result.Packages.Any(package => package.Name == "Not A Mod"), "expected desktop.ini-only directory to be ignored");
     Assert(result.Packages.Any(package => package.Name == "Saki Stage Costume - Orange"
         && package.Type == PackageType.GakumasMi
         && package.Status == PackageStatus.Conflict
@@ -124,17 +130,36 @@ try
     Assert(!collisionResult.Ok, "expected disable collision to fail");
     Assert(Directory.Exists(generic), "expected source directory preserved on collision");
 
-    var d3dx = new D3dxConfigService();
-    var settings = d3dx.LoadSettings(game);
-    Assert(settings.HuntingMode == "1", "expected hunting mode read");
-    Assert(settings.ReloadKey == "F10", "expected reload key read");
-    Assert(settings.FrameAnalysisKey == "F8", "expected frame analysis key read");
+    var installer = new PackageInstallService();
+    var installMods = Path.Combine(root, "InstallMods");
+    Directory.CreateDirectory(installMods);
 
-    var backup1 = d3dx.BackupD3dxIni(game, keepCount: 2);
-    var backup2 = d3dx.BackupD3dxIni(game, keepCount: 2);
-    var backup3 = d3dx.BackupD3dxIni(game, keepCount: 2);
-    Assert(backup1.Ok && backup2.Ok && backup3.Ok, "expected d3dx backups to succeed");
-    Assert(Directory.EnumerateFiles(game, "d3dx.ini.bak.*").Count() == 2, "expected backup retention cleanup");
+    var srcFolder = Path.Combine(root, "src", "Cool Hair Mod");
+    Directory.CreateDirectory(srcFolder);
+    File.WriteAllText(Path.Combine(srcFolder, "mod.ini"), "; hair");
+    Assert(installer.Install(installMods, [srcFolder]).Ok, "expected folder install to succeed");
+    Assert(File.Exists(Path.Combine(installMods, "Cool Hair Mod", "mod.ini")), "expected folder mod copied into Mods");
+    Assert(!installer.Install(installMods, [srcFolder]).Ok, "expected collision install to fail (no overwrite)");
+
+    var zipTopDir = Path.Combine(root, "zipsrc");
+    Directory.CreateDirectory(Path.Combine(zipTopDir, "Zipped Costume"));
+    File.WriteAllText(Path.Combine(zipTopDir, "Zipped Costume", "mod.ini"), "; z");
+    var zipTop = Path.Combine(root, "Zipped Costume.zip");
+    System.IO.Compression.ZipFile.CreateFromDirectory(zipTopDir, zipTop);
+    Assert(installer.Install(installMods, [zipTop]).Ok, "expected zip-with-top-folder install to succeed");
+    Assert(File.Exists(Path.Combine(installMods, "Zipped Costume", "mod.ini")), "expected zip installed under its top-folder name");
+
+    var flatDir = Path.Combine(root, "flatzip");
+    Directory.CreateDirectory(flatDir);
+    File.WriteAllText(Path.Combine(flatDir, "fix.ini"), "; flat");
+    var zipFlat = Path.Combine(root, "Flat Fix.zip");
+    System.IO.Compression.ZipFile.CreateFromDirectory(flatDir, zipFlat);
+    Assert(installer.Install(installMods, [zipFlat]).Ok, "expected flat zip install to succeed");
+    Assert(File.Exists(Path.Combine(installMods, "Flat Fix", "fix.ini")), "expected flat zip installed under zip name");
+
+    File.WriteAllText(Path.Combine(root, "readme.txt"), "not a mod");
+    Assert(!installer.Install(installMods, [Path.Combine(root, "readme.txt")]).Ok, "expected non-mod drop to be rejected");
+    Assert(!installer.Install("", [srcFolder]).Ok, "expected install with no Mods path to fail");
 
     Console.WriteLine("GAKUMAS_MM_SCANNER_SMOKE_OK");
 }

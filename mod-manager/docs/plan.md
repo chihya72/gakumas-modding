@@ -24,8 +24,8 @@ Blender 插件继续只负责"作者产出包"；管理器负责"包的启停、
   界面层使用 `Views/*.xaml` + `.xaml.cs`，资源拆到 `Res/Theme.xaml` / `Res/Style.xaml`。
 - **Stylet MVVM / IoC**：启动点是 `Bootstrapper : Bootstrapper<RootViewModel>`；
   ViewModel 只处理状态和命令，文件操作与核心逻辑放到 service 层。
-- **控件与视觉库**：优先 HandyControls，预留 `gong-wpf-dragdrop`、`MdXaml`、
-  `Notification.Wpf` 等工具库位置；窗口美化层后续按需要接入。
+- **控件与视觉库**：用 HandyControl 作基础皮肤；其余工具库按实际需要再引，不预挂未用依赖
+  （拖拽用原生 `AllowDrop`/`Drop` 即可，无需第三方）。
 - **不引入原生核心 DLL**：范围收敛后全部功能（扫描、启停改名、ini 读写、F10 重载）
   用 C# service 层直接实现即可；`Core/NativeMethods.cs` 只保留 F10 重载所需的
   Win32 P/Invoke。`AsstProxy` 作为 ViewModel 调用的业务门面保留。
@@ -90,9 +90,9 @@ manifest 已有 `conflicts` 字段（`actor.costume.component.mesh`）：同时�
 
 | 版本 | 内容 |
 |---|---|
-| 阶段 1 | 目录扫描、包列表（封面/作者/版本/状态）、启用/禁用（DISABLED 前缀）、完整性校验 |
-| 阶段 2 | F10 重载触发、d3dx.ini 结构化编辑 + 备份回滚 |
-| 阶段 3 | 冲突检测、打包发布（dotnet publish + Release CI） |
+| 阶段 1 ✅ | 目录扫描、包列表（封面/作者/版本/状态）、启用/禁用（DISABLED 前缀）、完整性校验 |
+| 阶段 2 ✅ | F10 重载触发、d3dx.ini 结构化编辑 + 备份回滚 |
+| 阶段 3 ✅ | 冲突检测（同 conflict key 聚合并标名对方包）、打包发布：`3dmigoto-gkms-v*` release 由 windows-latest 单作业产出 **Inno Setup 安装包** `GakumasModManager-Setup-<版本>.exe`——冒烟测试→框架依赖单文件 publish（约 3MB，需 .NET 8 Desktop Runtime）→装配（加载器平铺 + `GakumasModManager\` 子目录）→ISCC 编译。安装时选游戏根目录：加载器平铺进根目录、管理器装到 `GakumasModManager\` 子目录并可建桌面快捷方式；`d3dx.ini`/`Mods` 已存在不覆盖 |
 
 > 原「阶段 3 抓帧槽位补全」已于 2026-07-04 移出范围：gakumas-mi 0.7.2 运行时全局
 > 布局探测后不再有"新 PS 错位"，详见

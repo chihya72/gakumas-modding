@@ -1,9 +1,11 @@
-name: Release · 3dmigoto-gkms (游戏 mod 插件)
+name: Release · 3dmigoto-gkms (游戏 mod 插件 + Mod 管理器)
 
 # 触发：推送形如 3dmigoto-gkms-v0.4.9 的 tag。
-# 产物：自编译补丁版 d3d11.dll + 仓库 d3dx.ini/ShaderFixes/Mods，
-#       并从官方 bo3b/3Dmigoto 的 1.4.9 release 取版本匹配的 nvapi64.dll /
-#       d3dcompiler_47.dll（本项目 d3d11.dll 即基于该版本），打成开箱即用的 zip。
+# 产物：一个 Inno Setup 安装包 GakumasModManager-Setup-<版本>.exe，安装时：
+#   - 把自编译补丁版 d3d11.dll + 官方匹配版 nvapi64.dll/d3dcompiler_47.dll + d3dx.ini/ShaderFixes
+#     平铺进用户选定的游戏根目录；
+#   - 把 Mod 管理器装到 <游戏根目录>\GakumasModManager\，并可建桌面快捷方式。
+# 全流程在 windows-latest 单作业完成（WPF 与 Inno Setup 都需 Windows）。
 # 版本号与插件 gakumas_mi 相互独立，不同步。
 
 on:
@@ -16,64 +18,97 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v5
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
       - name: 从 tag 提取版本号
         id: ver
-        run: echo "version=${GITHUB_REF_NAME#3dmigoto-gkms-v}" >> "$GITHUB_OUTPUT"
+        run: |
+          $v = "${env:GITHUB_REF_NAME}" -replace '^3dmigoto-gkms-v',''
+          "version=$v" >> $env:GITHUB_OUTPUT
 
       - name: 取官方 3Dmigoto 1.4.9 的匹配版第三方 dll
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          set -e
-          sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full
-          gh release download 1.4.9 --repo bo3b/3Dmigoto \
-            --pattern "3Dmigoto_v1.4.9.7z" --dir . --clobber
-          7z x 3Dmigoto_v1.4.9.7z -othirdparty -y >/dev/null
+          gh release download 1.4.9 --repo bo3b/3Dmigoto --pattern "3Dmigoto_v1.4.9.7z" --dir . --clobber
+          7z x 3Dmigoto_v1.4.9.7z -othirdparty -y | Out-Null
           # 版本一致性守卫：与仓库内同名 dll 字节大小比对，防止上游改包
-          for f in nvapi64.dll d3dcompiler_47.dll; do
-            up=$(stat -c%s "thirdparty/x64/$f")
-            repo=$(stat -c%s "3dmigoto-gkms/$f" 2>/dev/null || echo "")
-            echo "$f: upstream=$up repo=${repo:-<not committed>}"
-            if [ -n "$repo" ] && [ "$up" != "$repo" ]; then
-              echo "::warning::$f 上游($up)与仓库($repo)大小不一致，请人工确认"
-            fi
-          done
+          foreach ($f in @("nvapi64.dll","d3dcompiler_47.dll")) {
+            $up = (Get-Item "thirdparty/x64/$f").Length
+            $repoPath = "3dmigoto-gkms/$f"
+            if (Test-Path $repoPath) {
+              $repo = (Get-Item $repoPath).Length
+              Write-Host "$f: upstream=$up repo=$repo"
+              if ($up -ne $repo) { Write-Warning "$f 上游($up)与仓库($repo)大小不一致，请人工确认" }
+            } else {
+              Write-Host "$f: upstream=$up repo=<not committed>"
+            }
+          }
 
-      - name: 打包游戏 mod 插件 zip（开箱即用三件套 + 配置）
+      - name: 冒烟测试（扫描/启停/d3dx 读写回滚）
+        run: dotnet run --project mod-manager/tests/GakumasModManager.ScannerSmoke/GakumasModManager.ScannerSmoke.csproj -c Release
+
+      - name: 发布 Mod 管理器（框架依赖单文件，需 .NET 8 Desktop Runtime）
+        run: >
+          dotnet publish mod-manager/src/GakumasModManager/GakumasModManager.csproj
+          -c Release -r win-x64 --self-contained false
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:Version=${{ steps.ver.outputs.version }}
+          -o stage/GakumasModManager
+
+      - name: 装配 staging（加载器平铺 + 管理器子目录）
         run: |
-          set -e
-          stage="staging/3dmigoto-gkms"
-          mkdir -p "$stage/Mods"
-          cp 3dmigoto-gkms/d3d11.dll 3dmigoto-gkms/d3dx.ini "$stage/"
-          cp thirdparty/x64/nvapi64.dll thirdparty/x64/d3dcompiler_47.dll "$stage/"
-          cp -r 3dmigoto-gkms/ShaderFixes "$stage/"
-          cp 3dmigoto-gkms/Mods/README.md "$stage/Mods/"
-          (cd staging && zip -r "../3dmigoto-gkms-${{ steps.ver.outputs.version }}.zip" 3dmigoto-gkms)
+          New-Item -ItemType Directory -Force stage/Mods, stage/ShaderFixes | Out-Null
+          Copy-Item mod-manager/README.md stage/GakumasModManager/README.md
+          Copy-Item 3dmigoto-gkms/d3d11.dll, 3dmigoto-gkms/d3dx.ini stage/
+          Copy-Item 3dmigoto-gkms/键位说明.txt stage/
+          Copy-Item thirdparty/x64/nvapi64.dll, thirdparty/x64/d3dcompiler_47.dll stage/
+          Copy-Item -Recurse -Force 3dmigoto-gkms/ShaderFixes/* stage/ShaderFixes/
+          Copy-Item 3dmigoto-gkms/Mods/README.md stage/Mods/
+
+      - name: 安装 Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: 编译安装包
+        env:
+          GKMM_STAGE: ${{ github.workspace }}\stage
+          GKMM_VERSION: ${{ steps.ver.outputs.version }}
+          GKMM_OUT: ${{ github.workspace }}
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" mod-manager\installer\GakumasModManager.iss'
 
       - name: 写 Release 说明
         run: |
-          cat > notes.md <<'EOF'
-          学马仕定制 3DMigoto 游戏 mod 插件，**开箱即用**。
-
-          含三件套：
-          - **自编译补丁版 `d3d11.dll`**（修了 live 横竖屏切换闪屏）；
-          - `nvapi64.dll` / `d3dcompiler_47.dll`（构建时从官方 bo3b/3Dmigoto 1.4.9 release 取得，版本匹配）；
-          - 定制 `d3dx.ini` + `ShaderFixes/`。
+          @'
+          学马仕定制 3DMigoto 游戏 mod 插件 + Mod 包管理器，**一个安装包搞定**。
 
           ## 安装
-          整个 `3dmigoto-gkms/` 解压到游戏 `gakumas.exe` 同级目录，用 `-force-d3d11` 启动。
-          按键说明见仓库 `3dmigoto-gkms/README.md`。
-          EOF
+          运行 `GakumasModManager-Setup-<版本>.exe`，在目录页选择**游戏根目录**（`gakumas.exe` 所在文件夹）。安装程序会：
+          - 把 3DMigoto 加载器（自编译补丁版 `d3d11.dll` + 官方匹配版 `nvapi64.dll`/`d3dcompiler_47.dll` + `d3dx.ini`/`ShaderFixes/`）平铺进游戏根目录；
+          - 把 **Mod 管理器**装到 `<游戏根目录>\GakumasModManager\`，可勾选创建桌面快捷方式；
+          - `d3dx.ini` 与 `Mods/` 若已存在则不覆盖（保护你的配置和已装 mod）。
+
+          安装完成后用 `-force-d3d11` 启动游戏；按键说明见游戏目录内 `3dmigoto-gkms/README.md` 或仓库文档。
+
+          ## 前置：.NET 8 Desktop Runtime
+          Mod 管理器为框架依赖构建（体积小），首次运行需 **.NET 8 Desktop Runtime（Windows x64）**：
+          https://dotnet.microsoft.com/download/dotnet/8.0
+          安装程序结束时会自动检测，缺失则提示打开下载页。
+
+          d3d11.dll 修了 live 横竖屏切换闪屏；`nvapi64.dll`/`d3dcompiler_47.dll` 构建时从官方 bo3b/3Dmigoto 1.4.9 release 取得，版本匹配。
+          '@ | Set-Content -Encoding utf8 notes.md
 
       - name: 创建 Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            "3dmigoto-gkms-${{ steps.ver.outputs.version }}.zip" \
-            --title "3dmigoto-gkms 游戏 mod 插件 ${{ steps.ver.outputs.version }}" \
-            --notes-file notes.md
+        run: >
+          gh release create "${env:GITHUB_REF_NAME}"
+          "GakumasModManager-Setup-${{ steps.ver.outputs.version }}.exe"
+          --title "3dmigoto-gkms 游戏 mod 插件 + Mod 管理器 ${{ steps.ver.outputs.version }}"
+          --notes-file notes.md
