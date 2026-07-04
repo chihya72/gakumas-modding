@@ -22,6 +22,8 @@ AppName=Gakumas 3DMigoto + Mod Manager
 AppVersion={#AppVersion}
 AppPublisher=chihya72
 DefaultDirName={autopf}\gakumas
+; 关闭浏览时自动追加末段目录名：否则选 xxx\gakumas 会变成 xxx\gakumas\gakumas。
+AppendDefaultDirName=no
 DisableProgramGroupPage=yes
 DisableDirPage=no
 DirExistsWarning=no

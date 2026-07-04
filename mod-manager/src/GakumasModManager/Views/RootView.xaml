@@ -56,6 +56,7 @@
                 <DataGrid ItemsSource="{Binding Packages}"
                           SelectedItem="{Binding SelectedPackage}"
                           AutoGenerateColumns="False"
+                          IsReadOnly="True"
                           CanUserAddRows="False"
                           CanUserDeleteRows="False"
                           HeadersVisibility="Column"
