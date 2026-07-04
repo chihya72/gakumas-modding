@@ -28,7 +28,7 @@
 | 贴图 / 材质（t0 自动 DDS、分材质 t1/t4 烘焙、中性、COLOR/描边） | ~85% | t0/t1/t4 通道语义已实机实测并在 0.7.0 收敛（t4.rgb=暗面材质颜色版、t4.a=近似二值遮罩，非阴影强度灰阶）；0.7.1 把 `m_bdy`/`m_bdyco` 材质彻底分离——`NATIVE_CO` 绑 co 自己的 t0/t1/t4、缺 co 通道时生成 co 专属中性图、按材质槽过滤三角再分别栅格化避免 co 挖空 body；材质模板 UI 拆成「不透明 body」「原生 co」两块，烘焙额外输出 `gmi_baked_co_*`。0.7.2 材质槽位改为运行时全局布局自动探测（见第 3 节）。缺多套服装持续校准、PNG→DDS 多材质 selector。 |
 | 透明材质 | ~60% | **架构已收敛并实机验证**：0.6.2 起废弃自建 `ALPHA_CLIP`/`ALPHA_BLEND`（污染/维护成本高），改为唯一正式路线——借用游戏原生第二材质段 `m_bdyco`（`NATIVE_CO`），保留原生 shader/state/描边/投影/遮挡；0.7.0 补上 `m_bdy`/`m_bdyco` t0 分离与缺失报错。已实测确认该路线是 **cutout/alpha-test**，不是连续半透明——玻璃/薄纱级真半透明仍无路线（需角色专属前向透明窄触发点，见 P3）。完成度较 0.6.0 评估提高，因为"镂空+投影遮挡"这个子目标已从"保守路径"变为"验证过的正式路线"，但真半透明这个原目标仍未达成。 |
 | 健壮性 / 回归测试 | ~75% | 数据契约审计（60/60）+ CI 跑的 6 个测试：buffer 打包契约、mod.ini 契约（含 0.7.0 旧 profile 迁移、0.7.1 co 专属 t1/t4 绑定、0.7.2 `test_body_layout_is_runtime_autodetected` 地标探测三分支回归）、抓帧抽取（含 0.7.0 draw 选择 + 0.7.1 短代号提示）、逆解数值（合成）、材质烘焙（0.7.1 body/co 双输出）；逆解数值与契约审计另有本地数据档（见 P0）。 |
-| 产品化（多组件 / Mod Manager / 发布） | ~45% | 仅 HSKI Body 单组件主线；脸/头发/饰品、Shape Key、LOD 未做。Mod Manager 已起 WPF/Stylet 骨架（`mod-manager/`）：只读扫描 + 启停（DISABLED 前缀）+ F10 重载 + d3dx.ini 读取/备份已跑通，规划见 [`mod-manager-plan.md`](mod-manager-plan.md)。 |
+| 产品化（多组件 / Mod Manager / 发布） | ~45% | 仅 HSKI Body 单组件主线；脸/头发/饰品、Shape Key、LOD 未做。Mod Manager 已起 WPF/Stylet 骨架（`mod-manager/`）：只读扫描 + 启停（DISABLED 前缀）+ F10 重载 + d3dx.ini 读取/备份已跑通，规划见 [`mod-manager/docs/plan.md`](../mod-manager/docs/plan.md)。 |
 
 **已确认边界**：学马所有 body 都是**单 t0**，工具的单 t0 模型与游戏结构一致。多材质身体
 导出**不需要**（MMD 移植版的多贴图属作者侧问题，应在 Blender 里合成单图）。
@@ -136,7 +136,7 @@
 - 脸 / 头发 / 饰品多组件（各自也是单 t0）；
 - Shape Key / 表情、LOD / 多 Drawcall；
 - Mod Manager（`mod-manager/`，随 `3dmigoto-gkms` 发布）：扫描/启停/F10 重载/d3dx.ini 备份骨架已跑通，
-  待做 d3dx.ini 写入回滚、冲突检测、打包发布；规划见 [`mod-manager-plan.md`](mod-manager-plan.md)。
+  待做 d3dx.ini 写入回滚、冲突检测、打包发布；规划见 [`mod-manager/docs/plan.md`](../mod-manager/docs/plan.md)。
 
 ## 6. 与主流 Model Importer 的定位差异
 

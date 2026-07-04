@@ -2,7 +2,7 @@
 
 > **历史记录（2026-06-24）**：本文属于 TTMR→HSKI 运行时骨架重定向实验阶段，该重定向路线
 > 已排除（同名骨直接映射导致大面积错位）。正确作者流程是在 Blender 中把衣服蒙皮到目标骨架
-> 后再传权，见 [current-status-and-roadmap.md](current-status-and-roadmap.md)。
+> 后再传权，见 [current-status-and-roadmap.md](../current-status-and-roadmap.md)。
 
 Source directory: `mdl_chr_ttmr-cstm-0119_body`
 

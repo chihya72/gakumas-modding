@@ -118,11 +118,12 @@ tools/build_inverse_skin_operator.py         → 由 bind + 权重生成逆算�
 | 文档 | 内容 |
 |---|---|
 | [README.md](README.md) | 项目总览（本文） |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | **仓库规范**：结构/命名/文档/提交/发布（新建文件前必读） |
 | [CHANGELOG.md](CHANGELOG.md) | 插件版本变更日志 |
 | [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) | 当前进度、完成度、能力对比、后续计划（**最新状态以此为准**） |
 | [gakumas_mi/README.md](gakumas_mi/README.md) | 作者插件：安装与一键工作流 |
 | [3dmigoto-gkms/README.md](3dmigoto-gkms/README.md) | 游戏 mod 插件：安装方法与按键说明 |
-| [mod-manager/README.md](mod-manager/README.md) · [research/mod-manager-plan.md](research/mod-manager-plan.md) | 使用者侧包管理器：运行方法与规划 |
+| [mod-manager/README.md](mod-manager/README.md) · [mod-manager/docs/plan.md](mod-manager/docs/plan.md) | 使用者侧包管理器：运行方法与规划 |
 | [research/inverse-skin-matrix-recovery.md](research/inverse-skin-matrix-recovery.md) | 逆解矩阵方案与游戏内验证报告 |
 | [research/transparent-material-status.md](research/transparent-material-status.md) | 透明材质当前策略与结论 |
 | [research/color-scan-20260627-091033.md](research/color-scan-20260627-091033.md) | 顶点 COLOR / 描边安全族 |

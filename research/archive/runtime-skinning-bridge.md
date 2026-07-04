@@ -3,7 +3,7 @@
 > **历史记录（2026-06-24）**：本文记录的「进程内 IL2CPP Runtime 替换 Mesh」路线已放弃，
 > 相关代码（`runtime/native/`、`tools/inject-runtime.ps1`）已删除。项目锁定为逆解每帧矩阵
 > + 重蒙皮（路线 C），最新状态见
-> [current-status-and-roadmap.md](current-status-and-roadmap.md)。保留本文用于记录当时的
+> [current-status-and-roadmap.md](../current-status-and-roadmap.md)。保留本文用于记录当时的
 > 证据与放弃原因。
 
 起点检查点：`checkpoints/2026-06-22_031942_runtime-pivot`

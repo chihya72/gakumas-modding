@@ -6,8 +6,8 @@
 > 阶段，其中“尚未在 GPU 侧定位骨骼矩阵”和“下一次只回答矩阵是否存在”等描述
 > 已被后续实验取代。GakumasMI 已能从最终 CPU-skinned VB 反解 152 个矩阵，并
 > 用 Compute Shader 正确重建原 HSKI Body 和驱动任意拓扑。最新结论与路线见
-> [current-status-and-roadmap.md](current-status-and-roadmap.md) 和
-> [inverse-skin-matrix-recovery.md](inverse-skin-matrix-recovery.md)。保留本文原文是为了
+> [current-status-and-roadmap.md](../current-status-and-roadmap.md) 和
+> [inverse-skin-matrix-recovery.md](../inverse-skin-matrix-recovery.md)。保留本文原文是为了
 > 记录当时证据与路线转折。
 
 ## 结论

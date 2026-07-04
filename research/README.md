@@ -16,9 +16,10 @@
 | [`pc-il2cpp-gmim-runtime-replacement.md`](pc-il2cpp-gmim-runtime-replacement.md) | PC IL2CPP `.gmim` 运行时换网格研究：骨名权重重映射、`ttmr-cstm-0003` AssetStudio 解包、材质属性结论。 |
 | [`color-scan-20260627-091033.md`](color-scan-20260627-091033.md) | 顶点 COLOR / vb1 扫描：COLOR 是区域/拓扑数据，附描边宽度安全族。 |
 | [`blender-plugin-ui-reference.md`](blender-plugin-ui-reference.md) | GIMI/WWMI/EFMI 的 UI / 作者流程参考。 |
-| [`mod-manager-plan.md`](mod-manager-plan.md) | 使用者侧 Mod 包管理器规划（包格式、启停/重载/d3dx.ini、里程碑）。 |
-| [`mod-manager-gui-development-flow.md`](mod-manager-gui-development-flow.md) | 管理器 GUI 界面拆解与稳定开发流程（配 light-orange 参考图）。 |
 | [`baseline/`](baseline/) · [`hunting/`](hunting/) | 基准场景与 Hunting 环境记录。 |
+
+> Mod 包管理器的规划与 GUI 开发文档随产品代码放在
+> [`../mod-manager/docs/`](../mod-manager/docs/)（`plan.md`、`gui-development-flow.md`）。
 
 ## 已归档（`archive/`，保留证据）
 
