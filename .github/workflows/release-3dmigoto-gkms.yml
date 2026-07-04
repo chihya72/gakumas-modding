@@ -1,6 +1,6 @@
 name: Release · 3dmigoto-gkms (游戏 mod 插件 + Mod 管理器)
 
-# 触发：推送形如 3dmigoto-gkms-v0.4.9 的 tag。
+# 触发：推送形如 3dmigoto-gkms-v0.5.0 的 tag。
 # 产物：一个 Inno Setup 安装包 GakumasModManager-Setup-<版本>.exe，安装时：
 #   - 把自编译补丁版 d3d11.dll + 官方匹配版 nvapi64.dll/d3dcompiler_47.dll + d3dx.ini/ShaderFixes
 #     平铺进用户选定的游戏根目录；
