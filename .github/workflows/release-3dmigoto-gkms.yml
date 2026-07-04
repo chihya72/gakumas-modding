@@ -26,6 +26,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # 需要全部 tag 来取本版更新（tag 注解）与上一版 compare 链接
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -87,7 +89,17 @@ jobs:
 
       - name: 写 Release 说明
         run: |
-          @'
+          # 本版更新：取当前 tag 的注解消息（去掉与标题重复的首行版本前缀）
+          $tagBody = (git tag -l --format='%(contents)' $env:GITHUB_REF_NAME) -join "`n"
+          $tagBody = ($tagBody -replace '(?s)^-----BEGIN.*', '').Trim()
+          if ([string]::IsNullOrWhiteSpace($tagBody)) { $tagBody = "见提交历史。" }
+
+          # 上一个 3dmigoto-gkms tag → Full Changelog 比较链接
+          $tags = @(git tag -l '3dmigoto-gkms-v*' --sort=-version:refname)
+          $idx = [Array]::IndexOf($tags, $env:GITHUB_REF_NAME)
+          $prev = if ($idx -ge 0 -and $idx -lt $tags.Count - 1) { $tags[$idx + 1] } else { "" }
+
+          $fixed = @'
           学马仕定制 3DMigoto 游戏 mod 插件 + Mod 包管理器，**一个安装包搞定**。
 
           ## 安装
@@ -96,15 +108,19 @@ jobs:
           - 把 **Mod 管理器**装到 `<游戏根目录>\GakumasModManager\`，可勾选创建桌面快捷方式；
           - `d3dx.ini` 与 `Mods/` 若已存在则不覆盖（保护你的配置和已装 mod）。
 
-          安装完成后用 `-force-d3d11` 启动游戏；按键说明见游戏目录内 `3dmigoto-gkms/README.md` 或仓库文档。
-
           ## 前置：.NET 8 Desktop Runtime
-          Mod 管理器为框架依赖构建（体积小），首次运行需 **.NET 8 Desktop Runtime（Windows x64）**：
+          Mod 管理器需依赖 **.NET 8 Desktop Runtime（Windows x64）**：
           https://dotnet.microsoft.com/download/dotnet/8.0
           安装程序结束时会自动检测，缺失则提示打开下载页。
 
           d3d11.dll 修了 live 横竖屏切换闪屏；`nvapi64.dll`/`d3dcompiler_47.dll` 构建时从官方 bo3b/3Dmigoto 1.4.9 release 取得，版本匹配。
-          '@ | Set-Content -Encoding utf8 notes.md
+          '@
+
+          $notes = "## 本版更新`n`n$tagBody`n`n$fixed"
+          if ($prev) {
+            $notes += "`n`n**Full Changelog**: ${{ github.server_url }}/${{ github.repository }}/compare/$prev...$env:GITHUB_REF_NAME"
+          }
+          $notes | Set-Content -Encoding utf8 notes.md
 
       - name: 创建 Release
         run: >
