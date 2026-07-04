@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # 需要全部 tag 来算 Full Changelog 的上一个版本
 
       - uses: actions/setup-python@v6
         with:
@@ -43,6 +45,27 @@ jobs:
       - name: 打包插件 zip
         run: python tools/package_blender_addon.py -o "dist/gakumas_mi-${{ steps.ver.outputs.version }}.zip"
 
+      - name: 生成 Release notes（CHANGELOG 该版本段 + Full Changelog）
+        run: |
+          python - "${{ steps.ver.outputs.version }}" > release_notes.md <<'PY'
+          import re, sys, pathlib
+          ver = sys.argv[1]
+          txt = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          for sec in re.split(r'(?m)^## ', txt)[1:]:
+              if sec.split(" ", 1)[0] == ver:
+                  print("## " + sec.rstrip())
+                  break
+          else:
+              print(f"GakumasMI Blender 插件 {ver}")  # CHANGELOG 缺该版本时的兜底
+          PY
+          # 上一个 gakumas-mi tag → Full Changelog 比较链接
+          prev=$(git tag -l 'gakumas-mi-v*' --sort=-version:refname \
+                 | awk -v cur="$GITHUB_REF_NAME" '$0==cur{getline; print; exit}')
+          if [ -n "$prev" ]; then
+            printf '\n\n**Full Changelog**: %s/%s/compare/%s...%s\n' \
+              "${{ github.server_url }}" "${{ github.repository }}" "$prev" "$GITHUB_REF_NAME" >> release_notes.md
+          fi
+
       - name: 创建 Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -50,4 +73,4 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             "dist/gakumas_mi-${{ steps.ver.outputs.version }}.zip" \
             --title "GakumasMI Blender 插件 ${{ steps.ver.outputs.version }}" \
-            --generate-notes
+            --notes-file release_notes.md
