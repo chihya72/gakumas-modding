@@ -28,7 +28,7 @@
   改写为 `test_body_layout_is_runtime_autodetected`，断言地标探测三分支结构（7/7 通过）。
 - 详细复盘（FrameAnalysis/AssetRipper 反查、镜面 `1a922dbd/55266f0f` 排除、gmi_common
   共享方案的取舍）见
-  [`research/session-20260704-gmi-global-layout-and-mirror.md`](research/session-20260704-gmi-global-layout-and-mirror.md)。
+  [`research/archive/session-20260704-gmi-global-layout-and-mirror.md`](research/archive/session-20260704-gmi-global-layout-and-mirror.md)。
 
 ## 0.7.1 — body / bdyco 材质贴图彻底分离
 

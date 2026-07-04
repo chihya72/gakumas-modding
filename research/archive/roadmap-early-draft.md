@@ -1,8 +1,9 @@
-# GakumasMI 开发路线（当前草案）
+# GakumasMI 开发路线（早期草案，已归档）
 
-> **本文是总体产品愿景**（含早期分阶段草案，部分已完成/调整）。**最新执行状态、完成度
-> 与后续计划以** [`research/current-status-and-roadmap.md`](research/current-status-and-roadmap.md)
-> **为准**，版本变更见 [`CHANGELOG.md`](CHANGELOG.md)。
+> **已归档（2026-07-04）**：本文是项目早期产品愿景与分阶段草案，多数状态已过期。
+> 当前状态、完成度与计划以 [`../current-status-and-roadmap.md`](../current-status-and-roadmap.md)
+> 为准；产品定位/范围边界已并入根 [`../../README.md`](../../README.md)；版本变更见
+> [`../../CHANGELOG.md`](../../CHANGELOG.md)。保留本文仅作早期规划记录。
 >
 > 截至 0.6.0：单 t0 身体的 Blender → 3DMigoto → 游戏（换模 + 动画 + 贴图 + 多 mod 共存）
 > 完整闭环已达成并跨服装实机验证；一键即可对任意 body 生成完整配置档；已具备分材质
