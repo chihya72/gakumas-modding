@@ -112,7 +112,9 @@
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel>
                             <TextBlock Text="{Binding SelectedPackage.Name}" Style="{StaticResource PanelTitleTextStyle}" />
-                            <Border Height="150" Margin="0,12,0,0" Style="{StaticResource CoverPlaceholderStyle}" ClipToBounds="True">
+                            <Border Margin="0,12,0,0"
+                                    Height="{Binding ActualWidth, RelativeSource={RelativeSource Self}}"
+                                    Style="{StaticResource CoverPlaceholderStyle}" ClipToBounds="True">
                                 <Grid>
                                     <TextBlock Text="封面预览" VerticalAlignment="Center" HorizontalAlignment="Center"
                                                Foreground="{StaticResource MutedTextBrush}" />

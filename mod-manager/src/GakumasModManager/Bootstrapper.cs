@@ -14,6 +14,7 @@ public sealed class Bootstrapper : Bootstrapper<RootViewModel>
         builder.Bind<IReloadGameService>().To<ReloadGameService>().InSingletonScope();
         builder.Bind<IAppLogService>().To<AppLogService>().InSingletonScope();
         builder.Bind<ISettingsService>().To<SettingsService>().InSingletonScope();
+        builder.Bind<ID3dxReloadService>().To<D3dxReloadService>().InSingletonScope();
         builder.Bind<IPackageInstallService>().To<PackageInstallService>().InSingletonScope();
         builder.Bind<IModManagerCore>().To<AsstProxy>().InSingletonScope();
     }

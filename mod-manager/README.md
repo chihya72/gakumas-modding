@@ -46,6 +46,9 @@ dotnet run --project mod-manager\tests\GakumasModManager.ScannerSmoke\GakumasMod
 - 启用/禁用：`DISABLED` 前缀改名，操作前检查重名冲突，操作后刷新列表并写日志。
 - F10 重载：按游戏目录、窗口标题、进程名寻找候选窗口，切前台后发送 F10；失败写日志提示手动按。
   程序 manifest 已设 `requireAdministrator`（F10 自动重载需与游戏同权限级别）。
+- 重载可靠性：**启动时自动确保 d3dx.ini `[System] check_foreground_window=0`**（`D3dxReloadService`），
+  让 3DMigoto 在游戏非前台时也响应 F10 —— 否则外部 F10 必须先抢前台，而 Windows 抢前台不可靠会导致
+  「概率重载」。该写入对已运行的游戏需下次启动生效；插件出厂 d3dx.ini 已默认 0。
 - 不做 d3dx.ini 图形化设置页（选项太多且多为 mod 作者抓帧快捷键/高级兼容项，暴露风险大）。
   改为随插件发一份 `键位说明.txt`（游戏根目录）讲清键位；管理器「键位说明」按钮直接打开它。
   插件默认 `hunting=2`：F10/F8/F9 仍可用，但屏幕左上角绿色调试 HUD 默认关闭（按小键盘 0 临时开）。

@@ -130,6 +130,14 @@ try
     Assert(!collisionResult.Ok, "expected disable collision to fail");
     Assert(Directory.Exists(generic), "expected source directory preserved on collision");
 
+    var reloadFix = new D3dxReloadService();
+    Assert(reloadFix.EnsureForegroundReloadEnabled(game).Ok, "expected check_foreground_window ensure to succeed");
+    var d3dxAfter = File.ReadAllText(Path.Combine(game, "d3dx.ini"));
+    Assert(d3dxAfter.Contains("check_foreground_window = 0") || d3dxAfter.Contains("check_foreground_window=0"),
+        "expected check_foreground_window set to 0");
+    Assert(d3dxAfter.Contains("reload_fixes"), "expected unrelated d3dx keys preserved by ensure");
+    Assert(reloadFix.EnsureForegroundReloadEnabled(game).Ok, "expected idempotent ensure on second call");
+
     var installer = new PackageInstallService();
     var installMods = Path.Combine(root, "InstallMods");
     Directory.CreateDirectory(installMods);

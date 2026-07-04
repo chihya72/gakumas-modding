@@ -22,6 +22,8 @@ public interface IModManagerCore
     OperationResult OpenD3dmigotoLog(string gamePath);
 
     OperationResult OpenShortcutsDoc(string gamePath);
+
+    OperationResult EnsureReloadWorks(string gamePath);
 }
 
 public sealed class AsstProxy(
@@ -29,7 +31,8 @@ public sealed class AsstProxy(
     IPackageActionsService packageActionsService,
     IReloadGameService reloadGameService,
     ISettingsService settingsService,
-    IPackageInstallService packageInstallService) : IModManagerCore
+    IPackageInstallService packageInstallService,
+    ID3dxReloadService d3dxReloadService) : IModManagerCore
 {
     public string GetDefaultGamePath()
     {
@@ -113,6 +116,11 @@ public sealed class AsstProxy(
     public OperationResult InstallPackages(string modsPath, IReadOnlyList<string> sourcePaths)
     {
         return packageInstallService.Install(modsPath, sourcePaths);
+    }
+
+    public OperationResult EnsureReloadWorks(string gamePath)
+    {
+        return d3dxReloadService.EnsureForegroundReloadEnabled(gamePath);
     }
 
     public OperationResult OpenD3dmigotoLog(string gamePath)

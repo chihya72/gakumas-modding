@@ -21,6 +21,8 @@ public sealed class RootViewModel : Screen
 
         GamePath = core.GetDefaultGamePath();
         RefreshPackages();
+        var reloadFix = _core.EnsureReloadWorks(GamePath);
+        AddLog(reloadFix.Message, reloadFix.Severity);
         AddLog($"日志文件：{_logService.LogFilePath}");
     }
 
