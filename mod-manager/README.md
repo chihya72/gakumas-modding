@@ -64,6 +64,9 @@ dotnet run --project mod-manager\tests\GakumasModManager.ScannerSmoke\GakumasMod
   zip 单顶层文件夹自动去重嵌套、跨盘用复制而非移动、目标已存在则跳过不覆盖），完成后自动刷新。
 - 默认测试目录 `D:\Games\gakumas\Mods`（仅在无保存路径时作为回退之一）。
 - 冲突检测：同一 conflict key 多个启用包聚合为真实冲突，详情面板标出与哪些包冲突。
+- 角色分类与筛选：从 manifest `conflicts` 键前缀（回退到 `targets`）识别角色代号，列表按固定角色
+  顺序分组并显示可折叠分组标题（`花海咲季 → 月村手毬 → … → 其他`）；工具栏「角色」下拉只列出当前存在的
+  角色，选中即筛选该组。分组折叠状态在刷新/启停/装包重扫后保留（进程内记忆）。识别不到代号的包归入「其他」。
 - 打包发布：`release-3dmigoto-gkms` workflow（`windows-latest` 单作业）产出 **Inno Setup 安装包**
   `GakumasModManager-Setup-<版本>.exe`。流程：取上游匹配版第三方 dll → 冒烟测试 →
   `dotnet publish` 框架依赖单文件（约 3MB，需 .NET 8 Desktop Runtime）→ 装配（加载器平铺 +

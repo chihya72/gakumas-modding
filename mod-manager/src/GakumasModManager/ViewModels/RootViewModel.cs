@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Windows.Data;
 using GakumasModManager.Models;
 using GakumasModManager.Services;
 using Stylet;
@@ -7,17 +9,26 @@ namespace GakumasModManager.ViewModels;
 
 public sealed class RootViewModel : Screen
 {
+    private const string AllFilter = "全部";
+
     private readonly IModManagerCore _core;
     private readonly IAppLogService _logService;
     private ModPackage? _selectedPackage;
     private string _gamePath = "";
     private string _modsPath = "";
+    private string _selectedCharacterFilter = AllFilter;
 
     public RootViewModel(IModManagerCore core, IAppLogService logService)
     {
         _core = core;
         _logService = logService;
         DisplayName = "Gakumas Mod Manager";
+
+        PackagesView = CollectionViewSource.GetDefaultView(Packages);
+        PackagesView.SortDescriptions.Add(new SortDescription(nameof(ModPackage.CharacterOrderIndex), ListSortDirection.Ascending));
+        PackagesView.SortDescriptions.Add(new SortDescription(nameof(ModPackage.Name), ListSortDirection.Ascending));
+        PackagesView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(ModPackage.CharacterName)));
+        PackagesView.Filter = FilterByCharacter;
 
         GamePath = core.GetDefaultGamePath();
         RefreshPackages();
@@ -27,6 +38,22 @@ public sealed class RootViewModel : Screen
     }
 
     public ObservableCollection<ModPackage> Packages { get; } = [];
+
+    public ICollectionView PackagesView { get; }
+
+    public ObservableCollection<string> CharacterFilters { get; } = [];
+
+    public string SelectedCharacterFilter
+    {
+        get => _selectedCharacterFilter;
+        set
+        {
+            if (SetAndNotify(ref _selectedCharacterFilter, value))
+            {
+                PackagesView.Refresh();
+            }
+        }
+    }
 
     public ObservableCollection<LogEntry> Logs { get; } = [];
 
@@ -99,6 +126,8 @@ public sealed class RootViewModel : Screen
             Packages.Add(package);
         }
 
+        RebuildCharacterFilters();
+
         SelectedPackage = preferredDirectoryPath is null
             ? Packages.FirstOrDefault()
             : Packages.FirstOrDefault(package => string.Equals(
@@ -119,6 +148,26 @@ public sealed class RootViewModel : Screen
         {
             AddLog($"Mods 目录：{result.ModsPath}");
         }
+    }
+
+    private bool FilterByCharacter(object item)
+        => _selectedCharacterFilter == AllFilter
+            || (item is ModPackage package && package.CharacterName == _selectedCharacterFilter);
+
+    // 下拉只列出当前实际存在的角色，按 CharacterCatalog 顺序；"全部" 恒在首位
+    private void RebuildCharacterFilters()
+    {
+        var present = Packages.Select(package => package.CharacterName).ToHashSet();
+        var previous = _selectedCharacterFilter;
+
+        CharacterFilters.Clear();
+        CharacterFilters.Add(AllFilter);
+        foreach (var name in CharacterCatalog.OrderedNames.Where(present.Contains))
+        {
+            CharacterFilters.Add(name);
+        }
+
+        SelectedCharacterFilter = CharacterFilters.Contains(previous) ? previous : AllFilter;
     }
 
     public void ToggleSelectedPackage()

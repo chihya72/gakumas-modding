@@ -109,6 +109,15 @@ try
     Assert(result.Packages.Any(package => package.Name == "Broken GakumasMI"
         && package.Status == PackageStatus.Broken), "expected broken manifest package");
 
+    Assert(result.Packages.Single(package => package.Name == "Saki Stage Costume - Orange").CharacterName == "花海咲季",
+        "expected hski conflict key to map to 花海咲季");
+    Assert(result.Packages.Single(package => package.Name == "Generic Shader Fix").CharacterName == CharacterCatalog.Other,
+        "expected package with no character code to fall into 其他");
+    Assert(CharacterCatalog.OrderIndex("花海咲季") < CharacterCatalog.OrderIndex("月村手毬"),
+        "expected 花海咲季 to sort before 月村手毬");
+    Assert(CharacterCatalog.OrderIndex(CharacterCatalog.Other) == CharacterCatalog.OrderedNames.Count - 1,
+        "expected 其他 to sort last");
+
     var actions = new PackageActionsService();
     var genericPackage = result.Packages.Single(package => package.Name == "Generic Shader Fix");
     var disableResult = actions.SetEnabled(genericPackage, enabled: false);

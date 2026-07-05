@@ -41,6 +41,12 @@
                      Style="{StaticResource ToolbarTextBoxStyle}" />
             <Button Grid.Column="2" Content="浏览…" Command="{s:Action BrowseGamePath}" Style="{StaticResource ToolbarButtonStyle}" />
             <Button Grid.Column="3" Content="刷新" Command="{s:Action RefreshPackages}" Style="{StaticResource ToolbarButtonStyle}" />
+            <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                <TextBlock Text="角色" Style="{StaticResource FieldLabelStyle}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <ComboBox Width="150"
+                          ItemsSource="{Binding CharacterFilters}"
+                          SelectedItem="{Binding SelectedCharacterFilter}" />
+            </StackPanel>
             <TextBlock Grid.Column="5" Text="{Binding SummaryText}" Style="{StaticResource SummaryChipStyle}" />
             <Button Grid.Column="6" Content="F10 重载游戏" Command="{s:Action ReloadGame}" Style="{StaticResource PrimaryButtonStyle}" />
         </Grid>
@@ -53,7 +59,7 @@
             </Grid.ColumnDefinitions>
 
             <Border Grid.Column="0" Style="{StaticResource CardStyle}">
-                <DataGrid ItemsSource="{Binding Packages}"
+                <DataGrid ItemsSource="{Binding PackagesView}"
                           SelectedItem="{Binding SelectedPackage}"
                           AutoGenerateColumns="False"
                           IsReadOnly="True"
@@ -66,6 +72,34 @@
                           SelectionMode="Single"
                           SelectionUnit="FullRow"
                           Style="{StaticResource ModDataGridStyle}">
+                    <DataGrid.GroupStyle>
+                        <GroupStyle>
+                            <GroupStyle.ContainerStyle>
+                                <Style TargetType="{x:Type GroupItem}">
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="{x:Type GroupItem}">
+                                                <Expander IsExpanded="True" Margin="0,2"
+                                                          Loaded="OnGroupExpanderLoaded"
+                                                          Expanded="OnGroupExpanderToggled"
+                                                          Collapsed="OnGroupExpanderToggled">
+                                                    <Expander.Header>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                                                       Foreground="{StaticResource MainTextBrush}" />
+                                                            <TextBlock Text="{Binding ItemCount, StringFormat=' ({0})'}"
+                                                                       Foreground="{StaticResource MutedTextBrush}" />
+                                                        </StackPanel>
+                                                    </Expander.Header>
+                                                    <ItemsPresenter />
+                                                </Expander>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </GroupStyle.ContainerStyle>
+                        </GroupStyle>
+                    </DataGrid.GroupStyle>
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="2.2*" ElementStyle="{StaticResource GridCellTextStyle}" />
                         <DataGridTextColumn Header="作者" Binding="{Binding Author}" Width="*" ElementStyle="{StaticResource GridCellTextStyle}" />
