@@ -6,6 +6,7 @@ import json
 import re
 import shutil
 import struct
+import textwrap
 from pathlib import Path
 
 
@@ -1433,6 +1434,40 @@ def body_json_vertex_hints(json_dir, body_resource, mesh_name="Geo_Body"):
     }
 
 
+def _capture_vertex_counts(capture_dir):
+    """Vertex counts of every drawable candidate in a FrameAnalysis dir."""
+    capture = Path(capture_dir)
+    if not capture.is_dir():
+        return set()
+    candidates = _build_frame_candidates(_scan_frame_resources(capture), _parse_frame_log(capture))
+    return {int(item["vertices"]) for item in candidates if item.get("vertices")}
+
+
+def _disambiguate_hair_by_hairprop(profile, pool):
+    """Pick the hair candidate whose bundle's Geo_HairProp is drawn in the same
+    capture. A shared base hair (same verts/indices) is bound to different
+    skeletons per bundle → different inverse operator, so the paired hairprop
+    (the crown/accessory the user captured) is the discriminant. Returns one
+    entry, or None if it can't be uniquely resolved."""
+    capture_dir = (profile.get("capture") or {}).get("directory") or ""
+    if not capture_dir:
+        return None
+    present = _capture_vertex_counts(capture_dir)
+    if not present:
+        return None
+    hits = []
+    for entry in pool:
+        prop_json = Path(entry["meshJson"]).with_name(f"{component_mesh_name('hairprop')}.json")
+        if not prop_json.is_file():
+            continue
+        try:
+            if int(_mesh_summary(prop_json)["vertexCount"]) in present:
+                hits.append(entry)
+        except Exception:
+            continue
+    return hits[0] if len({e["body"] for e in hits}) == 1 else None
+
+
 def resolve_body_json_resource(profile_dir, json_dir, component_id="body"):
     """Resolve a profile component's Mesh/Skeleton JSON from its resource library."""
     profile_set = load_profile_set(profile_dir)
@@ -1497,6 +1532,14 @@ def resolve_body_json_resource(profile_dir, json_dir, component_id="body"):
         result = dict(pool[0])
         result["match"] = label + "(equivalent)"
         return result
+    # 发型基础网格常被多套发型共用(同顶点/同索引),仅蒙皮骨架不同→逆算子不同。
+    # 用抓帧里一起画出来的发饰(Geo_HairProp)顶点数选中正确的 bundle。
+    if component_id == "hair":
+        picked = _disambiguate_hair_by_hairprop(profile, pool)
+        if picked is not None:
+            result = dict(picked)
+            result["match"] = label + "(hairprop)"
+            return result
     names = ", ".join(entry["body"] for entry in pool[:12])
     suffix = " ..." if len(pool) > 12 else ""
     raise ValueError(
@@ -1899,18 +1942,21 @@ def _safe_section(value):
     return re.sub(r"[^A-Za-z0-9]", "", value.title()) or "GakumasMI"
 
 
-def _shader_check_overrides(section, component_id, drawcalls):
+def _shader_check_overrides(section, component_id, drawcalls, extra_components=()):
     """为 body IB 关联的全部 VS 生成 ShaderOverride...checktextureoverride = ib。
 
     Buffer/IB 的 TextureOverride 只在挂了 checktextureoverride 的 ShaderOverride 上才会
     稳定执行 draw-time 替换。只覆盖部分 VS 会让另一些 pass 漏画原版 → 叠图。故收齐
     passBindings 里全部唯一 VS,每个都生成。
     """
-    draw_component = drawcalls.get("components", {}).get(component_id, {})
-    bindings = dict(draw_component.get("passBindings", {}) or {})
-    for section_data in (draw_component.get("sectionBindings", {}) or {}).values():
-        for key, value in (section_data.get("passBindings", {}) or {}).items():
-            bindings[f"section_{key}"] = value
+    component_ids = [component_id, *extra_components]
+    bindings = {}
+    for current_id in component_ids:
+        draw_component = drawcalls.get("components", {}).get(current_id, {})
+        bindings.update(draw_component.get("passBindings", {}) or {})
+        for section_data in (draw_component.get("sectionBindings", {}) or {}).values():
+            for key, value in (section_data.get("passBindings", {}) or {}).items():
+                bindings[f"{current_id}_section_{key}"] = value
     if not bindings:
         return ""
     seen = []
@@ -2018,8 +2064,9 @@ def _profile_material_texture_entry(profile_set, texture_key):
 GMI_BODY_LAYOUT_LANDMARK = "0ff26bed"
 
 
-def _landmark_layout_sections(section, match_priority):
+def _landmark_layout_sections(section, match_priority, reset_variable=None):
     """DetectLayout command list + the landmark probe TextureOverride (once per mod)."""
+    reset_line = f"${reset_variable} = 0\n" if reset_variable else ""
     return (
         f"[CommandList{section}DetectLayout]\n"
         f"$gmi_{section}_layout = 0\n"
@@ -2039,8 +2086,45 @@ def _landmark_layout_sections(section, match_priority):
         f"; the shared hash when several body mods are installed.\n"
         f"hash = {GMI_BODY_LAYOUT_LANDMARK}\n"
         f"match_priority = {match_priority}\n"
+        f"{reset_line}"
         f"$gmi_{section}_probe = 1\n"
     )
+
+
+def _hairprop_selector(profile):
+    """Return the hairprop draw signature used to select a shared hair base.
+
+    A hair IB is commonly shared by several hairstyles.  The optional hairprop
+    component is the discriminant when it has its own IB and main section.  The
+    runtime matcher uses hash + firstIndex; indexCount is retained in the
+    manifest for audit and future matcher upgrades.
+    """
+    if not isinstance(profile, dict):
+        return None
+    prop = component_by_id(profile, "hairprop")
+    if not prop or not prop.get("ibHash"):
+        return None
+    first_index = prop.get("mainFirstIndex")
+    if first_index is None:
+        return None
+    return {
+        "component": "hairprop",
+        "ibHash": str(prop["ibHash"]),
+        "firstIndex": int(first_index),
+        "indexCount": int(prop.get("indices") or 0),
+    }
+
+
+def _runtime_guard(section, body, selector_variable=None):
+    """Wrap an override body in the package enable flag and optional selector."""
+    body = textwrap.indent(body.strip("\n"), "    ")
+    if selector_variable:
+        body = (
+            f"    if ${selector_variable} == 1\n"
+            f"{textwrap.indent(body, '    ')}\n"
+            "    endif"
+        )
+    return f"if $enable_{section}\n{body}\nendif"
 
 
 def _landmark_binding_block(section, resources, indent="    "):
@@ -2607,11 +2691,37 @@ def write_inverse_skin_package(
 
     dispatch_matrices = coefficient_count
     dispatch_vertices = (vertex_count + 63) // 64
-    shader_check_blocks = [_shader_check_overrides(section, component_id, drawcalls)]
+    hairprop_selector = _hairprop_selector(profile) if component_id == "hair" else None
+    selector_variable = f"gmi_{section}_hairprop_match" if hairprop_selector else None
+    extra_shader_components = ("hairprop",) if hairprop_selector else ()
+    shader_check_blocks = [
+        _shader_check_overrides(
+            section, component_id, drawcalls, extra_components=extra_shader_components
+        )
+    ]
     if not shader_check_blocks[0]:
         raise ValueError("Profile drawcall_map 没有可用于 checktextureoverride 的 VS pass")
     landmark_priority = _landmark_match_priority(component['ibHash'])
-    landmark_sections = _landmark_layout_sections(section, landmark_priority)
+    # 注意:landmark 不再重置 hairprop_match(reset_variable=None)。landmark 是 body draw,
+    # 夹在皇冠和发型 draw 之间清零会让发型主 pass 漏替换。改由 [Present] 每帧末重置。
+    landmark_sections = _landmark_layout_sections(
+        section, landmark_priority, reset_variable=None
+    )
+    # 共享发型选择器:配套发饰的主 draw 出现即置 latch=1,发型只在戴该发饰时替换;
+    # 每帧末由 [Present] 清零。合并成完整包时,这个 HairpropSelector 块会被 merge 删掉、
+    # 把置位语句注入发饰自己的同 hash TextureOverride——本 3DMigoto 分支的 TextureOverride
+    # 不认 allow_duplicate_hash,同 hash 两个 override 会互相覆盖。单独导出发型时此块照常生效。
+    selector_block = ""
+    if hairprop_selector:
+        selector_block = f"""
+[Present]
+${selector_variable} = 0
+
+[TextureOverride{section}HairpropSelector]
+hash = {hairprop_selector['ibHash']}
+match_first_index = {hairprop_selector['firstIndex']}
+${selector_variable} = 1
+"""
     material_bindings = _landmark_binding_block(section, material_resource_names)
     # 主体段可能不在 IB 偏移 0(随服装而变),原版 draw 用其 StartIndex 采我们从 0 起的
     # 自定义 IB 会越界 → 跳过原 draw、用 drawindexed 从 0 画满整网格。
@@ -2663,11 +2773,7 @@ def write_inverse_skin_package(
             f"    drawindexed = {int(item['count'])}, {int(item['start'])}, 0"
             for item in native_co_ranges
         )
-        native_co_override = f"""
-[TextureOverride{section}{body_title}NativeCo]
-hash = {component['ibHash']}
-match_first_index = {native_first_index}
-if $enable_{section}
+        native_body = f"""
     Resource{section}PosedVB = copy vb0
     run = CustomShader{section}RecoverMatrices
     run = CustomShader{section}SkinCustom
@@ -2679,7 +2785,12 @@ if $enable_{section}
 {native_bindings}
 {native_drawindexed_lines}
     handling = skip
-endif
+"""
+        native_co_override = f"""
+[TextureOverride{section}{body_title}NativeCo]
+hash = {component['ibHash']}
+match_first_index = {native_first_index}
+{_runtime_guard(section, native_body, selector_variable)}
 ; native co section: {native_section_id}; source draws: {native_draws}
 """
     tail_skips = ""
@@ -2690,9 +2801,7 @@ endif
             f"\n[TextureOverride{section}{body_title}Tail{tail_index}]\n"
             f"hash = {component['ibHash']}\n"
             f"match_first_index = {first_index}\n"
-            f"if $enable_{section}\n"
-            f"    handling = skip\n"
-            f"endif\n"
+            f"{_runtime_guard(section, 'handling = skip', selector_variable)}\n"
         )
     # Buffer TextureOverride 需要由相关 ShaderOverride 显式 checktextureoverride。
     # 只登记 IB hash 会显示 resource matched，但不会稳定执行 draw-time 替换。
@@ -2703,26 +2812,26 @@ endif
 global $enable_{section} = 1
 global $gmi_{section}_layout = 0
 global $gmi_{section}_probe = 0
+{f"global ${selector_variable} = 0" if selector_variable else ""}
 
 {landmark_sections}
 {shader_checks}
+{selector_block}
 
 [TextureOverride{section}{component_id.title()}]
 hash = {component['ibHash']}
 match_first_index = {main_first_index}
-if $enable_{section}
-    Resource{section}PosedVB = copy vb0
-    run = CustomShader{section}RecoverMatrices
-    run = CustomShader{section}SkinCustom
-    Resource{section}SkinnedVBIA = copy Resource{section}SkinnedVB
-    vb0 = Resource{section}SkinnedVBIA
-    vb1 = Resource{section}VB1
-    vb3 = Resource{section}SkinnedVBIA
-    ib = Resource{section}IB
+{_runtime_guard(section, f'''Resource{section}PosedVB = copy vb0
+run = CustomShader{section}RecoverMatrices
+run = CustomShader{section}SkinCustom
+Resource{section}SkinnedVBIA = copy Resource{section}SkinnedVB
+vb0 = Resource{section}SkinnedVBIA
+vb1 = Resource{section}VB1
+vb3 = Resource{section}SkinnedVBIA
+ib = Resource{section}IB
 {material_bindings}
 {drawindexed_lines}
-    handling = skip
-endif
+handling = skip''', selector_variable)}
 {tail_skips}
 {native_co_override}
 
@@ -2799,10 +2908,15 @@ filename = Buffers\\{ib_buffer_name}
     cover_name = _prepare_cover(package_dir, cover_image)
     # 目标改成被替换的游戏内模型资源名（如 mdl_chr_hski-cstm-0000_body），
     # 让用户直接看到本 mod 替换了游戏里的哪个 body/hair/face。缺资源名时回退到旧语义。
-    resource_field = {
-        "body": "bodyResource", "hair": "hairResource", "hairprop": "bodyResource", "face": "faceResource"
-    }.get(component_id)
-    replaced_resource = (target.get(resource_field) if resource_field else None) or f"{component_id}.weightedMesh"
+    if component_id == "hair":
+        replaced_resource = target.get("hairResource") or target.get("bodyResource")
+    elif component_id == "hairprop":
+        replaced_resource = target.get("hairResource") or target.get("bodyResource")
+    else:
+        resource_field = {"body": "bodyResource", "face": "faceResource"}.get(component_id)
+        replaced_resource = target.get(resource_field) if resource_field else None
+    replaced_resource = replaced_resource or f"{component_id}.weightedMesh"
+    runtime_selector = dict(hairprop_selector) if hairprop_selector else None
     manifest = {
         "schemaVersion": 2,
         "id": package_id,
@@ -2813,7 +2927,12 @@ filename = Buffers\\{ib_buffer_name}
         "profile": profile["id"],
         "targets": [replaced_resource],
         "cover": cover_name,
-        "conflicts": [f"{target['actorId']}.{target['costumeId']}.{component_id}.mesh"],
+        "components": [component_id],
+        "conflicts": [
+            f"{target['actorId']}.{target['costumeId']}.hair.bundle"
+            if runtime_selector and component_id == "hair"
+            else f"{target['actorId']}.{target['costumeId']}.{component_id}.mesh"
+        ],
         "runtime": "3dmigoto-compute",
         "vertexCount": vertex_count,
         "indexCount": len(faces) * 3,
@@ -2826,9 +2945,137 @@ filename = Buffers\\{ib_buffer_name}
         "nativeCoSection": native_co_section,
         "transparencyStrategy": "native-co-section-only",
     }
+    if runtime_selector:
+        manifest["runtimeSelector"] = runtime_selector
     _write_json(package_dir / "manifest.json", manifest)
     (package_dir / "README.md").write_text(
         f"# {name}\n\nInverse-skin weighted Body mesh for Profile `{profile['id']}`.\n",
+        encoding="utf-8",
+    )
+    return package_dir
+
+
+def merge_inverse_skin_packages(
+    hair_package, hairprop_package, output_root, package_id, name, author,
+):
+    """Merge the two author meshes into one complete hair package.
+
+    The profile remains multi-component internally, but the published package
+    owns both draw overrides.  Prop filenames are prefixed to avoid the two
+    component exports clobbering each other's Body/Shader resources.
+    """
+    hair_package = Path(hair_package)
+    hairprop_package = Path(hairprop_package)
+    if not hair_package.is_dir() or not hairprop_package.is_dir():
+        raise FileNotFoundError("完整发型包需要 hair 和 hairprop 两个已导出的组件包")
+    hair_manifest = json.loads((hair_package / "manifest.json").read_text(encoding="utf-8"))
+    prop_manifest = json.loads((hairprop_package / "manifest.json").read_text(encoding="utf-8"))
+    selector = hair_manifest.get("runtimeSelector")
+    if not selector or selector.get("component") != "hairprop":
+        raise ValueError("hair 组件包缺少 hairprop runtimeSelector，拒绝生成会误替换的完整包")
+
+    package_dir = Path(output_root) / _sanitize_package_id(package_id)
+    if package_dir.exists():
+        shutil.rmtree(package_dir)
+    shutil.copytree(hair_package, package_dir)
+
+    for source in hairprop_package.rglob("*"):
+        if not source.is_file() or source.name in {"manifest.json", "mod.ini", "README.md", "export-report.json", "cover.png"}:
+            continue
+        rel = source.relative_to(hairprop_package)
+        if rel.parts[0] in {"Buffers", "Shaders"}:
+            rel = rel.with_name(f"Hairprop.{rel.name}")
+        destination = package_dir / rel
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+
+    prop_blocks = re.split(
+        r"(?=^\[)",
+        (hairprop_package / "mod.ini").read_text(encoding="utf-8", errors="replace"),
+        flags=re.MULTILINE,
+    )
+    # 发饰的 [ShaderOverride] 丢弃(与发型同 shader-hash,发型包已顺带 check 发饰资源);
+    # 但 [Constants] 里的 global 声明必须保留——发饰段的 $enable_/$..._layout/$..._probe
+    # 被别的 block 引用,整块删掉会导致运行时"未声明标识符"。把它们并进发型 [Constants]。
+    prop_globals = [
+        line
+        for block in prop_blocks if block.startswith("[Constants]")
+        for line in block.splitlines() if line.strip().startswith("global $")
+    ]
+    prop_blocks = [
+        block for block in prop_blocks
+        if block and not block.startswith("[Constants]") and not block.startswith("[ShaderOverride")
+    ]
+    prop_ini = "\n".join(prop_blocks)
+    prop_ini = re.sub(r"Buffers\\([^\r\n]+)", r"Buffers\\Hairprop.\1", prop_ini)
+    prop_ini = re.sub(r"Shaders\\([^\r\n]+)", r"Shaders\\Hairprop.\1", prop_ini)
+    hair_ini = (package_dir / "mod.ini").read_text(encoding="utf-8")
+    if prop_globals:
+        hair_ini = hair_ini.replace(
+            "[Constants]\n", "[Constants]\n" + "\n".join(prop_globals) + "\n", 1
+        )
+    # 发型选择:删掉发型 ini 里独立的 HairpropSelector 块(它和发饰 override 挂同一 hash,
+    # 本分支不支持 allow_duplicate_hash,并存会互相覆盖),把 match=1 注入发饰自己的同 hash
+    # 主 override。发型只在该发饰主 draw 出现时替换;清零仍由发型 ini 的 [Present] 负责。
+    sel_var = re.search(r"\$(gmi_\w+_hairprop_match)\b", hair_ini)
+    if sel_var:
+        hair_ini = re.sub(
+            r"\n\[TextureOverride\w*HairpropSelector\][^\[]*", "\n", hair_ini
+        )
+        anchor = (
+            f"hash = {selector['ibHash']}\n"
+            f"match_first_index = {int(selector['firstIndex'])}\n"
+        )
+        injected, n = re.subn(
+            re.escape(anchor),
+            anchor + f"${sel_var.group(1)} = 1\n",
+            prop_ini,
+            count=1,
+        )
+        if n != 1:
+            raise ValueError("合并失败:发饰包里找不到可注入发型选择标志的主 override")
+        prop_ini = injected
+    (package_dir / "mod.ini").write_text(hair_ini.rstrip() + "\n\n" + prop_ini.lstrip(), encoding="utf-8")
+
+    manifest = dict(hair_manifest)
+    manifest.update({
+        "id": _sanitize_package_id(package_id),
+        "name": name,
+        "author": author,
+        "components": ["hair", "hairprop"],
+        "materials": {**hair_manifest.get("materials", {}), **prop_manifest.get("materials", {})},
+        "componentStats": {
+            "hair": {
+                "vertexCount": hair_manifest.get("vertexCount", 0),
+                "indexCount": hair_manifest.get("indexCount", 0),
+            },
+            "hairprop": {
+                "vertexCount": prop_manifest.get("vertexCount", 0),
+                "indexCount": prop_manifest.get("indexCount", 0),
+            },
+        },
+        "runtimeSelector": selector,
+        "conflicts": [f"{selector.get('actorId', '')}.{selector.get('costumeId', '')}.hair.bundle"]
+        if selector.get("actorId") and selector.get("costumeId")
+        else hair_manifest.get("conflicts", []),
+    })
+    _write_json(package_dir / "manifest.json", manifest)
+    def _read_report(package):
+        report = package / "export-report.json"
+        return json.loads(report.read_text(encoding="utf-8")) if report.is_file() else None
+
+    _write_json(package_dir / "export-report.json", {
+        "merge": {
+            "components": ["hair", "hairprop"],
+            "selector": selector,
+            "sourcePackages": [hair_manifest.get("id"), prop_manifest.get("id")],
+        },
+        "hair": _read_report(hair_package),
+        "hairprop": _read_report(hairprop_package),
+    })
+    (package_dir / "README.md").write_text(
+        f"# {name}\n\n这是一个完整发型包，包含 `Geo_Hair` 与 `Geo_HairProp`，两部分必须一起启用。\n"
+        f"发型只在 hairprop selector `{selector['ibHash']}@{selector['firstIndex']}` 命中时替换。\n",
         encoding="utf-8",
     )
     return package_dir

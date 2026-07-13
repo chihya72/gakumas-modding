@@ -9,6 +9,7 @@
 
 import importlib.util
 import json
+import re
 import tempfile
 from pathlib import Path
 
@@ -146,6 +147,64 @@ def _build(tmp, native_section=False, legacy_shade_slot=False, main_texture_entr
         profile_dir, out, "test.mod", "Test", "Author", "body",
         v, n, t, uv0, uv1, c, faces, skin, corrections=[],
         materials=materials, **kwargs,
+    )
+    return (pkg / "mod.ini").read_text(encoding="utf-8"), pkg
+
+
+def _build_hair_with_selector(tmp):
+    profile_dir = Path(tmp) / "hair-profile"
+    (profile_dir / "Buffers").mkdir(parents=True)
+    inverse = "Buffers/InverseOperator.R32_FLOAT.buf"
+    profile = {
+        "schemaVersion": 1,
+        "id": "hair-selector-profile",
+        "target": {
+            "actorId": "hmsz",
+            "costumeId": "hair-0023",
+            "bodyResource": "mdl_chr_hmsz-hair-0023_hair",
+        },
+        "components": [
+            {
+                "id": "hair",
+                "ibHash": "hairhash",
+                "indices": 6,
+                "mainFirstIndex": 0,
+                "inverseSkin": {
+                    "sourceVertexCount": 4,
+                    "coefficientCount": 8,
+                    "inverseOperator": inverse,
+                },
+            },
+            {
+                "id": "hairprop",
+                "ibHash": "prophash",
+                "indices": 4,
+                "mainFirstIndex": 4,
+                "tailFirstIndices": [0],
+                "inverseSkin": {
+                    "sourceVertexCount": 4,
+                    "coefficientCount": 8,
+                    "inverseOperator": inverse,
+                },
+            },
+        ],
+    }
+    drawcalls = {
+        "components": {
+            "hair": {"passBindings": {"hair": {"draw": 1, "vertexShader": "hairvs"}}},
+            "hairprop": {"passBindings": {"prop": {"draw": 2, "vertexShader": "propvs"}}},
+        }
+    }
+    (profile_dir / "profile.json").write_text(json.dumps(profile), encoding="utf-8")
+    (profile_dir / "drawcall_map.json").write_text(json.dumps(drawcalls), encoding="utf-8")
+    (profile_dir / "texture_map.json").write_text(json.dumps({"textures": {}}), encoding="utf-8")
+    (profile_dir / "material_map.json").write_text(json.dumps({"materials": {}}), encoding="utf-8")
+    (profile_dir / "Buffers" / "InverseOperator.R32_FLOAT.buf").write_bytes(b"\x00" * 32)
+    v, n, t, uv0, uv1, c, faces, skin, materials = _mesh()
+    pkg = core.write_inverse_skin_package(
+        profile_dir, Path(tmp) / "out", "hair.selector", "Hair selector", "Author", "hair",
+        v, n, t, uv0, uv1, c, faces, skin, corrections=[], materials=materials,
+        cover_image=_dummy_cover(Path(tmp)),
     )
     return (pkg / "mod.ini").read_text(encoding="utf-8"), pkg
 
@@ -410,6 +469,113 @@ def test_manifest_target_is_body_resource_and_cover():
     print("manifest_target_is_body_resource_and_cover OK")
 
 
+def test_hair_selector_gates_shared_base():
+    with tempfile.TemporaryDirectory() as tmp:
+        ini, pkg = _build_hair_with_selector(tmp)
+        assert "hash = prophash" in ini and "match_first_index = 4" in ini, ini
+        assert "global $gmi_HairSelector_hairprop_match = 0" in ini, ini
+        assert "$gmi_HairSelector_hairprop_match = 0" in ini, ini
+        assert "if $gmi_HairSelector_hairprop_match == 1" in ini, ini
+        assert "hash = propvs" in ini and "hash = hairvs" in ini, ini
+        manifest = json.loads((pkg / "manifest.json").read_text(encoding="utf-8"))
+        assert manifest["targets"] == ["mdl_chr_hmsz-hair-0023_hair"], manifest
+        assert manifest["components"] == ["hair"], manifest
+        assert manifest["runtimeSelector"] == {
+            "component": "hairprop",
+            "ibHash": "prophash",
+            "firstIndex": 4,
+            "indexCount": 4,
+        }, manifest
+    print("hair_selector_gates_shared_base OK")
+
+
+def test_merge_hair_components_into_one_package():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        hair, prop = root / "hair", root / "prop"
+        for package in (hair, prop):
+            (package / "Buffers").mkdir(parents=True)
+            (package / "Shaders").mkdir()
+        (hair / "Buffers" / "Body.IB.R16_UINT.buf").write_bytes(b"h")
+        (prop / "Buffers" / "Body.IB.R16_UINT.buf").write_bytes(b"p")
+        (hair / "mod.ini").write_text(
+            "[Constants]\nglobal $hair = 1\n\n[ShaderOverrideHair]\nhash = hair\n",
+            encoding="utf-8",
+        )
+        (prop / "mod.ini").write_text(
+            "[Constants]\nglobal $prop = 1\n\n[ShaderOverrideProp]\nhash = prop\n"
+            "\n[TextureOverrideProp]\nfilename = Buffers\\Body.IB.R16_UINT.buf\n",
+            encoding="utf-8",
+        )
+        (hair / "manifest.json").write_text(json.dumps({
+            "id": "hair", "name": "hair", "author": "a", "targets": ["mdl_h"],
+            "components": ["hair"], "materials": {}, "vertexCount": 1, "indexCount": 3,
+            "runtimeSelector": {"component": "hairprop", "ibHash": "prop", "firstIndex": 4},
+            "conflicts": ["h.bundle"],
+        }), encoding="utf-8")
+        (prop / "manifest.json").write_text(json.dumps({
+            "id": "prop", "name": "prop", "author": "a", "components": ["hairprop"],
+            "materials": {}, "vertexCount": 2, "indexCount": 6,
+        }), encoding="utf-8")
+        package = core.merge_inverse_skin_packages(
+            hair, prop, root / "out", "merged", "Merged", "a"
+        )
+        ini = (package / "mod.ini").read_text(encoding="utf-8")
+        assert ini.count("[Constants]") == 1 and "[ShaderOverrideProp]" not in ini
+        assert (package / "Buffers" / "Hairprop.Body.IB.R16_UINT.buf").is_file()
+        manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+        assert manifest["components"] == ["hair", "hairprop"]
+    print("merge_hair_components_into_one_package OK")
+
+
+def test_merge_moves_selector_into_hairprop_override():
+    # 合并完整包时:发型的独立 HairpropSelector 块删除,置位注入发饰同 hash 的主 override;
+    # 全程唯一挂此 hash、无 allow_duplicate_hash、latch 由 [Present] 清零、变量全声明。
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        hair, prop = root / "hair", root / "prop"
+        for package in (hair, prop):
+            (package / "Buffers").mkdir(parents=True)
+            (package / "Shaders").mkdir()
+        (prop / "Buffers" / "Body.IB.R16_UINT.buf").write_bytes(b"p")
+        (hair / "mod.ini").write_text(
+            "[Constants]\nglobal $enable_M = 1\nglobal $gmi_M_hairprop_match = 0\n\n"
+            "[Present]\n$gmi_M_hairprop_match = 0\n\n"
+            "[TextureOverrideMHairpropSelector]\nhash = prophash\nmatch_first_index = 4\n"
+            "$gmi_M_hairprop_match = 1\n\n"
+            "[TextureOverrideMHair]\nhash = hairhash\nmatch_first_index = 0\n"
+            "if $enable_M\n  if $gmi_M_hairprop_match == 1\n    handling = skip\n  endif\nendif\n",
+            encoding="utf-8",
+        )
+        (prop / "mod.ini").write_text(
+            "[Constants]\nglobal $enable_P = 1\n\n"
+            "[TextureOverridePHairprop]\nhash = prophash\nmatch_first_index = 4\n"
+            "if $enable_P\n  handling = skip\nendif\n",
+            encoding="utf-8",
+        )
+        (hair / "manifest.json").write_text(json.dumps({
+            "id": "hair", "name": "hair", "author": "a", "targets": ["mdl_h"],
+            "components": ["hair"], "materials": {}, "vertexCount": 1, "indexCount": 3,
+            "runtimeSelector": {"component": "hairprop", "ibHash": "prophash", "firstIndex": 4},
+        }), encoding="utf-8")
+        (prop / "manifest.json").write_text(json.dumps({
+            "id": "prop", "name": "prop", "author": "a", "components": ["hairprop"],
+            "materials": {}, "vertexCount": 2, "indexCount": 6,
+        }), encoding="utf-8")
+        package = core.merge_inverse_skin_packages(hair, prop, root / "out", "m", "M", "a")
+        ini = (package / "mod.ini").read_text(encoding="utf-8")
+        assert "HairpropSelector" not in ini, ini
+        assert "allow_duplicate_hash" not in ini, ini
+        assert ini.count("hash = prophash\n") == 1, ini
+        assert "match_first_index = 4\n$gmi_M_hairprop_match = 1" in ini, ini
+        assert "[Present]\n$gmi_M_hairprop_match = 0" in ini, ini
+        assert "if $gmi_M_hairprop_match == 1" in ini, ini
+        declared = set(re.findall(r"global (\$\w+)", ini))
+        used = set(re.findall(r"(\$\w+)", ini))
+        assert not (used - declared), used - declared
+    print("merge_moves_selector_into_hairprop_override OK")
+
+
 def test_hair_profile_merges_optional_hairprop():
     with tempfile.TemporaryDirectory() as tmp:
         root, source = Path(tmp) / "hair", Path(tmp) / "prop"
@@ -450,5 +616,8 @@ if __name__ == "__main__":
     test_legacy_alpha_modes_fall_back_to_opaque()
     test_legacy_profile_shadecolor_ps_t2_is_remapped_to_t4()
     test_body_layout_is_runtime_autodetected()
+    test_hair_selector_gates_shared_base()
+    test_merge_hair_components_into_one_package()
+    test_merge_moves_selector_into_hairprop_override()
     test_hair_profile_merges_optional_hairprop()
     print("ALL mod_ini_contract OK")

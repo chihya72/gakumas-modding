@@ -54,35 +54,40 @@ try:
 
     scene = bpy.context.scene
     scene.gmi_component_id = "hair"
-    scene.gmi_hairprop_enabled = True
     scene.gmi_capture_dir = str(ROOT)
     scene.gmi_body_json_library_dir = str(ROOT)
     scene.gmi_extract_output_dir = str(ROOT / ".local" / "test-output" / "blender-ui-smoke")
     scene.gmi_body_resource = "mdl_chr_test-hair-0001_hair"
 
-    hairprop_layout = FakeLayout()
-    ui.GMI_PT_main.draw_extract(None, hairprop_layout, scene)
-    ui.GMI_PT_main.draw_skinning(None, hairprop_layout, scene)
-    ui.GMI_PT_main.draw_texture(None, hairprop_layout, scene, bpy.context)
-    ui.GMI_PT_main.draw_export(None, hairprop_layout, scene, bpy.context)
-    assert "gmi.bind_hairprop_rigid" in hairprop_layout.operators
-    assert "gmi_opacity_texture_file" not in hairprop_layout.properties
+    # 工作流四步 = 四个常驻子面板,全部挂在 GMI_PT_main 下
+    for panel_cls in (ui.GMI_PT_step_profile, ui.GMI_PT_step_binding,
+                      ui.GMI_PT_step_texture, ui.GMI_PT_step_export):
+        assert panel_cls.bl_parent_id == "GMI_PT_main", panel_cls
+        assert panel_cls.is_registered, panel_cls
+
+    hair_layout = FakeLayout()
+    ui.draw_profile_step(hair_layout, scene)
+    ui.draw_binding_step(hair_layout, scene)
+    ui.draw_texture_step(hair_layout, scene, bpy.context)
+    ui.draw_export_step(hair_layout, scene, bpy.context)
+    assert "gmi.bind_hairprop_rigid" in hair_layout.operators
+    assert "gmi.transfer_hairprop_weights" in hair_layout.operators
+    assert "gmi_hairprop_base_color_file" in hair_layout.properties
+    assert "gmi_opacity_texture_file" not in hair_layout.properties
 
     scene.gmi_component_id = "body"
-    scene.gmi_hairprop_enabled = False
     body_layout = FakeLayout()
-    ui.GMI_PT_main.draw_texture(None, body_layout, scene, bpy.context)
+    ui.draw_texture_step(body_layout, scene, bpy.context)
     assert "gmi_opacity_texture_file" in body_layout.properties
+    assert "gmi_alpha_mode" in body_layout.properties
 
     # hair 组件:描边色改为常量档下拉,不再显示 body 的逐顶点描边色来源
     scene.gmi_component_id = "hair"
-    scene.gmi_hairprop_enabled = False
-    hair_layout = FakeLayout()
-    ui.GMI_PT_main.draw_texture(None, hair_layout, scene, bpy.context)
-    ui.GMI_PT_main.draw_export(None, hair_layout, scene, bpy.context)
-    assert "gmi_hair_outline_tier" in hair_layout.properties
-    assert "gmi_vertex_color_mode" not in hair_layout.properties
-    scene.gmi_hairprop_enabled = True
+    hair_only_layout = FakeLayout()
+    ui.draw_texture_step(hair_only_layout, scene, bpy.context)
+    ui.draw_export_step(hair_only_layout, scene, bpy.context)
+    assert "gmi_hair_outline_tier" in hair_only_layout.properties
+    assert "gmi_vertex_color_mode" not in hair_only_layout.properties
 
     hints_result = {"vertexCounts": [1], "exact": {"vertexCount": 1}}
     completion = {
@@ -110,7 +115,7 @@ try:
         patch.object(operators, "_resolve_body_json_library", return_value={"body": scene.gmi_body_resource}),
     ):
         assert bpy.ops.gmi.extract_profile_from_frame_dump() == {"FINISHED"}
-        assert hints.call_args.kwargs["mesh_name"] == "Geo_HairProp"
+        assert hints.call_args.kwargs["mesh_name"] == "Geo_Hair"
 
     print("GMI_UI_SMOKE_OK", bpy.app.version_string, sorted(icons))
 finally:

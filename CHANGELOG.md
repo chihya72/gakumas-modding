@@ -4,14 +4,47 @@
 发布包用 `python tools/package_blender_addon.py` 生成（代码版不含 Body JSON 资源库；
 加 `--with-body-lib` 可一并打包）。本地包不提交到公开仓库。
 
-## 0.7.5 — UI 收敛为身体 / 发型，附属组件改为可选项
+## 0.7.6 — 共享基础发型选择器稳定化 + 工作流面板重构
 
-- 制作目标只保留「身体」「发型」：`m_bdyco` 是身体下的可选透明/镂空配饰，
-  `Geo_HairProp` 是发型下的可选发饰，不再暴露为第三个顶层目标。
+- 侧边栏按工作流重构：删除「当前步骤」下拉，① ~ ④ 改为常驻可折叠子面板，
+  四步一览、随时跨步查看；步骤 ① 默认展开。
+- 全部用户可见文本重写：属性名/悬停说明、面板文案、操作器名称与说明、报错提示。
+  每条悬停说明讲清"是什么、哪里来、漏填/填错的后果"（t0 漏填=颜色错乱、t1/t4 的
+  A 通道是数据不是透明度、风险距离顶点属正常待复核、兜底骨填 Hips 等实战踩坑
+  全部写进 tooltip）；错误消息统一指向具体步骤和按钮。
+- 导出面板补上一直缺失的「骨骼映射 / 未映射骨骼兜底」入口（MMD 等外部模型
+  残留控制/物理骨权重时兜底骨填 Hips）。
+- 导出面板在 t0 基础色留空时显式警告（漏填不会报错，而是 mod.ini 静默不生成
+  ps-t0 → 游戏内颜色错乱）；发饰网格已绑定但发饰 t0 留空同样警告。
+- Blender 插件的制作目标保持为「身体 / 发型」两项；发型自动读取配套 hairprop，作者可只替换
+  发型，也可在同一流程中同时准备发饰并自动合并为一个完整发型包。
+- 发型导出若 profile 同时包含 hairprop，会在 hair override 前匹配配套 hairprop 的
+  `IB hash + firstIndex`（manifest 另记录 indexCount）；未匹配的其它发饰保持原版，不再被
+  共享基础 hair 无条件覆盖。
+- 完整发型包的 manifest 记录 `components: ["hair", "hairprop"]`、精确游戏资源 `targets`
+  和 `runtimeSelector`；管理器显示组件组合，不再把完整包误显示成旧的 `hair.weightedMesh`。
+- 当前秦谷美铃 hair-0023 圆香波波头与发饰已合并为一个完整包；旧的两个独立包已移除。
+- 发型选择器改为运行时稳定实现：基础发型只在配套发饰绘制的那一帧替换。此前的实现有三处
+  会失效——① 完整包导出误把 Operator 类当实例调用（`GMI_OT_...().execute()`）导致「校验并
+  导出模组」直接报 `bpy_struct.__new__` 崩溃；② 合并完整包时把发饰的 `[Constants]` 整块删掉，
+  发饰段引用的 `$enable_/$..._layout/$..._probe` 变量未声明，游戏内满屏 `Unrecognised
+  identifier`；③ 发型选择器与发饰替换挂同一 IB hash，靠 `allow_duplicate_hash` 并存，但游戏用的
+  3DMigoto 分支的 TextureOverride 不认这个键 → 两个 override 互相覆盖，选择器不触发，发型永不替换。
+  现改为：选择器 `match=1` 直接注入发饰自己的那个 TextureOverride（全程唯一挂此 hash），
+  每帧末由 `[Present]` 清零 latch；body landmark 不再中途清零（避免夹在发饰和发型 draw 之间导致
+  主 pass 漏替换）。发饰的 `[Constants]` 声明并入发型 `[Constants]`。
+- 发型多候选消歧：基础发型网格常被多套发型共用（同顶点同索引、仅蒙皮骨架不同），资源库靠顶点数
+  无法区分时，改用抓帧里同时出现的配套发饰顶点数选中正确的 bundle。
+- 侧边栏移除 ①~④ 步骤的「下一步：…」提示行——带右向三角图标，易与可折叠面板的折叠三角混淆。
+
+## 0.7.5 — UI 收敛为身体 / 发型，附属组件改为默认配套组件
+
+- 制作目标只保留「身体」「发型」：`m_bdyco` 是身体材质槽可选的透明/镂空路径，
+  `Geo_HairProp` 是发型 profile 默认配套的发饰组件，不再暴露为第三个顶层目标。
 - profile 的逆蒙皮配置下沉到 component；一个发型 profile 可同时保存 hair 与 hairprop
   各自的 VB/IB、drawcall、骨架、贴图和逆算子，并兼容旧单组件 profile。
-- 默认 HMSZ 发型 profile 合并为 hair + hairprop 双组件；勾选「制作发饰（可选）」即可在
-  同一四步流程中切换附属组件。
+- 默认 HMSZ 发型 profile 合并为 hair + hairprop 双组件；是否替换发饰由作者网格和材质决定，
+  不再使用「包含配套发饰」复选框。
 
 ## 0.7.4 — hair/hairprop 语义转正：发型替换全链内建（圆香波波头实机校准）
 
@@ -31,7 +64,7 @@
   其余 = 黑 `(0,0,0)` + A=0，B=8；不再走 body 曲线（黑蝴蝶结绿边）。VB1 手动补丁流程
   全部作废。
 - **文档**：发型道具 = Geo_Hair + Geo_HairProp 双组件（游戏内无单独发饰选择，完整替换
-  = 同一次抓帧出 hair + hairprop 两个包）；证伪旧「发饰包 / 跨包共用 Geo_Hair」表述；
+  = 同一次抓帧得到两个组件，发布时合并为一个完整包）；证伪旧「发饰包 / 跨包共用 Geo_Hair」表述；
   制作目标 tooltip 与 README 同步。
 - **profiles 精简为默认两件套**：`atbm-cstm-0140`（带原生 co 第二材质段的 body 默认档，
   由已导出包离线重建，附 `rebuild_profile.py`）+ `hmsz-hair-0023-hair`（发型默认档）。插件默认配置档路径
