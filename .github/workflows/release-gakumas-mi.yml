@@ -47,6 +47,7 @@ jobs:
 
       - name: 生成面向用户的 Release notes（tag 注解 + Full Changelog）
         run: |
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
           python - "${{ steps.ver.outputs.version }}" "$GITHUB_REF_NAME" > release_notes.md <<'PY'
           import subprocess, sys
 
