@@ -133,6 +133,106 @@
         }
       ],
       "note": "t0/t1/t4 语义按 Gakumas Body 模板命名；未识别槽位保留原 slot。"
+    },
+    "hairprop": {
+      "source": "frame-analysis-runtime",
+      "mainDraw": 246,
+      "pixelShader": "58352a72263d897c",
+      "textureSlots": [],
+      "materialSections": [
+        {
+          "id": "hairprop.section0",
+          "role": "secondary",
+          "firstIndex": 0,
+          "indexCount": 7989,
+          "draws": [
+            3,
+            17,
+            186,
+            243
+          ],
+          "representativeDraw": 243,
+          "vertexShader": "fe50b7a82b0f37be",
+          "pixelShader": "0493c965f3d8dc96",
+          "textureKeyPrefix": "hairprop.section0",
+          "pixelShaders": [
+            "0493c965f3d8dc96",
+            "18ed00ef6e2a2d33",
+            "df3c41c989b71f73"
+          ],
+          "textureSlots": [
+            {
+              "key": "hairprop.section0.baseColor",
+              "slot": "ps-t0",
+              "semantic": "baseColor",
+              "hash": "98fa99cd"
+            },
+            {
+              "key": "hairprop.section0.packedMask",
+              "slot": "ps-t1",
+              "semantic": "packedMask",
+              "hash": "9ce25855"
+            },
+            {
+              "key": "hairprop.section0.t2",
+              "slot": "ps-t2",
+              "semantic": "t2",
+              "hash": "0ff26bed"
+            },
+            {
+              "key": "hairprop.section0.t3",
+              "slot": "ps-t3",
+              "semantic": "t3",
+              "hash": "9e00a8ad"
+            },
+            {
+              "key": "hairprop.section0.shadeColor",
+              "slot": "ps-t4",
+              "semantic": "shadeColor",
+              "hash": "043b70ae"
+            },
+            {
+              "key": "hairprop.section0.ramp",
+              "slot": "ps-t5",
+              "semantic": "ramp",
+              "hash": "b008542b"
+            },
+            {
+              "key": "hairprop.section0.t6",
+              "slot": "ps-t6",
+              "semantic": "t6",
+              "hash": "bb5905b2"
+            }
+          ]
+        },
+        {
+          "id": "hairprop.section1",
+          "role": "main",
+          "firstIndex": 7989,
+          "indexCount": 12300,
+          "draws": [
+            6,
+            15,
+            178,
+            241,
+            245,
+            246
+          ],
+          "representativeDraw": 246,
+          "vertexShader": "e0ceaa854f457e74",
+          "pixelShader": "58352a72263d897c",
+          "textureKeyPrefix": "hairprop",
+          "pixelShaders": [
+            "306c290b065e95cc",
+            "58352a72263d897c",
+            "a04da6e49886b206",
+            "cf02c2d50d3f2230",
+            "f872756c910a6eb7"
+          ],
+          "textureSlots": []
+        }
+      ],
+      "note": "t0/t1/t4 语义按 Gakumas Body 模板命名；未识别槽位保留原 slot。"
     }
   }
 }

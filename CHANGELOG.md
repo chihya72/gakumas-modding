@@ -4,6 +4,15 @@
 发布包用 `python tools/package_blender_addon.py` 生成（代码版不含 Body JSON 资源库；
 加 `--with-body-lib` 可一并打包）。本地包不提交到公开仓库。
 
+## 0.7.5 — UI 收敛为身体 / 发型，附属组件改为可选项
+
+- 制作目标只保留「身体」「发型」：`m_bdyco` 是身体下的可选透明/镂空配饰，
+  `Geo_HairProp` 是发型下的可选发饰，不再暴露为第三个顶层目标。
+- profile 的逆蒙皮配置下沉到 component；一个发型 profile 可同时保存 hair 与 hairprop
+  各自的 VB/IB、drawcall、骨架、贴图和逆算子，并兼容旧单组件 profile。
+- 默认 HMSZ 发型 profile 合并为 hair + hairprop 双组件；勾选「制作发饰（可选）」即可在
+  同一四步流程中切换附属组件。
+
 ## 0.7.4 — hair/hairprop 语义转正：发型替换全链内建（圆香波波头实机校准）
 
 以 scsp 圆香波波头 + 三件发饰 → hmsz-hair-0023 的全程实机迭代为校准样本

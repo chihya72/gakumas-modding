@@ -410,6 +410,37 @@ def test_manifest_target_is_body_resource_and_cover():
     print("manifest_target_is_body_resource_and_cover OK")
 
 
+def test_hair_profile_merges_optional_hairprop():
+    with tempfile.TemporaryDirectory() as tmp:
+        root, source = Path(tmp) / "hair", Path(tmp) / "prop"
+        for path in (root, source):
+            (path / "Reference").mkdir(parents=True)
+            (path / "Buffers").mkdir()
+        base_config = {
+            "sourceVertexCount": 1, "weightedBoneCount": 1, "coefficientCount": 4,
+            "inverseOperator": "Buffers/InverseOperator.R32_FLOAT.buf",
+            "meshJson": "Reference/Geo_Hair.json", "skeletonJson": "Reference/Geo_Hair.skeleton.json",
+        }
+        prop_config = {**base_config, "meshJson": "Reference/Geo_HairProp.json",
+                       "skeletonJson": "Reference/Geo_HairProp.skeleton.json"}
+        for path, component, config in ((root, "hair", base_config), (source, "hairprop", prop_config)):
+            (path / "profile.json").write_text(json.dumps({
+                "skinning": {"inverseSkin": config}, "components": [{"id": component}]
+            }), encoding="utf-8")
+            (path / "drawcall_map.json").write_text(json.dumps({"components": {component: {}}}), encoding="utf-8")
+            (path / "texture_map.json").write_text(json.dumps({"textures": {f"{component}.baseColor": {}}}), encoding="utf-8")
+            (path / "material_map.json").write_text(json.dumps({"materials": {component: {}}}), encoding="utf-8")
+            for rel in (config["meshJson"], config["skeletonJson"], config["inverseOperator"]):
+                (path / rel).write_bytes(b"x")
+        core.merge_profile_component(root, source, "hairprop")
+        merged = json.loads((root / "profile.json").read_text(encoding="utf-8"))
+        parts = {item["id"]: item for item in merged["components"]}
+        assert set(parts) == {"hair", "hairprop"}
+        assert parts["hairprop"]["inverseSkin"]["inverseOperator"].startswith("Buffers/Hairprop.")
+        assert (root / parts["hairprop"]["inverseSkin"]["inverseOperator"]).is_file()
+    print("hair_profile_merges_optional_hairprop OK")
+
+
 if __name__ == "__main__":
     test_opaque_ini_contract()
     test_manifest_target_is_body_resource_and_cover()
@@ -419,4 +450,5 @@ if __name__ == "__main__":
     test_legacy_alpha_modes_fall_back_to_opaque()
     test_legacy_profile_shadecolor_ps_t2_is_remapped_to_t4()
     test_body_layout_is_runtime_autodetected()
+    test_hair_profile_merges_optional_hairprop()
     print("ALL mod_ini_contract OK")

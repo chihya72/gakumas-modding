@@ -245,6 +245,333 @@
           }
         }
       }
+    },
+    "hairprop": {
+      "mainDraw": 246,
+      "passBindings": {
+        "draw_000006": {
+          "role": "shadow_or_depth",
+          "draw": 6,
+          "vertexShader": "436f9c16af3b54cf",
+          "pixelShader": "a04da6e49886b206",
+          "firstIndex": 7989,
+          "indexCount": 12300,
+          "vertexCount": 5394,
+          "streams": {
+            "ib": "d9cfd2ab",
+            "vb0": "c927c774",
+            "vb1": "3a178935"
+          },
+          "streamFiles": {
+            "ib": "000006-ib=d9cfd2ab-vs=436f9c16af3b54cf-ps=a04da6e49886b206.buf",
+            "vb0": "000006-vb0=c927c774-vs=436f9c16af3b54cf-ps=a04da6e49886b206.buf",
+            "vb1": "000006-vb1=3a178935-vs=436f9c16af3b54cf-ps=a04da6e49886b206.buf"
+          }
+        },
+        "draw_000015": {
+          "role": "shadow_or_depth",
+          "draw": 15,
+          "vertexShader": "221c573337491c78",
+          "pixelShader": "a04da6e49886b206",
+          "firstIndex": 7989,
+          "indexCount": 12300,
+          "vertexCount": 5394,
+          "streams": {
+            "ib": "d9cfd2ab",
+            "vb0": "c927c774",
+            "vb1": "3a178935"
+          },
+          "streamFiles": {
+            "ib": "000015-ib=d9cfd2ab-vs=221c573337491c78-ps=a04da6e49886b206.buf",
+            "vb0": "000015-vb0=c927c774-vs=221c573337491c78-ps=a04da6e49886b206.buf",
+            "vb1": "000015-vb1=3a178935-vs=221c573337491c78-ps=a04da6e49886b206.buf"
+          }
+        },
+        "draw_000178": {
+          "role": "shadow_or_depth",
+          "draw": 178,
+          "vertexShader": "5b7fff8ecccaf579",
+          "pixelShader": "cf02c2d50d3f2230",
+          "firstIndex": 7989,
+          "indexCount": 12300,
+          "vertexCount": 5394,
+          "streams": {
+            "ib": "d9cfd2ab",
+            "vb0": "c927c774",
+            "vb1": "3a178935"
+          },
+          "streamFiles": {
+            "ib": "000178-ib=d9cfd2ab-vs=5b7fff8ecccaf579-ps=cf02c2d50d3f2230.buf",
+            "vb0": "000178-vb0=c927c774-vs=5b7fff8ecccaf579-ps=cf02c2d50d3f2230.buf",
+            "vb1": "000178-vb1=3a178935-vs=5b7fff8ecccaf579-ps=cf02c2d50d3f2230.buf"
+          }
+        },
+        "draw_000241": {
+          "role": "shadow_or_depth",
+          "draw": 241,
+          "vertexShader": "fe50b7a82b0f37be",
+          "pixelShader": "f872756c910a6eb7",
+          "firstIndex": 7989,
+          "indexCount": 12300,
+          "vertexCount": 5394,
+          "streams": {
+            "ib": "d9cfd2ab",
+            "vb0": "c927c774",
+            "vb1": "3a178935"
+          },
+          "streamFiles": {
+            "ib": "000241-ib=d9cfd2ab-vs=fe50b7a82b0f37be-ps=f872756c910a6eb7.buf",
+            "vb0": "000241-vb0=c927c774-vs=fe50b7a82b0f37be-ps=f872756c910a6eb7.buf",
+            "vb1": "000241-vb1=3a178935-vs=fe50b7a82b0f37be-ps=f872756c910a6eb7.buf"
+          }
+        },
+        "draw_000245": {
+          "role": "shadow_or_depth",
+          "draw": 245,
+          "vertexShader": "fe50b7a82b0f37be",
+          "pixelShader": "306c290b065e95cc",
+          "firstIndex": 7989,
+          "indexCount": 12300,
+          "vertexCount": 5394,
+          "streams": {
+            "ib": "d9cfd2ab",
+            "vb0": "c927c774",
+            "vb1": "3a178935"
+          },
+          "streamFiles": {
+            "ib": "000245-ib=d9cfd2ab-vs=fe50b7a82b0f37be-ps=306c290b065e95cc.buf",
+            "vb0": "000245-vb0=c927c774-vs=fe50b7a82b0f37be-ps=306c290b065e95cc.buf",
+            "vb1": "000245-vb1=3a178935-vs=fe50b7a82b0f37be-ps=306c290b065e95cc.buf"
+          }
+        },
+        "draw_000246": {
+          "role": "main",
+          "draw": 246,
+          "vertexShader": "e0ceaa854f457e74",
+          "pixelShader": "58352a72263d897c",
+          "firstIndex": 7989,
+          "indexCount": 12300,
+          "vertexCount": 5394,
+          "streams": {
+            "ib": "d9cfd2ab",
+            "vb0": "c927c774",
+            "vb1": "3a178935"
+          },
+          "streamFiles": {
+            "ib": "000246-ib=d9cfd2ab-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf",
+            "vb0": "000246-vb0=c927c774-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf",
+            "vb1": "000246-vb1=3a178935-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf"
+          }
+        }
+      },
+      "sectionBindings": {
+        "hairprop.section0": {
+          "role": "secondary",
+          "firstIndex": 0,
+          "indexCount": 7989,
+          "representativeDraw": 243,
+          "passBindings": {
+            "draw_000003": {
+              "role": "secondary",
+              "draw": 3,
+              "vertexShader": "436f9c16af3b54cf",
+              "pixelShader": "df3c41c989b71f73",
+              "firstIndex": 0,
+              "indexCount": 7989,
+              "vertexCount": 5394,
+              "streams": {
+                "ib": "d9cfd2ab",
+                "vb0": "c927c774",
+                "vb1": "3a178935"
+              },
+              "streamFiles": {
+                "ib": "000003-ib=d9cfd2ab-vs=436f9c16af3b54cf-ps=df3c41c989b71f73.buf",
+                "vb0": "000003-vb0=c927c774-vs=436f9c16af3b54cf-ps=df3c41c989b71f73.buf",
+                "vb1": "000003-vb1=3a178935-vs=436f9c16af3b54cf-ps=df3c41c989b71f73.buf"
+              }
+            },
+            "draw_000017": {
+              "role": "secondary",
+              "draw": 17,
+              "vertexShader": "221c573337491c78",
+              "pixelShader": "df3c41c989b71f73",
+              "firstIndex": 0,
+              "indexCount": 7989,
+              "vertexCount": 5394,
+              "streams": {
+                "ib": "d9cfd2ab",
+                "vb0": "c927c774",
+                "vb1": "3a178935"
+              },
+              "streamFiles": {
+                "ib": "000017-ib=d9cfd2ab-vs=221c573337491c78-ps=df3c41c989b71f73.buf",
+                "vb0": "000017-vb0=c927c774-vs=221c573337491c78-ps=df3c41c989b71f73.buf",
+                "vb1": "000017-vb1=3a178935-vs=221c573337491c78-ps=df3c41c989b71f73.buf"
+              }
+            },
+            "draw_000186": {
+              "role": "secondary",
+              "draw": 186,
+              "vertexShader": "5b7fff8ecccaf579",
+              "pixelShader": "18ed00ef6e2a2d33",
+              "firstIndex": 0,
+              "indexCount": 7989,
+              "vertexCount": 5394,
+              "streams": {
+                "ib": "d9cfd2ab",
+                "vb0": "c927c774",
+                "vb1": "3a178935"
+              },
+              "streamFiles": {
+                "ib": "000186-ib=d9cfd2ab-vs=5b7fff8ecccaf579-ps=18ed00ef6e2a2d33.buf",
+                "vb0": "000186-vb0=c927c774-vs=5b7fff8ecccaf579-ps=18ed00ef6e2a2d33.buf",
+                "vb1": "000186-vb1=3a178935-vs=5b7fff8ecccaf579-ps=18ed00ef6e2a2d33.buf"
+              }
+            },
+            "draw_000243": {
+              "role": "secondary",
+              "draw": 243,
+              "vertexShader": "fe50b7a82b0f37be",
+              "pixelShader": "0493c965f3d8dc96",
+              "firstIndex": 0,
+              "indexCount": 7989,
+              "vertexCount": 5394,
+              "streams": {
+                "ib": "d9cfd2ab",
+                "vb0": "c927c774",
+                "vb1": "3a178935"
+              },
+              "streamFiles": {
+                "ib": "000243-ib=d9cfd2ab-vs=fe50b7a82b0f37be-ps=0493c965f3d8dc96.buf",
+                "vb0": "000243-vb0=c927c774-vs=fe50b7a82b0f37be-ps=0493c965f3d8dc96.buf",
+                "vb1": "000243-vb1=3a178935-vs=fe50b7a82b0f37be-ps=0493c965f3d8dc96.buf"
+              }
+            }
+          }
+        },
+        "hairprop.section1": {
+          "role": "main",
+          "firstIndex": 7989,
+          "indexCount": 12300,
+          "representativeDraw": 246,
+          "passBindings": {
+            "draw_000006": {
+              "role": "main",
+              "draw": 6,
+              "vertexShader": "436f9c16af3b54cf",
+              "pixelShader": "a04da6e49886b206",
+              "firstIndex": 7989,
+              "indexCount": 12300,
+              "vertexCount": 5394,
+              "streams": {
+                "ib": "d9cfd2ab",
+                "vb0": "c927c774",
+                "vb1": "3a178935"
+              },
+              "streamFiles": {
+                "ib": "000006-ib=d9cfd2ab-vs=436f9c16af3b54cf-ps=a04da6e49886b206.buf",
+                "vb0": "000006-vb0=c927c774-vs=436f9c16af3b54cf-ps=a04da6e49886b206.buf",
+                "vb1": "000006-vb1=3a178935-vs=436f9c16af3b54cf-ps=a04da6e49886b206.buf"
+              }
+            },
+            "draw_000015": {
+              "role": "main",
+              "draw": 15,
+              "vertexShader": "221c573337491c78",
+              "pixelShader": "a04da6e49886b206",
+              "firstIndex": 7989,
+              "indexCount": 12300,
+              "vertexCount": 5394,
+              "streams": {
+                "ib": "d9cfd2ab",
+                "vb0": "c927c774",
+                "vb1": "3a178935"
+              },
+              "streamFiles": {
+                "ib": "000015-ib=d9cfd2ab-vs=221c573337491c78-ps=a04da6e49886b206.buf",
+                "vb0": "000015-vb0=c927c774-vs=221c573337491c78-ps=a04da6e49886b206.buf",
+                "vb1": "000015-vb1=3a178935-vs=221c573337491c78-ps=a04da6e49886b206.buf"
+              }
+            },
+            "draw_000178": {
+              "role": "main",
+              "draw": 178,
+              "vertexShader": "5b7fff8ecccaf579",
+              "pixelShader": "cf02c2d50d3f2230",
+              "firstIndex": 7989,
+              "indexCount": 12300,
+              "vertexCount": 5394,
+              "streams": {
+                "ib": "d9cfd2ab",
+                "vb0": "c927c774",
+                "vb1": "3a178935"
+              },
+              "streamFiles": {
+                "ib": "000178-ib=d9cfd2ab-vs=5b7fff8ecccaf579-ps=cf02c2d50d3f2230.buf",
+                "vb0": "000178-vb0=c927c774-vs=5b7fff8ecccaf579-ps=cf02c2d50d3f2230.buf",
+                "vb1": "000178-vb1=3a178935-vs=5b7fff8ecccaf579-ps=cf02c2d50d3f2230.buf"
+              }
+            },
+            "draw_000241": {
+              "role": "main",
+              "draw": 241,
+              "vertexShader": "fe50b7a82b0f37be",
+              "pixelShader": "f872756c910a6eb7",
+              "firstIndex": 7989,
+              "indexCount": 12300,
+              "vertexCount": 5394,
+              "streams": {
+                "ib": "d9cfd2ab",
+                "vb0": "c927c774",
+                "vb1": "3a178935"
+              },
+              "streamFiles": {
+                "ib": "000241-ib=d9cfd2ab-vs=fe50b7a82b0f37be-ps=f872756c910a6eb7.buf",
+                "vb0": "000241-vb0=c927c774-vs=fe50b7a82b0f37be-ps=f872756c910a6eb7.buf",
+                "vb1": "000241-vb1=3a178935-vs=fe50b7a82b0f37be-ps=f872756c910a6eb7.buf"
+              }
+            },
+            "draw_000245": {
+              "role": "main",
+              "draw": 245,
+              "vertexShader": "fe50b7a82b0f37be",
+              "pixelShader": "306c290b065e95cc",
+              "firstIndex": 7989,
+              "indexCount": 12300,
+              "vertexCount": 5394,
+              "streams": {
+                "ib": "d9cfd2ab",
+                "vb0": "c927c774",
+                "vb1": "3a178935"
+              },
+              "streamFiles": {
+                "ib": "000245-ib=d9cfd2ab-vs=fe50b7a82b0f37be-ps=306c290b065e95cc.buf",
+                "vb0": "000245-vb0=c927c774-vs=fe50b7a82b0f37be-ps=306c290b065e95cc.buf",
+                "vb1": "000245-vb1=3a178935-vs=fe50b7a82b0f37be-ps=306c290b065e95cc.buf"
+              }
+            },
+            "draw_000246": {
+              "role": "main",
+              "draw": 246,
+              "vertexShader": "e0ceaa854f457e74",
+              "pixelShader": "58352a72263d897c",
+              "firstIndex": 7989,
+              "indexCount": 12300,
+              "vertexCount": 5394,
+              "streams": {
+                "ib": "d9cfd2ab",
+                "vb0": "c927c774",
+                "vb1": "3a178935"
+              },
+              "streamFiles": {
+                "ib": "000246-ib=d9cfd2ab-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf",
+                "vb0": "000246-vb0=c927c774-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf",
+                "vb1": "000246-vb1=3a178935-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf"
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

@@ -6,6 +6,10 @@ import bpy
 from bpy.types import Operator
 
 
+def _scene_component_id(scene):
+    return "hairprop" if scene.gmi_component_id == "hair" and scene.gmi_hairprop_enabled else scene.gmi_component_id
+
+
 def _png_to_dds(image_path, srgb=True):
     """把 PNG/其它图像转成未压缩 RGBA8 的 DDS（DX10 头），返回临时 DDS 路径。
 
@@ -128,7 +132,7 @@ def _resolve_body_json_library(scene):
     profile_dir = bpy.path.abspath(scene.gmi_profile_dir)
     # 已补全的配置档自带 Reference（真实或合成骨架），优先用它，与资源库解耦。
     if profile_dir:
-        ref = core.resolve_profile_reference(profile_dir)
+        ref = core.resolve_profile_reference(profile_dir, _scene_component_id(scene))
         if ref:
             scene.gmi_source_mesh_json = ref["meshJson"]
             scene.gmi_skeleton_json = ref["skeletonJson"]
@@ -136,7 +140,7 @@ def _resolve_body_json_library(scene):
     library_dir = bpy.path.abspath(scene.gmi_body_json_library_dir)
     if not library_dir:
         raise ValueError("请先选择网格 JSON 资源库目录")
-    result = core.resolve_body_json_resource(profile_dir, library_dir, scene.gmi_component_id)
+    result = core.resolve_body_json_resource(profile_dir, library_dir, _scene_component_id(scene))
     scene.gmi_source_mesh_json = result["meshJson"]
     scene.gmi_skeleton_json = result.get("skeletonJson") or ""
     return result
@@ -1161,7 +1165,7 @@ class GMI_OT_import_profile_object(Operator):
         try:
             profile_set = core.load_profile_set(profile_dir)
             profile = profile_set["profile"]
-            component = core.component_by_id(profile, scene.gmi_component_id)
+            component = core.component_by_id(profile, _scene_component_id(scene))
             resolved = _resolve_body_json_library(scene)
             mesh_path = Path(resolved["meshJson"])
             skeleton_path = Path(resolved["skeletonJson"])
@@ -1170,13 +1174,13 @@ class GMI_OT_import_profile_object(Operator):
             author_collection = _collection(context, "GMI_作者模型")
             export_collection = _collection(context, "GMI_导出对象")
             export_collection["gmi_profile_id"] = profile["id"]
-            export_collection["gmi_component_id"] = scene.gmi_component_id
+            export_collection["gmi_component_id"] = _scene_component_id(scene)
 
-            reference_data = core.read_reference(profile_dir, scene.gmi_component_id, capture_dir)
-            reference_obj = _create_mesh(context, f"GMI_{scene.gmi_component_id}_抓帧参考", reference_data)
+            reference_data = core.read_reference(profile_dir, _scene_component_id(scene), capture_dir)
+            reference_obj = _create_mesh(context, f"GMI_{_scene_component_id(scene)}_抓帧参考", reference_data)
             reference_obj["gmi_profile_id"] = profile["id"]
             reference_obj["gmi_profile_dir"] = str(profile_set["root"])
-            reference_obj["gmi_component_id"] = scene.gmi_component_id
+            reference_obj["gmi_component_id"] = _scene_component_id(scene)
             reference_obj["gmi_source_vertex_count"] = component["vertices"]
             reference_obj["gmi_source_index_count"] = component["indices"]
             reference_obj["gmi_source_ib_hash"] = component["ibHash"]
@@ -1190,7 +1194,7 @@ class GMI_OT_import_profile_object(Operator):
             armature = _create_armature(context, weighted_obj, weighted_data)
             weighted_obj["gmi_profile_id"] = profile["id"]
             weighted_obj["gmi_profile_dir"] = str(profile_set["root"])
-            weighted_obj["gmi_component_id"] = scene.gmi_component_id
+            weighted_obj["gmi_component_id"] = _scene_component_id(scene)
             weighted_obj["gmi_source_vertex_count"] = component["vertices"]
             weighted_obj["gmi_source_index_count"] = component["indices"]
             weighted_obj["gmi_source_ib_hash"] = component["ibHash"]
@@ -1257,7 +1261,7 @@ class GMI_OT_extract_profile_from_frame_dump(Operator):
                 hints = core.body_json_vertex_hints(
                     bpy.path.abspath(scene.gmi_body_json_library_dir),
                     scene.gmi_body_resource,
-                    mesh_name=core.component_mesh_name(scene.gmi_component_id),
+                    mesh_name=core.component_mesh_name(_scene_component_id(scene)),
                 )
                 expected_vertex_counts = hints["vertexCounts"]
                 entry = hints["exact"]
@@ -1266,7 +1270,7 @@ class GMI_OT_extract_profile_from_frame_dump(Operator):
             report = core.extract_profile_from_frame_dump(
                 capture_dir,
                 output_dir,
-                component_id=scene.gmi_component_id,
+                component_id=_scene_component_id(scene),
                 main_draw=scene.gmi_extract_draw or None,
                 expected_vertex_count=expected_vertex_count,
                 expected_vertex_counts=expected_vertex_counts,
@@ -1333,6 +1337,25 @@ class GMI_OT_build_full_profile(Operator):
                 output_dir, library_dir, component_id,
                 body_resource=(scene.gmi_body_resource or None),
             )
+            if component_id == "hair" and scene.gmi_hairprop_enabled:
+                prop_hints = core.body_json_vertex_hints(
+                    library_dir, scene.gmi_body_resource,
+                    mesh_name=core.component_mesh_name("hairprop"),
+                )
+                if not prop_hints["vertexCounts"]:
+                    raise ValueError("发型资源库缺少 Geo_HairProp.json；取消可选发饰或补全资源库")
+                with tempfile.TemporaryDirectory(prefix="gmi-hairprop-") as prop_dir:
+                    core.extract_profile_from_frame_dump(
+                        capture_dir, prop_dir, component_id="hairprop",
+                        expected_vertex_count=(prop_hints.get("exact") or {}).get("vertexCount"),
+                        expected_vertex_counts=prop_hints["vertexCounts"],
+                        body_resource=(scene.gmi_body_resource or None),
+                    )
+                    core.complete_inverse_skin_profile(
+                        prop_dir, library_dir, "hairprop",
+                        body_resource=(scene.gmi_body_resource or None),
+                    )
+                    core.merge_profile_component(output_dir, prop_dir, "hairprop")
             scene.gmi_profile_dir = output_dir
             naming = "骨架名" if report["boneNaming"] == "skeleton" else "骨骼hash(合成骨架)"
             self.report(
@@ -1389,12 +1412,12 @@ class GMI_OT_import_reference(Operator):
         scene = context.scene
         profile_dir, capture_dir, _ = _scene_paths(scene)
         try:
-            data = core.read_reference(profile_dir, scene.gmi_component_id, capture_dir)
+            data = core.read_reference(profile_dir, _scene_component_id(scene), capture_dir)
             component = data["component"]
-            obj = _create_mesh(context, f"GMI_{scene.gmi_component_id}_参考", data)
+            obj = _create_mesh(context, f"GMI_{_scene_component_id(scene)}_参考", data)
             obj["gmi_profile_id"] = data["profile_set"]["profile"]["id"]
             obj["gmi_profile_dir"] = str(data["profile_set"]["root"])
-            obj["gmi_component_id"] = scene.gmi_component_id
+            obj["gmi_component_id"] = _scene_component_id(scene)
             obj["gmi_source_vertex_count"] = component["vertices"]
             obj["gmi_source_index_count"] = component.get("indices", len(data["faces"]) * 3)
             obj["gmi_source_ib_hash"] = component["ibHash"]
@@ -1425,10 +1448,10 @@ class GMI_OT_import_weighted_reference(Operator):
             obj = _create_mesh(context, f"GMI_{data['name']}_带权重参考", data)
             armature = _create_armature(context, obj, data)
             profile = profile_set["profile"]
-            component = core.component_by_id(profile, scene.gmi_component_id)
+            component = core.component_by_id(profile, _scene_component_id(scene))
             obj["gmi_profile_id"] = profile["id"]
             obj["gmi_profile_dir"] = bpy.path.abspath(scene.gmi_profile_dir)
-            obj["gmi_component_id"] = scene.gmi_component_id
+            obj["gmi_component_id"] = _scene_component_id(scene)
             obj["gmi_source_vertex_count"] = component["vertices"]
             obj["gmi_source_index_count"] = component["indices"]
             obj["gmi_source_ib_hash"] = component["ibHash"]
@@ -1550,8 +1573,8 @@ class GMI_OT_bind_hairprop_rigid(Operator):
 
     def execute(self, context):
         scene = context.scene
-        if scene.gmi_component_id != "hairprop":
-            self.report({"ERROR"}, "请先把组件设为 hairprop")
+        if _scene_component_id(scene) != "hairprop":
+            self.report({"ERROR"}, "请先选择发型并勾选「制作发饰（可选）」")
             return {"CANCELLED"}
         try:
             reference = _profile_weight_reference(context)
@@ -1755,7 +1778,9 @@ class GMI_OT_validate_mesh(Operator):
                 component = core.component_by_id(
                     profile_set["profile"], obj.get("gmi_component_id", "body")
                 )
-                known = set(core.inverse_skin_bone_map(obj["gmi_profile_dir"]))
+                known = set(core.inverse_skin_bone_map(
+                    obj["gmi_profile_dir"], component_id=obj.get("gmi_component_id", "body")
+                ))
                 group_names = {group.index: group.name for group in obj.vertex_groups}
                 errors, warnings = [], []
                 if any(len(poly.vertices) != 3 for poly in obj.data.polygons):
@@ -1872,7 +1897,7 @@ class GMI_OT_export_inverse_skin_mod(Operator):
             resolved = _resolve_body_json_library(scene)
             skeleton_path = Path(resolved["skeletonJson"])
             bone_map = core.inverse_skin_bone_map(
-                profile_dir, skeleton_path
+                profile_dir, skeleton_path, _scene_component_id(scene)
             )
             skeleton = core.load_json(skeleton_path)
             source_bind = {
@@ -1892,7 +1917,7 @@ class GMI_OT_export_inverse_skin_mod(Operator):
             )
             known_textures = profile_set["textures"].get("textures", {})
             material_textures = {}
-            texture_prefix = scene.gmi_component_id
+            texture_prefix = _scene_component_id(scene)
             for key, value, semantic in (
                 (f"{texture_prefix}.baseColor", scene.gmi_base_color_file, None),
                 (f"{texture_prefix}.packedMask", scene.gmi_packed_mask_file, "packedMask"),
@@ -1906,12 +1931,12 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                     material_textures[key] = path
                 elif semantic and scene.gmi_neutral_material and key in known_textures:
                     # 没提供时用中性贴图盖掉原版 t1/t4（仅当配置档有该槽位）
-                    material_textures[key] = _neutral_material_dds(semantic, scene.gmi_component_id)
+                    material_textures[key] = _neutral_material_dds(semantic, _scene_component_id(scene))
             # 描边颜色来源：「描边颜色」=取自基础色 → 基础色曲线；黑色常量 → 黑边；
             # 按材质预设 → 保留 gather 的逐材质预设色。宽度已在 gather 按「描边宽度」处理,这里不动。
             # hair 例外:描边色是全网格常量档,B/A 从参考网格最近邻拷贝(实机验证语义)。
             export_color_synthesis = None
-            if scene.gmi_component_id == "hair":
+            if _scene_component_id(scene) == "hair":
                 reference = _profile_weight_reference(context)
                 if reference.get("gmi_component_id") != "hair":
                     raise ValueError("场景中的带权重参考模型不是 hair,无法拷贝 hair 顶点色语义")
@@ -1925,7 +1950,7 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                     reference, data, scene.gmi_hair_outline_tier,
                     scene.gmi_outline_width_mode, no_outline,
                 )
-            elif scene.gmi_component_id == "hairprop":
+            elif _scene_component_id(scene) == "hairprop":
                 # 发饰同属常量描边语义(暗部逐顶点合成会塌绿),按材质槽类型给常量
                 no_outline = set()
                 if scene.gmi_outline_width_mode == "RISK_ONLY":
@@ -1939,7 +1964,7 @@ class GMI_OT_export_inverse_skin_mod(Operator):
             elif scene.gmi_vertex_color_mode == "BASECOLOR":
                 data["colors"], export_color_synthesis = _synthesize_export_native_colors(
                     profile_dir,
-                    scene.gmi_component_id,
+                    _scene_component_id(scene),
                     data,
                     material_textures.get(f"{texture_prefix}.baseColor") or scene.gmi_base_color_file,
                     _material_slot_color_map(obj),
@@ -1972,7 +1997,7 @@ class GMI_OT_export_inverse_skin_mod(Operator):
             cover_path = _prepare_cover_image(cover_src)
             package = core.write_inverse_skin_package(
                 profile_dir, output_dir, scene.gmi_package_id, scene.gmi_package_name,
-                scene.gmi_author, scene.gmi_component_id,
+                scene.gmi_author, _scene_component_id(scene),
                 data["vertices"], data["normals"], data["tangents"], data["uv0"],
                 data["uv1"], data["colors"], data["faces"], data["skin"],
                 data["corrections"], material_textures=material_textures,
@@ -2049,7 +2074,7 @@ class GMI_OT_create_body_material_template(Operator):
             self.report({"ERROR"}, "请选择要添加材质模板的网格")
             return {"CANCELLED"}
         scene = context.scene
-        component_id = scene.gmi_component_id
+        component_id = _scene_component_id(scene)
         target_name = "发饰" if component_id == "hairprop" else "发型" if component_id == "hair" else "身体"
         material = bpy.data.materials.new(f"GMI_{target_name}材质模板")
         material.use_nodes = True
@@ -2160,8 +2185,8 @@ class GMI_OT_bake_material_maps(Operator):
 
         scene = context.scene
         target_name = (
-            "发饰" if scene.gmi_component_id == "hairprop"
-            else "发型" if scene.gmi_component_id == "hair"
+            "发饰" if _scene_component_id(scene) == "hairprop"
+            else "发型" if _scene_component_id(scene) == "hair"
             else "身体"
         )
         obj = context.active_object
@@ -2264,7 +2289,7 @@ class GMI_OT_bake_material_maps(Operator):
             ao = _compute_vertex_ao(obj)
             form_map = _slot_form_map(opaque_slots, width, ao)
         # hair 组件未覆盖区/缝隙用 hair 预设补(其 t1.A=0 语义 ≠ body 中性的 AO=255)
-        neutral_key = "hair" if scene.gmi_component_id == "hair" else "neutral"
+        neutral_key = "hair" if _scene_component_id(scene) == "hair" else "neutral"
         t1, t4 = core.bake_material_maps(
             id_map, base8, class_per_slot, presets,
             form_map=form_map, form_strength=scene.gmi_form_strength,

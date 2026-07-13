@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "frame-FrameAnalysis-2026-07-13-015228-hair-a7f03695",
+  "id": "frame-FrameAnalysis-2026-07-13-015228-hair-item",
   "status": "complete-inverse-skin",
   "target": {
     "actorId": "hmsz",
@@ -25,18 +25,7 @@
   },
   "skinning": {
     "drawInput": "CPU-skinned or runtime-skinned final vertex buffer",
-    "status": "inverse-skin operator built from matched library Mesh",
-    "inverseSkin": {
-      "sourceVertexCount": 11459,
-      "weightedBoneCount": 73,
-      "coefficientCount": 292,
-      "posedVertexStride": 40,
-      "inverseOperator": "Buffers/InverseOperator.R32_FLOAT.buf",
-      "meshJson": "Reference/Geo_Hair.json",
-      "skeletonJson": "Reference/Geo_Hair.skeleton.json",
-      "boneNaming": "skeleton",
-      "unobservableBones": []
-    }
+    "status": "per-component inverse-skin operators"
   },
   "components": [
     {
@@ -97,6 +86,111 @@
       "hashNotes": {
         "positionNormalTangent": "filename",
         "colorUv": "filename"
+      },
+      "inverseSkin": {
+        "sourceVertexCount": 11459,
+        "weightedBoneCount": 73,
+        "coefficientCount": 292,
+        "posedVertexStride": 40,
+        "inverseOperator": "Buffers/InverseOperator.R32_FLOAT.buf",
+        "meshJson": "Reference/Geo_Hair.json",
+        "skeletonJson": "Reference/Geo_Hair.skeleton.json",
+        "boneNaming": "skeleton",
+        "unobservableBones": []
+      }
+    },
+    {
+      "id": "hairprop",
+      "kind": "body",
+      "source": "frame-analysis-runtime",
+      "confidence": "manual-draw-selected",
+      "ibHash": "d9cfd2ab",
+      "vbHashes": {
+        "positionNormalTangent": "c927c774",
+        "colorUv": "3a178935"
+      },
+      "resourceFiles": {
+        "ib": "000246-ib=d9cfd2ab-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf",
+        "vb0": "000246-vb0=c927c774-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf",
+        "vb1": "000246-vb1=3a178935-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf"
+      },
+      "vertices": 5394,
+      "indices": 12300,
+      "mainFirstIndex": 7989,
+      "tailFirstIndices": [
+        0
+      ],
+      "materialSections": [
+        {
+          "id": "hairprop.section0",
+          "role": "secondary",
+          "firstIndex": 0,
+          "indexCount": 7989,
+          "draws": [
+            3,
+            17,
+            186,
+            243
+          ],
+          "representativeDraw": 243,
+          "vertexShader": "fe50b7a82b0f37be",
+          "pixelShader": "0493c965f3d8dc96",
+          "textureKeyPrefix": "hairprop.section0",
+          "pixelShaders": [
+            "0493c965f3d8dc96",
+            "18ed00ef6e2a2d33",
+            "df3c41c989b71f73"
+          ]
+        },
+        {
+          "id": "hairprop.section1",
+          "role": "main",
+          "firstIndex": 7989,
+          "indexCount": 12300,
+          "draws": [
+            6,
+            15,
+            178,
+            241,
+            245,
+            246
+          ],
+          "representativeDraw": 246,
+          "vertexShader": "e0ceaa854f457e74",
+          "pixelShader": "58352a72263d897c",
+          "textureKeyPrefix": "hairprop",
+          "pixelShaders": [
+            "306c290b065e95cc",
+            "58352a72263d897c",
+            "a04da6e49886b206",
+            "cf02c2d50d3f2230",
+            "f872756c910a6eb7"
+          ]
+        }
+      ],
+      "draws": [
+        6,
+        15,
+        178,
+        241,
+        245,
+        246
+      ],
+      "mainDraw": 246,
+      "hashNotes": {
+        "positionNormalTangent": "filename",
+        "colorUv": "filename"
+      },
+      "inverseSkin": {
+        "sourceVertexCount": 5394,
+        "weightedBoneCount": 62,
+        "coefficientCount": 248,
+        "posedVertexStride": 40,
+        "inverseOperator": "Buffers/Hairprop.InverseOperator.R32_FLOAT.buf",
+        "meshJson": "Reference/Geo_HairProp.json",
+        "skeletonJson": "Reference/Geo_HairProp.skeleton.json",
+        "boneNaming": "boneNameHash(命名 61/62)",
+        "unobservableBones": []
       }
     }
   ]

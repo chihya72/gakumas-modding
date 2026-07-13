@@ -1311,7 +1311,13 @@ def _synthesize_skeleton_from_mesh(mesh_json_path, template=None):
     }
 
 
-def resolve_profile_reference(profile_dir):
+def inverse_skin_config(profile, component_id):
+    """Return per-component inverse-skin data, falling back to legacy single-component data."""
+    component = component_by_id(profile, component_id)
+    return component.get("inverseSkin") or (profile.get("skinning", {}) or {}).get("inverseSkin")
+
+
+def resolve_profile_reference(profile_dir, component_id="body"):
     """Return a completed profile's own Reference Mesh/Skeleton, or None.
 
     After completion the profile is self-contained (Reference/ holds the real or
@@ -1322,7 +1328,7 @@ def resolve_profile_reference(profile_dir):
     if not profile_path.is_file():
         return None
     profile = load_json(profile_path)
-    config = (profile.get("skinning", {}) or {}).get("inverseSkin") or {}
+    config = inverse_skin_config(profile, component_id) or {}
     mesh_rel, skel_rel = config.get("meshJson"), config.get("skeletonJson")
     if not mesh_rel or not skel_rel:
         return None
@@ -1577,7 +1583,8 @@ def complete_inverse_skin_profile(profile_dir, library_dir, component_id="body",
 
     Matches the body Mesh/Skeleton JSON from the library (by recorded/overridden
     bodyResource, else by vertex count), copies them into the profile, builds the
-    inverse operator and writes skinning.inverseSkin. Afterwards the profile carries
+    inverse operator and writes component.inverseSkin (legacy single-component profiles also
+    mirror it to skinning.inverseSkin). Afterwards the profile carries
     (1) injection info, (2) structural data and (3) the operator.
 
     body_resource: optional exact library body name to disambiguate when several
@@ -1618,7 +1625,7 @@ def complete_inverse_skin_profile(profile_dir, library_dir, component_id="body",
         bone_naming = f"boneNameHash(命名 {named}/{total})"
 
     # (3) Inverse operator from the bind mesh.
-    operator_rel = "Buffers/InverseOperator.R32_FLOAT.buf"
+    operator_rel = f"Buffers/{component_id.title()}.InverseOperator.R32_FLOAT.buf"
     operator_meta = build_inverse_operator(mesh_dst, profile_dir / operator_rel, ridge=ridge)
 
     # Skeleton weighted-bone count must agree with the mesh bone count.
@@ -1648,7 +1655,7 @@ def complete_inverse_skin_profile(profile_dir, library_dir, component_id="body",
     profile["status"] = "complete-inverse-skin"
     skinning = profile.setdefault("skinning", {})
     skinning["status"] = "inverse-skin operator built from matched library Mesh"
-    skinning["inverseSkin"] = {
+    config = {
         "sourceVertexCount": operator_meta["vertexCount"],
         "weightedBoneCount": weighted_bone_count,
         "coefficientCount": operator_meta["coefficientCount"],
@@ -1659,6 +1666,11 @@ def complete_inverse_skin_profile(profile_dir, library_dir, component_id="body",
         "boneNaming": bone_naming,
         "unobservableBones": unobservable,
     }
+    component = component_by_id(profile, component_id)
+    component["inverseSkin"] = config
+    # Preserve compatibility with existing consumers of single-component profiles.
+    if len(profile.get("components", [])) == 1:
+        skinning["inverseSkin"] = config
     profile_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     return {
@@ -1671,6 +1683,52 @@ def complete_inverse_skin_profile(profile_dir, library_dir, component_id="body",
         "unobservableBones": unobservable,
         "operatorBytes": operator_meta["operatorBytes"],
     }
+
+
+def merge_profile_component(profile_dir, component_profile_dir, component_id):
+    """Merge one completed component profile into a multi-component item profile."""
+    profile_dir, source_dir = Path(profile_dir), Path(component_profile_dir)
+    profile_path, source_path = profile_dir / "profile.json", source_dir / "profile.json"
+    profile, source = load_json(profile_path), load_json(source_path)
+    component = component_by_id(source, component_id)
+    config = inverse_skin_config(source, component_id)
+    if not config:
+        raise ValueError(f"Component {component_id} has no inverse-skin data")
+
+    legacy = (profile.get("skinning", {}) or {}).pop("inverseSkin", None)
+    if legacy and len(profile.get("components", [])) == 1:
+        profile["components"][0].setdefault("inverseSkin", legacy)
+
+    component = json.loads(json.dumps(component))
+    component["inverseSkin"] = json.loads(json.dumps(config))
+    for key in ("meshJson", "skeletonJson", "inverseOperator"):
+        src = source_dir / config[key]
+        suffix = src.name.split(".", 1)[-1]
+        folder = "Buffers" if key == "inverseOperator" else "Reference"
+        name = f"{component_id.title()}.{suffix}" if key == "inverseOperator" else src.name
+        dst = profile_dir / folder / name
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        component["inverseSkin"][key] = f"{folder}/{name}"
+
+    profile["components"] = [c for c in profile.get("components", []) if c.get("id") != component_id]
+    profile["components"].append(component)
+    profile.setdefault("skinning", {})["status"] = "per-component inverse-skin operators"
+    profile["status"] = "complete-inverse-skin"
+    profile_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    for filename, field in (
+        ("drawcall_map.json", "components"),
+        ("texture_map.json", "textures"),
+        ("material_map.json", "materials"),
+    ):
+        target_file, source_file = profile_dir / filename, source_dir / filename
+        if not source_file.is_file():
+            continue
+        target = load_json(target_file) if target_file.is_file() else {"schemaVersion": 1, field: {}}
+        target.setdefault(field, {}).update(load_json(source_file).get(field, {}))
+        target_file.write_text(json.dumps(target, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return component
 
 
 def _capture_file(capture_dir, binding, resource_hash, resource_file=None):
@@ -2171,11 +2229,11 @@ def _to_unity(vector):
     return float(vector[0]), float(vector[2]), float(-vector[1])
 
 
-def inverse_skin_bone_map(profile_dir, skeleton_json=None):
+def inverse_skin_bone_map(profile_dir, skeleton_json=None, component_id="body"):
     """Return weighted bone name -> matrix index for an inverse-skin Profile."""
     profile_set = load_profile_set(profile_dir)
     profile = profile_set["profile"]
-    config = profile.get("skinning", {}).get("inverseSkin")
+    config = inverse_skin_config(profile, component_id)
     if not config:
         raise ValueError("Profile has no skinning.inverseSkin configuration")
     source = Path(skeleton_json) if skeleton_json else profile_set["root"] / config["skeletonJson"]
@@ -2368,7 +2426,7 @@ def write_inverse_skin_package(
     profile = profile_set["profile"]
     component = component_by_id(profile, component_id)
     drawcalls = profile_set["drawcalls"]
-    config = profile.get("skinning", {}).get("inverseSkin")
+    config = inverse_skin_config(profile, component_id)
     if not config:
         raise ValueError("Profile has no inverse-skin runtime data")
     expected_indices = int(component["indices"])

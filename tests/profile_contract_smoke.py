@@ -35,6 +35,16 @@ for key in ("body.baseColor", "body.packedMask", "body.shadeColor",
             "body.section1.baseColor", "body.section1.packedMask", "body.section1.shadeColor"):
     assert key in textures, key
 
+hair_profile = ROOT / "profiles" / "hmsz-hair-0023-hair" / "profile.json"
+if hair_profile.is_file():
+    hair = json.loads(hair_profile.read_text(encoding="utf-8"))
+    parts = {component["id"]: component for component in hair["components"]}
+    assert set(parts) == {"hair", "hairprop"}
+    assert parts["hair"]["ibHash"] != parts["hairprop"]["ibHash"]
+    assert parts["hair"]["inverseSkin"]["meshJson"].endswith("Geo_Hair.json")
+    assert parts["hairprop"]["inverseSkin"]["meshJson"].endswith("Geo_HairProp.json")
+    print("GMI_HAIR_PROFILE_CONTRACT_OK hair+optional-hairprop")
+
 inverse = profile["skinning"]["inverseSkin"]
 operator = profile_dir / "Buffers" / "InverseOperator.R32_FLOAT.buf"
 if not operator.is_file():

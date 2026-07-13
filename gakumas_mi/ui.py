@@ -2,6 +2,10 @@ import bpy
 from bpy.types import Panel
 
 
+def _component_id(scene):
+    return "hairprop" if scene.gmi_component_id == "hair" and scene.gmi_hairprop_enabled else scene.gmi_component_id
+
+
 class GMI_PT_main(Panel):
     bl_label = "GakumasMI 工具"
     bl_idname = "GMI_PT_main"
@@ -10,7 +14,7 @@ class GMI_PT_main(Panel):
     bl_category = "GakumasMI"
 
     def draw_header(self, context):
-        self.layout.label(text="v0.7.4")
+        self.layout.label(text="v0.7.5")
 
     def draw(self, context):
         scene = context.scene
@@ -21,6 +25,9 @@ class GMI_PT_main(Panel):
         workflow = layout.box()
         workflow.label(text="先选目标，再按 ① → ④ 完成", icon="INFO")
         workflow.prop(scene, "gmi_component_id")
+        if scene.gmi_component_id == "hair":
+            workflow.prop(scene, "gmi_hairprop_enabled")
+            workflow.label(text="发饰属于当前发型的可选附属组件", icon="INFO")
         workflow.prop(scene, "gmi_tool_mode")
 
         if scene.gmi_tool_mode == "EXTRACT":
@@ -33,8 +40,8 @@ class GMI_PT_main(Panel):
             self.draw_texture(layout, scene, context)
 
     def draw_extract(self, layout, scene):
-        is_hairprop = scene.gmi_component_id == "hairprop"
-        is_hair = scene.gmi_component_id == "hair"
+        is_hairprop = _component_id(scene) == "hairprop"
+        is_hair = _component_id(scene) == "hair"
         target_name = "发饰" if is_hairprop else "发型" if is_hair else "身体"
         mesh_name = "Geo_HairProp" if is_hairprop else "Geo_Hair" if is_hair else "Geo_Body"
 
@@ -78,7 +85,7 @@ class GMI_PT_main(Panel):
         box.label(text="步骤 2/4 · 绑定作者模型", icon="MOD_ARMATURE")
         box.label(text="先在 3D 视图中只激活作者网格", icon="RESTRICT_SELECT_OFF")
 
-        if scene.gmi_component_id == "hairprop":
+        if _component_id(scene) == "hairprop":
             rigid = box.box()
             rigid.label(text="A · 硬质发饰（推荐）", icon="BONE_DATA")
             rigid.label(text="全部顶点 → Head_Hair；不摆动、不形变")
@@ -124,7 +131,7 @@ class GMI_PT_main(Panel):
 
         mesh = layout.box()
         mesh.label(text="步骤 4/4 · 校验并导出", icon="EXPORT")
-        if scene.gmi_component_id == "hair":
+        if _component_id(scene) == "hair":
             mesh.prop(scene, "gmi_hair_outline_tier")
             mesh.label(text="hair 描边色为常量档;宽度/高光从参考网格拷贝", icon="INFO")
         else:
@@ -134,7 +141,7 @@ class GMI_PT_main(Panel):
         mesh.prop(scene, "gmi_outline_width_mode")
         obj = context.active_object
         ready = False
-        if obj and obj.type == "MESH" and obj.get("gmi_component_id") == scene.gmi_component_id:
+        if obj and obj.type == "MESH" and obj.get("gmi_component_id") == _component_id(scene):
             ready = bool(obj.get("gmi_profile_weights") or obj.get("gmi_source_vertex_count"))
             if obj.get("gmi_rigid_head_follow"):
                 mesh.label(text="已识别：Head_Hair 刚体发饰", icon="CHECKMARK")
@@ -144,8 +151,8 @@ class GMI_PT_main(Panel):
                 mesh.label(text="已识别：原拓扑参考网格", icon="CHECKMARK")
         else:
             target_name = (
-                "作者发饰" if scene.gmi_component_id == "hairprop"
-                else "作者发型" if scene.gmi_component_id == "hair"
+                "作者发饰" if _component_id(scene) == "hairprop"
+                else "作者发型" if _component_id(scene) == "hair"
                 else "作者身体"
             )
             mesh.label(text=f"请激活已绑定的{target_name}网格", icon="ERROR")
@@ -161,8 +168,8 @@ class GMI_PT_main(Panel):
             advanced.operator("gmi.export_inverse_skin_mod", text="直接导出带权重 GPU 模组", icon="ARMATURE_DATA")
 
     def draw_texture(self, layout, scene, context):
-        is_hairprop = scene.gmi_component_id == "hairprop"
-        is_hair = scene.gmi_component_id == "hair"
+        is_hairprop = _component_id(scene) == "hairprop"
+        is_hair = _component_id(scene) == "hair"
         target_name = "发饰 hairprop" if is_hairprop else "发型 hair" if is_hair else "身体 body"
 
         material = layout.box()
@@ -183,7 +190,7 @@ class GMI_PT_main(Panel):
         preview.label(text="可选 · Blender 预览")
         preview.operator("gmi.create_body_material_template", text="创建预览材质模板", icon="MATERIAL")
 
-        if scene.gmi_component_id == "body":
+        if _component_id(scene) == "body":
             header, co = layout.panel("GMI_native_co_material", default_closed=True)
             header.label(text="可选 · 原生 co 透明 / 镂空", icon="SHADING_RENDERED")
             if co:
@@ -202,7 +209,7 @@ class GMI_PT_main(Panel):
                     if slot.material is not None:
                         row = generate.row(align=True)
                         row.prop(slot.material, "gmi_material_class", text=slot.material.name)
-                        if scene.gmi_component_id == "body":
+                        if _component_id(scene) == "body":
                             row.prop(slot.material, "gmi_alpha_mode", text="")
                         row.prop(slot.material, "gmi_material_toon", text="明暗")
             else:

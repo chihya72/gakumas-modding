@@ -1,6 +1,6 @@
 # GakumasMI 当前状态与路线
 
-更新：2026-07-13 · Blender 插件：**0.7.4**
+更新：2026-07-13 · Blender 插件：**0.7.5**
 
 本文只记录当前事实和未完成事项。逐版本变化见 [`../CHANGELOG.md`](../CHANGELOG.md)，
 使用方法见 [`../gakumas_mi/README.md`](../gakumas_mi/README.md)。
@@ -9,7 +9,7 @@
 
 GakumasMI 已打通 Blender → 3DMigoto → 游戏的换模闭环：
 
-- body、hair、hairprop 任意拓扑网格导入、转权、校验和导出；
+- 身体与发型任意拓扑网格导入、转权、校验和导出；`m_bdyco` 与 `Geo_HairProp` 分别作为可选附属组件；
 - 从抓帧与 AssetStudio Mesh JSON 一键生成配置档和逆蒙皮算子；
 - GPU 每帧恢复骨骼矩阵并重蒙皮，动态 VB 实测 RMS 约 `1e-6`；
 - `t0/t1/t4` 材质烘焙，body 原生 `m_bdyco` 镂空材质；
@@ -28,7 +28,7 @@ GakumasMI 已打通 Blender → 3DMigoto → 游戏的换模闭环：
 - 材质槽位由运行时地标自动判布局，不维护逐 PS hash 列表。
 - body 的 `t1.A` 是 AO/间接光；hair 的 `t1.A` 必须为 0，二者不可混用。
 - `m_bdyco` 是 cutout/alpha-test，不是连续半透明；薄纱和玻璃不在正式支持范围。
-- hair 与 hairprop 是同一发型道具的两个独立 drawcall，完整替换需要两个 mod 包。
+- hair 与 hairprop 是同一发型道具的两个独立 drawcall，由同一发型 profile 和 UI 流程管理。
 
 数学验证见 [`inverse-skin-matrix-recovery.md`](inverse-skin-matrix-recovery.md)，材质边界见
 [`transparent-material-status.md`](transparent-material-status.md)，发型语义见

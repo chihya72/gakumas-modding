@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 7, 4),
+    "version": (0, 7, 5),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "导入学马仕参考模型，并导出绑定配置档的 3DMigoto 模组",
@@ -87,15 +87,14 @@ def register():
         name="制作目标",
         description="选择要替换的游戏组件；后续四个步骤共用此目标",
         items=[
-            ("body", "身体（body）", "替换 Geo_Body 身体或服装网格"),
-            ("hair", "发型（hair）",
-             "替换 Geo_Hair 发型网格。游戏内一个「发型」道具 = 发型 + 发饰两个独立部件，"
-             "完整替换需再以「发饰」为目标出第二个模组包（同一次抓帧即可）"),
-            ("hairprop", "发饰（hairprop）",
-             "替换 Geo_HairProp 发饰网格。发饰是发型道具的附属部件（与发型同包、"
-             "独立 drawcall），游戏内没有单独的发饰选择，单独建配置档、单独出包"),
+            ("body", "身体（body）", "替换 Geo_Body；透明/镂空配饰可选用原生 m_bdyco"),
+            ("hair", "发型（hair）", "替换 Geo_Hair；可选同时制作 Geo_HairProp 发饰"),
         ],
         default="body",
+    )
+    bpy.types.Scene.gmi_hairprop_enabled = BoolProperty(
+        name="制作发饰（可选）", default=False,
+        description="在当前发型 profile 内切换到 Geo_HairProp；关闭时制作 Geo_Hair",
     )
     bpy.types.Scene.gmi_source_mesh_json = StringProperty(name="原模型 JSON", subtype="FILE_PATH")
     bpy.types.Scene.gmi_skeleton_json = StringProperty(name="骨架 JSON", subtype="FILE_PATH")
@@ -220,7 +219,7 @@ def unregister():
         "gmi_tool_mode",
         "gmi_profile_dir", "gmi_capture_dir", "gmi_extract_output_dir",
         "gmi_body_json_library_dir", "gmi_body_resource",
-        "gmi_extract_draw", "gmi_output_dir", "gmi_component_id",
+        "gmi_extract_draw", "gmi_output_dir", "gmi_component_id", "gmi_hairprop_enabled",
         "gmi_source_mesh_json", "gmi_skeleton_json", "gmi_bone_remap_file",
         "gmi_unmapped_bone_fallback",
         "gmi_transfer_risk_distance",

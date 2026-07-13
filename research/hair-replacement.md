@@ -20,9 +20,9 @@
   hski 系列确实同拓扑（16345v/67410idx 跨包一致）但顶点位置逐包微调（pos md5 不同）；
   hmsz 系列连拓扑都不同（hair-0021: 12413v / 0023: 11459v / 0029: 12471v）。
   「官方换发饰只换 Prop」只是 hski 这类系列的近似现象，不是通则。
-- **与 body/bodyco 的结构区别**：`m_bdyco` 是同一 body 网格的第二材质段（共用 VB/IB，
-  一个配置档内的 section）；而 hair 与 hairprop 是**两个独立网格、各自 IB/VB 与贴图**，
-  必须各建各的配置档、各出各的 mod 包。两包可独立装卸，同装即得完整发型替换
+- **与 body/bodyco 的结构区别**：`m_bdyco` 是同一 body 网格的第二材质段（共用 VB/IB）；
+  hair 与 hairprop 是**两个独立网格、各自 IB/VB、权重与贴图**，因此内部保留两个 component
+  和两套 draw override，但由同一个发型 profile 与 UI 流程管理
   （实例：`hski.hair21-default-hmsz`（发型）+ `hmsz.hair23.madoka-hairprop`（发饰），
   出自同一次抓帧 FrameAnalysis-2026-07-13-015228 的两个 draw）。
 - `cstm-NNNN_hair` 包 = 服装专属发型（同样是 Geo_Hair + Geo_HairProp 结构）。
@@ -63,7 +63,8 @@
        --component hairprop --body-resource mdl_chr_<角色>-hair-NNNN_hair
    ```
    自动选 draw 会按 40+12 双 VB 打分，仍建议用资源库顶点数核对；不对就 `--draw` 指定。
-4. **补全逆解**：Blender 步骤①选择“发饰（hairprop）”并点“生成完整配置档”；脚本等价入口为
+4. **补全逆解**：Blender 步骤①选择“发型”并勾选“制作发饰（可选）”；插件把 hair 与
+   hairprop 的配置合并到同一 profile。脚本底层仍分别调用
    `complete_inverse_skin_profile(profile_dir, 资源库, component_id="hairprop")`。发饰骨多为头发
    物理骨，少量不可观测骨正常。
 5. **Blender authoring**：导入参考模型与骨架 → 建自定义发饰 → 在步骤②二选一：硬质发饰刚体绑定到
@@ -129,5 +130,5 @@
 | 解剖差异微调 | 头骨形状差异锚点管不住（圆香耳位比莉波低 → 耳环单独 +15mm），按实机截图毫米级手动偏移部件 |
 | 发饰材质类型标注 | 金属件材质槽标 `metal` → 灰描边+高光掩码；亮色布件（白花等）想要灰描边也标 metal；不标默认黑描边 |
 | 暗环境金属发乌 | metal 预设 metallic=0.75 大量混入环境立方图，室内昏暗时小饰品会发乌——饰品建议用布料 t1 参数（或单独提亮该件暗面图） |
-| 双包流程 | 完整发型替换 = 同一次抓帧分别走 hair 与 hairprop 两遍流程、出两个包同装 |
+| 双 draw | hair 与 hairprop 需各自 draw override，但同属一个发型 profile 和制作流程 |
 | 开发环境 | 无头脚本跑导出前，确认 Blender 已安装的 gakumas_mi 与仓库同步（枚举缺项报 `enum not found` 即版本落后） |

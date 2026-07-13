@@ -53,7 +53,7 @@ def checkbox(d, x, y, text, checked=False):
     d.text((x + 30, y - 2), text, font=ft(14), fill="#d9dde2")
 
 def extract():
-    im, d = base("发饰 hairprop", "① 配置档")
+    im, d = base("发型 / 可选发饰", "① 配置档")
     panel(d, 228, "步骤 1/4 · 生成完整配置档", 386)
     d.text((154, 270), "需要含 Geo_HairProp.json 的发饰资源库", font=ft(14), fill="#cbd0d8")
     field(d, 304, "抓帧目录", "D:/Games/gakumas/FrameAnalysis-2026-07-12-062317")
@@ -68,7 +68,7 @@ def extract():
     return im
 
 def skinning():
-    im, d = base("发饰 hairprop", "② 绑定模型")
+    im, d = base("发型 / 可选发饰", "② 绑定模型")
     panel(d, 228, "步骤 2/4 · 绑定作者模型", 360)
     d.text((154, 272), "先在 3D 视图中只激活作者发饰网格", font=ft(14), fill="#cbd0d8")
     panel(d, 304, "A · 硬质发饰（推荐）", 242)
@@ -81,9 +81,9 @@ def skinning():
     return im
 
 def texture():
-    im, d = base("发饰 hairprop", "③ 准备材质")
+    im, d = base("发型 / 可选发饰", "③ 准备材质")
     panel(d, 228, "步骤 3/4 · 指定导出贴图", 360)
-    d.text((154, 270), "当前目标：发饰 hairprop", font=ft(14), fill="#ffbd70")
+    d.text((154, 270), "发型附属组件：发饰（可选）", font=ft(14), fill="#ffbd70")
     field(d, 304, "基础色 t0", "T_madoka_hairprop_D.dds")
     field(d, 384, "混合遮罩 t1", "T_madoka_hairprop_MSK.dds")
     field(d, 464, "暗面材质 t4 / sdw", "T_madoka_hairprop_SDW.dds")
@@ -96,7 +96,7 @@ def texture():
     return im
 
 def export():
-    im, d = base("发饰 hairprop", "④ 导出模组")
+    im, d = base("发型 / 可选发饰", "④ 导出模组")
     panel(d, 228, "步骤 4/4 · 模组信息", 360)
     field(d, 270, "输出目录", "ai-model-workspace/<项目名>/export")
     field(d, 350, "模组标识", "pm.ttmr.madoka-swimsuit-hairprop")
