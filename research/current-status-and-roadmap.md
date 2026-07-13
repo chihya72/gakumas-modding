@@ -9,7 +9,8 @@
 
 GakumasMI 已打通 Blender → 3DMigoto → 游戏的换模闭环：
 
-- 身体与发型任意拓扑网格导入、转权、校验和导出；`m_bdyco` 与 `Geo_HairProp` 分别作为可选附属组件；
+- 身体与发型任意拓扑网格导入、转权、校验和导出；`m_bdyco` 是身体包可选段，`Geo_HairProp`
+  是发型包内可选组件，启用时与 `Geo_Hair` 合并发布；
 - 从抓帧与 AssetStudio Mesh JSON 一键生成配置档和逆蒙皮算子；
 - GPU 每帧恢复骨骼矩阵并重蒙皮，动态 VB 实测 RMS 约 `1e-6`；
 - `t0/t1/t4` 材质烘焙，body 原生 `m_bdyco` 镂空材质；

@@ -26,6 +26,7 @@ public sealed record ModPackage
     public required PackageStatus Status { get; init; }
     public required bool IsEnabled { get; init; }
     public string? Target { get; init; }
+    public IReadOnlyList<string> Components { get; init; } = [];
     public string? DirectoryPath { get; init; }
     public string? ManifestPath { get; init; }
     public string? CoverPath { get; init; }
@@ -45,6 +46,19 @@ public sealed record ModPackage
         PackageType.Generic3Dmigoto => "通用 3DMigoto",
         _ => "未知"
     };
+
+    public string ComponentsLabel => string.Join(" + ", Components.Select(component => component.ToLowerInvariant() switch
+    {
+        "body" => "身体",
+        "hair" => "发型",
+        "hairprop" => "发饰",
+        "face" => "脸部",
+        _ => component,
+    }));
+
+    public string TargetDisplay => string.IsNullOrWhiteSpace(ComponentsLabel)
+        ? Target ?? ""
+        : $"{Target} ({ComponentsLabel})";
 
     public string StatusLabel => Status switch
     {

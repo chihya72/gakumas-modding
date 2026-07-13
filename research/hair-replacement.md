@@ -22,14 +22,26 @@
   「官方换发饰只换 Prop」只是 hski 这类系列的近似现象，不是通则。
 - **与 body/bodyco 的结构区别**：`m_bdyco` 是同一 body 网格的第二材质段（共用 VB/IB）；
   hair 与 hairprop 是**两个独立网格、各自 IB/VB、权重与贴图**，因此内部保留两个 component
-  和两套 draw override，但由同一个发型 profile 与 UI 流程管理
-  （实例：`hski.hair21-default-hmsz`（发型）+ `hmsz.hair23.madoka-hairprop`（发饰），
-  出自同一次抓帧 FrameAnalysis-2026-07-13-015228 的两个 draw）。
+  和两套 draw override，但由同一个发型 profile 与 UI 流程管理；发布时应合并为一个完整
+  发型包，避免 hair 无条件覆盖其它发型。
 - `cstm-NNNN_hair` 包 = 服装专属发型（同样是 Geo_Hair + Geo_HairProp 结构）。
   部分服装（如 ttmr-cstm-0111）没有专属 `_hair` 包，进游戏实穿才能确定实际用哪个发型包。
 - **`Geo_HairProp` 的范围经常比"头顶挂件"大**：hski 兔耳 Prop 除耳朵外还包含编进头发的
   挑染发丝（包围盒覆盖整个头部 y 1.13–1.63）。**替换 = 整个 Prop 网格被替换**，
   自定义发饰若不带这些发丝件，原发丝会一并消失——作者必须知情。
+
+### 1.1 共享基础 hair 的精确选择
+
+- 多个发型可能共享同一个 `Geo_Hair` IB；只按 hair IB hash 替换会把它们全部变成同一个
+  Mod 发型。
+- hmsz 的抓帧对比已验证：`hair-0007` 的 hairprop 是 `08fee0bf`（20,784 indices，
+  sections `0/12300, 12300/3528, 15828/4956`），`hair-0023` 是 `d9cfd2ab`
+  （20,289 indices，主 section `7989/12300`），而两者 hair 都命中同一个共享基础 hair。
+- 完整发型包的 hair override 必须先匹配配套 hairprop 的 `IB hash + firstIndex`，再替换共享
+  hair；manifest 另记录 `indexCount` 供审计。未匹配的 C 发饰不设置选择器，hair 和 hairprop
+  都保持原版。
+- 如果两个发型的 hairprop 运行时特征也完全相同，则无法在 3DMigoto 中继续区分；该包只能
+  按共享基础 hair 发布并明确接受广泛影响。
 
 ## 2. 注入与材质（兔耳抓帧 FrameAnalysis-2026-07-12-041807 验证）
 
@@ -63,14 +75,16 @@
        --component hairprop --body-resource mdl_chr_<角色>-hair-NNNN_hair
    ```
    自动选 draw 会按 40+12 双 VB 打分，仍建议用资源库顶点数核对；不对就 `--draw` 指定。
-4. **补全逆解**：Blender 步骤①选择“发型”并勾选“制作发饰（可选）”；插件把 hair 与
+4. **补全逆解**：Blender 步骤①选择“发型”；插件自动把 hair 与
    hairprop 的配置合并到同一 profile。脚本底层仍分别调用
    `complete_inverse_skin_profile(profile_dir, 资源库, component_id="hairprop")`。发饰骨多为头发
    物理骨，少量不可观测骨正常。
-5. **Blender authoring**：导入参考模型与骨架 → 建自定义发饰 → 在步骤②二选一：硬质发饰刚体绑定到
-   `Head_Hair`，需要摆动的软发饰传递权重并复核 → 准备 t0/t1/t4 → 校验并导出。`skin` 数据格式为
+5. **Blender authoring**：一次导入 hair + hairprop 参考模型与骨架 → 建自定义发型/发饰；步骤②对
+   发饰二选一：硬质发饰刚体绑定到 `Head_Hair`，需要摆动的软发饰传递权重并复核 → 分别准备
+   hair/hairprop t0/t1/t4 → 一次校验并导出完整包。`skin` 数据格式为
    `[(骨索引, correction索引, 权重)]`，权重在源骨架上时 correction 恒 0 + 单个恒等矩阵。
-6. **验证**：装入 Mods，确认原发饰（含发丝件）整体消失、新网格跟随头部动画、描边/投影正常。
+6. **验证**：装入一个合并后的完整发型包，确认 selector 命中目标发饰；换到其它发饰时，
+   原 hair 与 hairprop 都保持原版，新网格跟随头部动画、描边/投影正常。
 
 ## 4. 已验证 PoC（2026-07-12，hski 兔耳 = hski-hair-0023，IB `8dab3a7b`）
 
@@ -82,9 +96,9 @@
 ## 5. 边界
 
 - LIVE 暗光场景的 hair 系 PS 槽位重排尚未实抓验证（地标探测机制已确认适用，风险低）。
-- Blender 插件的「组件」字段（`gmi_component_id`，默认 `body`）已贯穿各操作器，
-  作者选 `hair` / `hairprop` 即走对应链；资源库目录换成对应库即可
-  （同一批 `_hair` 包可分别建两个库：`--mesh-name Geo_Hair` 与 `--mesh-name Geo_HairProp`）。
+- Blender 插件的「制作目标」字段（`gmi_component_id`，默认 `body`）只暴露 `body` / `hair`；
+  选择 `hair` 后自动处理同一 profile 内的 `hair` 与 `hairprop`，资源库仍分别读取
+  `--mesh-name Geo_Hair` 与 `--mesh-name Geo_HairProp`。
 - 发型本体已用 `hmsz-hair-0023` 实机验证；注入结构与发饰一致，但材质/顶点色语义不同，见 §6。
 
 ## 6. hair（发型本体）组件与 body 的语义差异（2026-07-13 实机踩坑）
@@ -130,5 +144,5 @@
 | 解剖差异微调 | 头骨形状差异锚点管不住（圆香耳位比莉波低 → 耳环单独 +15mm），按实机截图毫米级手动偏移部件 |
 | 发饰材质类型标注 | 金属件材质槽标 `metal` → 灰描边+高光掩码；亮色布件（白花等）想要灰描边也标 metal；不标默认黑描边 |
 | 暗环境金属发乌 | metal 预设 metallic=0.75 大量混入环境立方图，室内昏暗时小饰品会发乌——饰品建议用布料 t1 参数（或单独提亮该件暗面图） |
-| 双 draw | hair 与 hairprop 需各自 draw override，但同属一个发型 profile 和制作流程 |
+| 双 draw | hair 与 hairprop 需各自 draw override，但发布时合并为一个完整发型包；hair 用 hairprop selector 限定 |
 | 开发环境 | 无头脚本跑导出前，确认 Blender 已安装的 gakumas_mi 与仓库同步（枚举缺项报 `enum not found` 即版本落后） |

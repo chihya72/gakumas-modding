@@ -34,6 +34,7 @@ try
             version = "1.0.1",
             author = "StarBobis",
             targets = new[] { "body.weightedMesh" },
+            components = new[] { "hair", "hairprop" },
             conflicts = new[] { "hski.cstm-0000.body.mesh" },
             cover = "cover.png",
             materials = new
@@ -97,7 +98,9 @@ try
     Assert(result.Packages.Any(package => package.Name == "Saki Stage Costume - Orange"
         && package.Type == PackageType.GakumasMi
         && package.Status == PackageStatus.Conflict
-        && package.IsEnabled), "expected enabled GakumasMI conflict package");
+        && package.IsEnabled
+        && package.ComponentsLabel == "发型 + 发饰"
+        && package.TargetDisplay == "body.weightedMesh (发型 + 发饰)"), "expected enabled GakumasMI conflict package");
     Assert(result.Packages.Any(package => package.Name == "Duplicate Costume"
         && package.Status == PackageStatus.Broken
         && package.MissingFileCount == 1), "expected duplicate package with missing file to be broken");

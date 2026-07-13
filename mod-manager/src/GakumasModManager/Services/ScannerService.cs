@@ -95,6 +95,7 @@ public sealed class ScannerService : IScannerService
             Status = isEnabled ? PackageStatus.Enabled : PackageStatus.Disabled,
             IsEnabled = isEnabled,
             Target = "通用",
+            Components = [],
             DirectoryPath = directory,
             IniFiles = iniFiles,
             Checks = [new ValidationIssue("通用 3DMigoto 包，仅支持启用/禁用")],
@@ -113,6 +114,7 @@ public sealed class ScannerService : IScannerService
         string? author = null;
         string? version = null;
         string? target = null;
+        IReadOnlyList<string> components = [];
         string? coverPath = null;
         var manifestBroken = false;
         var missingFileCount = 0;
@@ -133,6 +135,7 @@ public sealed class ScannerService : IScannerService
             author = ReadString(root, "author");
             version = ReadString(root, "version");
             target = ReadStringArray(root, "targets");
+            components = ReadStringArrayItems(root, "components");
             conflicts.AddRange(ReadStringArrayItems(root, "conflicts"));
             coverPath = ResolveCoverPath(directory, ReadString(root, "cover"));
 
@@ -196,6 +199,7 @@ public sealed class ScannerService : IScannerService
             Status = status,
             IsEnabled = isEnabled,
             Target = target,
+            Components = components,
             DirectoryPath = directory,
             ManifestPath = manifestPath,
             CoverPath = coverPath,

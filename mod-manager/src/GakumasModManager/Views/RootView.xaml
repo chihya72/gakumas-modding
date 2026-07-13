@@ -104,7 +104,7 @@
                         <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="2.2*" ElementStyle="{StaticResource GridCellTextStyle}" />
                         <DataGridTextColumn Header="作者" Binding="{Binding Author}" Width="*" ElementStyle="{StaticResource GridCellTextStyle}" />
                         <DataGridTextColumn Header="版本" Binding="{Binding Version}" Width="0.8*" ElementStyle="{StaticResource GridCellTextStyle}" />
-                        <DataGridTextColumn Header="目标" Binding="{Binding Target}" Width="1.3*" ElementStyle="{StaticResource GridCellTextStyle}" />
+                        <DataGridTextColumn Header="目标" Binding="{Binding TargetDisplay}" Width="1.5*" ElementStyle="{StaticResource GridCellTextStyle}" />
                         <DataGridTextColumn Header="状态" Binding="{Binding StatusLabel}" Width="1.2*">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource GridCellTextStyle}">
@@ -165,7 +165,9 @@
                                 <TextBlock Text="版本" Style="{StaticResource FieldLabelStyle}" />
                                 <TextBlock Text="{Binding SelectedPackage.Version}" />
                                 <TextBlock Text="目标" Style="{StaticResource FieldLabelStyle}" />
-                                <TextBlock Text="{Binding SelectedPackage.Target}" />
+                                <TextBlock Text="{Binding SelectedPackage.TargetDisplay}" />
+                                <TextBlock Text="组件" Style="{StaticResource FieldLabelStyle}" />
+                                <TextBlock Text="{Binding SelectedPackage.ComponentsLabel}" />
                                 <TextBlock Text="标识" Style="{StaticResource FieldLabelStyle}" />
                                 <TextBlock Text="{Binding SelectedPackage.Id}" />
                                 <TextBlock Text="缺失文件" Style="{StaticResource FieldLabelStyle}" />
