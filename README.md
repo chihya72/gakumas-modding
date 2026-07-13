@@ -5,7 +5,7 @@
 玩家侧只需装运行环境（`3dmigoto-gkms` + `mod-manager`，一个安装包搞定）。只做视觉 Mod（模型 /
 贴图 / 材质 / 显隐），不碰文本汉化、逻辑、数值。
 
-> **状态（v0.7.6，收敛/维护态）**：身体与发型（含 co/配套发饰）的换模 + 动画 + 贴图 + 多 mod
+> **状态（v0.7.8，收敛/维护态）**：身体与发型（含 co/配套发饰）的换模 + 动画 + 贴图 + 多 mod
 > 共存完整闭环已实机验证，Mod Manager 已发布。核心算法冻结；真半透明、表情和 LOD 暂不开展。状态与
 > 计划见 [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md)，
 > 版本变更见 [CHANGELOG.md](CHANGELOG.md)。
@@ -36,6 +36,7 @@ mod-manager/    使用者侧 Mod 包管理器（WPF/Stylet，随 3dmigoto-gkms �
 |---|---|
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 仓库规范（新建文件前必读） |
 | [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) | 进度 / 完成度 / 计划（**最新状态以此为准**） |
+| [research/step3-texture-input-guide.md](research/step3-texture-input-guide.md) | 步骤③ Body / Hair / HairProp 贴图路径、通道和准备要求 |
 | [gakumas_mi/README.md](gakumas_mi/README.md) · [3dmigoto-gkms/README.md](3dmigoto-gkms/README.md) · [mod-manager/README.md](mod-manager/README.md) | 三个子项目各自的安装与用法 |
 
 ## 致谢与上游开源

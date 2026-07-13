@@ -24,7 +24,7 @@ def _scene_texture_path(scene, component_id, semantic):
     return getattr(scene, f"gmi_{semantic}_file", "")
 
 
-def _png_to_dds(image_path, srgb=True):
+def _png_to_dds(image_path, srgb=True, alpha_override=None):
     """把 PNG/其它图像转成未压缩 RGBA8 的 DDS（DX10 头），返回临时 DDS 路径。
 
     用 Blender 自带图像 API 读取(无需外部工具);设为 Non-Color，让存储的字节原样
@@ -46,6 +46,8 @@ def _png_to_dds(image_path, srgb=True):
         image.pixels.foreach_get(buffer)
         buffer = np.nan_to_num(buffer, nan=0.0, posinf=1.0, neginf=0.0)
         rgba = buffer.reshape(height, width, 4)[::-1]  # Blender 自下而上 → DDS 自上而下
+        if alpha_override is not None:
+            rgba[..., 3] = max(0.0, min(1.0, float(alpha_override)))
         rgba8 = np.clip(rgba * 255.0 + 0.5, 0.0, 255.0).astype(np.uint8)
         suffix = "" if srgb else "_unorm"
         output = Path(tempfile.gettempdir()) / f"gmi_{Path(image_path).stem}{suffix}.dds"
@@ -82,7 +84,7 @@ def _prepare_cover_image(path, max_dim=1024):
 def _neutral_material_dds(semantic, component_id="body"):
     """生成临时的中性 t1/t4 DDS，盖掉游戏原版遮罩/阴影对新贴图的干扰。"""
     if semantic == "packedMask":
-        # hair 的 t1.A ≠ AO:写 255 会漏出未替换的原版 t4,必须走 A=0 的 hair 常量
+        # 当前不替换 hair t6 HHL；A=0 屏蔽原图，避免自定义 UV 采到旧高光。
         rgba = core.HAIR_NEUTRAL_PACKED_MASK if component_id in {"hair", "hairprop"} else core.NEUTRAL_PACKED_MASK
     else:
         rgba = core.NEUTRAL_SHADE_COLOR
@@ -748,8 +750,8 @@ def _synthesize_export_native_colors(profile_dir, component_id, data, target_bas
     }
 
 
-# hair 描边色 nibble (R高,R低,G高)/15 是全网格常量(实测:蓝紫(0,0,1)/粉(1,0,0)/金(4,2,1)),
-# ≠ body 的逐顶点基础色曲线——逐顶点合成会让暗部塌成绿色。宁小勿大(描边宁暗勿亮)。
+# 原版 hair 可按顶点/发片改变描边色；任意新拓扑无法可靠复刻区域映射，故安全作者模式使用
+# 全网格常量档。描边色 nibble=(R高,R低,G高)/15，宁小勿大，避免暗部量化塌绿。
 HAIR_OUTLINE_TIERS = {
     "DARK": (0, 0, 1),
     "PINK": (1, 0, 0),
@@ -759,10 +761,9 @@ HAIR_OUTLINE_TIERS = {
 
 
 def _hair_export_colors(reference, data, tier, outline_width_mode, no_outline_vertices):
-    """hair COLOR 语义:R/G 高位 nibble = 描边色常量(按色相档);
-    G低=ramp行、B=0~15 细宽度、A=144/0 高光掩码,从参考网格 COLOR 最近邻拷贝。"""
+    """安全 hair COLOR：写常量描边 RGB，参考拷贝 G低 LUT 行、B低宽度及 A高 rim 等字段。"""
     if reference.data.color_attributes.get("COLOR") is None:
-        raise ValueError("参考网格没有 COLOR 属性,无法拷贝 hair 描边宽度/高光掩码(请重新导入带权重参考模型)")
+        raise ValueError("参考网格没有 COLOR 属性,无法拷贝 hair 的 LUT 行/描边宽度/rim mask(请重新导入带权重参考模型)")
     ref_colors = _vertex_colors(reference.data)
     tree = KDTree(len(reference.data.vertices))
     for index, vertex in enumerate(reference.data.vertices):
@@ -792,9 +793,9 @@ def _hair_export_colors(reference, data, tier, outline_width_mode, no_outline_ve
     }
 
 
-# hairprop 描边=按部件常量(实测 ttmr/hski/hmsz 原版发饰:金属件 (3,3,3)+高光掩码 A=144,
-# 暗色/布件 (0,0,0)+A=0;B=8 细宽度)。按材质槽的「材质类型」映射;亮色布件(如白花)想要
-# 灰描边可把该槽材质类型设为 metal。发饰几何与参考不重叠,B/A 不走参考最近邻拷贝。
+# hairprop 的原版 section/COLOR 可不同；任意新拓扑的安全 fallback 按材质槽写常量：
+# metal=(3,3,3)+A高9/15，布件=(0,0,0)+A高0，B低=8。A高控制 rim/backlight，
+# B低控制 outline；这里的整字节 144/8 只是所选编码，不是 shader 的二值字段定义。
 HAIRPROP_OUTLINE_BY_CLASS = {
     "metal": ((3, 3, 3), 144),
     "skin": ((1, 0, 0), 0),
@@ -804,7 +805,7 @@ HAIRPROP_OUTLINE_WIDTH = 8
 
 
 def _hairprop_export_colors(obj, data, outline_width_mode, no_outline_vertices):
-    """hairprop COLOR 语义:R/G 高位 nibble = 逐材质槽描边色常量,B=8,A=金属144/其余0。"""
+    """hairprop 安全 COLOR：逐材质槽写描边 RGB、B低宽度和 A高 rim mask。"""
     per_slot = {}
     for index, slot in enumerate(obj.material_slots):
         key = getattr(slot.material, "gmi_material_class", "cloth") if slot.material else "cloth"
@@ -1984,14 +1985,21 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                     path = bpy.path.abspath(value)
                     if not path.lower().endswith(".dds"):
                         # PNG → 临时 DDS;t1 是线性数据,不能标 sRGB
-                        path = _png_to_dds(path, srgb=semantic != "packedMask")
+                        path = _png_to_dds(
+                            path,
+                            srgb=semantic != "packedMask",
+                            alpha_override=(
+                                0 if component_id == "hair" and semantic is None
+                                and not scene.gmi_hair_use_base_alpha else None
+                            ),
+                        )
                     material_textures[key] = path
                 elif semantic and scene.gmi_neutral_material and key in known_textures:
                     # 没提供时用中性贴图盖掉原版 t1/t4（仅当配置档有该槽位）
                     material_textures[key] = _neutral_material_dds(semantic, component_id)
             # 描边颜色来源：「描边颜色」=取自基础色 → 基础色曲线；黑色常量 → 黑边；
             # 按材质预设 → 保留 gather 的逐材质预设色。宽度已在 gather 按「描边宽度」处理,这里不动。
-            # hair 例外:描边色是全网格常量档,B/A 从参考网格最近邻拷贝(实机验证语义)。
+            # hair 安全模式写全网格描边色档，其余 packed nibble 从参考网格最近邻拷贝。
             export_color_synthesis = None
             if component_id == "hair":
                 reference = _profile_weight_reference(context, "hair")
@@ -2225,7 +2233,11 @@ class GMI_OT_create_body_material_template(Operator):
             material["gmi_co_t0_base_color"] = bpy.path.abspath(scene.gmi_opacity_texture_file) if scene.gmi_opacity_texture_file else ""
             material["gmi_co_t1_packed_mask"] = bpy.path.abspath(scene.gmi_opacity_packed_mask_file) if scene.gmi_opacity_packed_mask_file else ""
             material["gmi_co_t4_shade_color"] = bpy.path.abspath(scene.gmi_opacity_shade_color_file) if scene.gmi_opacity_shade_color_file else ""
-        material["gmi_t1_channels"] = "R=阴影阈值, G=光滑度, B=金属度, A=AO/间接光"
+        material["gmi_t1_channels"] = (
+            "R=阴影阈值, G=光滑度, B=金属度, A=镜面/间接/HHL门控(当前无t6时用0)"
+            if component_id in {"hair", "hairprop"}
+            else "R=阴影阈值, G=光滑度, B=金属度, A=AO/镜面/间接光门控"
+        )
         material["gmi_t4_channels"] = "RGB=基础色暗色版, A=原生sdw二值遮罩"
 
         nodes = material.node_tree.nodes
@@ -2425,8 +2437,8 @@ class GMI_OT_bake_material_maps(Operator):
         if scene.gmi_form_shading:
             ao = _compute_vertex_ao(obj)
             form_map = _slot_form_map(opaque_slots, width, ao)
-        # hair 组件未覆盖区/缝隙用 hair 预设补(其 t1.A=0 语义 ≠ body 中性的 AO=255)
-        neutral_key = "hair" if component_id == "hair" else "neutral"
+        # hair/hairprop 未覆盖区用 A=0 的安全预设，避免原 t6 HHL/间接光从 atlas 空白区漏出。
+        neutral_key = "hair" if component_id in {"hair", "hairprop"} else "neutral"
         t1, t4 = core.bake_material_maps(
             id_map, base8, class_per_slot, presets,
             form_map=form_map, form_strength=scene.gmi_form_strength,
@@ -2455,8 +2467,10 @@ class GMI_OT_bake_material_maps(Operator):
         channel_summary = core.apply_packed_mask_channel_overrides(t1, id_map, channel_maps)
 
         out = Path(tempfile.gettempdir())
-        t1_path = out / "gmi_baked_packedMask.dds"
-        t4_path = out / "gmi_baked_shadeColor.dds"
+        # Hair 与 HairProp 会在同一场景依次烘焙；固定文件名会让后者覆盖前者。
+        bake_prefix = f"gmi_baked_{component_id}"
+        t1_path = out / f"{bake_prefix}_packedMask.dds"
+        t4_path = out / f"{bake_prefix}_shadeColor.dds"
         co_t1 = co_t4 = None
         co_t1_path = co_t4_path = None
         co_note = ""
@@ -2480,8 +2494,8 @@ class GMI_OT_bake_material_maps(Operator):
                 form_map=co_form_map, form_strength=scene.gmi_form_strength,
                 toon_per_slot=toon_per_slot, neutral_key=neutral_key,
             )
-            co_t1_path = out / "gmi_baked_co_packedMask.dds"
-            co_t4_path = out / "gmi_baked_co_shadeColor.dds"
+            co_t1_path = out / f"{bake_prefix}_co_packedMask.dds"
+            co_t4_path = out / f"{bake_prefix}_co_shadeColor.dds"
             co_covered = int((co_id_map >= 0).sum()) * 100 // (co_width * co_height)
             co_note = f"；co {co_covered}% UV 覆盖"
 

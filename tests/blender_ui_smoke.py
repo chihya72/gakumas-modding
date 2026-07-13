@@ -73,6 +73,7 @@ try:
     assert "gmi.bind_hairprop_rigid" in hair_layout.operators
     assert "gmi.transfer_hairprop_weights" in hair_layout.operators
     assert "gmi_hairprop_base_color_file" in hair_layout.properties
+    assert "gmi_hair_use_base_alpha" in hair_layout.properties
     assert "gmi_opacity_texture_file" not in hair_layout.properties
 
     scene.gmi_component_id = "body"
@@ -81,13 +82,18 @@ try:
     assert "gmi_opacity_texture_file" in body_layout.properties
     assert "gmi_alpha_mode" in body_layout.properties
 
-    # hair 组件:描边色改为常量档下拉,不再显示 body 的逐顶点描边色来源
+    # hair 安全模式使用常量色档，不显示 body 的逐顶点基础色合成选项。
     scene.gmi_component_id = "hair"
     hair_only_layout = FakeLayout()
     ui.draw_texture_step(hair_only_layout, scene, bpy.context)
     ui.draw_export_step(hair_only_layout, scene, bpy.context)
     assert "gmi_hair_outline_tier" in hair_only_layout.properties
     assert "gmi_vertex_color_mode" not in hair_only_layout.properties
+
+    # Outline VS 只读 COLOR.B 低 nibble；关闭宽度不能破坏 B高或其它 packed 字段。
+    packed = tuple(value / 255.0 for value in (0x12, 0x34, 0xAB, 0x9F))
+    cleared = tuple(round(value * 255.0) for value in operators._clear_outline_width(packed))
+    assert cleared == (0x12, 0x34, 0xA0, 0x9F), cleared
 
     hints_result = {"vertexCounts": [1], "exact": {"vertexCount": 1}}
     completion = {
