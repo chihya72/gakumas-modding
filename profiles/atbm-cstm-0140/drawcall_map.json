@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "capture": "reconstructed",
+  "generatedFrom": "离线重建: hash 取自已导出包 千咲泳装 的 mod.ini/manifest.json;材质段几何取自库 mdl_chr_atbm-cstm-0140_body m_SubMeshes;Reference/逆算子由 body JSON 库再生。作为带原生 co 的 body 默认配置档。",
+  "components": {
+    "body": {
+      "mainDraw": 414,
+      "passBindings": {
+        "draw_000001": {
+          "role": "reconstructed",
+          "draw": 1,
+          "vertexShader": "436f9c16af3b54cf",
+          "pixelShader": null
+        },
+        "draw_000002": {
+          "role": "reconstructed",
+          "draw": 2,
+          "vertexShader": "221c573337491c78",
+          "pixelShader": null
+        },
+        "draw_000003": {
+          "role": "reconstructed",
+          "draw": 3,
+          "vertexShader": "5b7fff8ecccaf579",
+          "pixelShader": null
+        },
+        "draw_000004": {
+          "role": "reconstructed",
+          "draw": 4,
+          "vertexShader": "fe50b7a82b0f37be",
+          "pixelShader": null
+        },
+        "draw_000005": {
+          "role": "reconstructed",
+          "draw": 5,
+          "vertexShader": "e0ceaa854f457e74",
+          "pixelShader": null
+        },
+        "draw_000006": {
+          "role": "reconstructed",
+          "draw": 6,
+          "vertexShader": "49d37c76b70addad",
+          "pixelShader": null
+        }
+      },
+      "sectionBindings": {
+        "body.section1": {
+          "role": "co",
+          "firstIndex": 76890,
+          "indexCount": 1071,
+          "draws": [
+            85,
+            227,
+            291,
+            414,
+            671
+          ],
+          "representativeDraw": 671
+        }
+      }
+    }
+  }
+}

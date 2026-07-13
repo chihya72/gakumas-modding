@@ -3,12 +3,12 @@
 恢复链：design(bind 位置×权重) → posed = design @ 矩阵系数 → recovered = operator @ posed
 → rebuilt = design @ recovered。锁定两件事：
   1. 恢复算法本身（合成小网格 + pinv 算子）—— 纯 numpy，CI 可跑；
-  2. 真实 hski 算子的重建/骨矩阵 RMS 不回退 —— 依赖本地抓帧产物
-     (profiles/hski-cstm-0000/{Reference/Geo_Body.json, Buffers/InverseOperator...})，
+  2. 真实默认档算子的重建/骨矩阵 RMS 不回退 —— 依赖本地档产物
+     (profiles/atbm-cstm-0140/{Reference/Geo_Body.json, Buffers/InverseOperator...})，
      数据缺失时自动 SKIP（CI 即走此分支）。
 
-实机已验证基准（见 research/inverse-skin-matrix-recovery.md）：
-重建位置 RMS ≈ 1.14e-6，骨矩阵 RMS ≈ 1.55e-6。下方阈值留足余量，只为拦回退。
+旧 HSKI 实机基准见 research/inverse-skin-matrix-recovery.md；当前 ATBM 默认档是
+离线重建样本，位置重建仍稳定，但欠定骨更多。阈值锁定各自实测量级，只拦明显回退。
 """
 
 import json
@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILE = ROOT / "profiles" / "hski-cstm-0000"
+PROFILE = ROOT / "profiles" / "atbm-cstm-0140"
 
 
 def _rotation(axis, angle):
@@ -94,7 +94,7 @@ def test_synthetic_recovery_exact():
 
 
 def test_real_operator_thresholds():
-    """真实 hski 算子：重建/骨矩阵 RMS 不得回退（本地数据；缺失则 SKIP）。"""
+    """真实默认档(atbm-cstm-0140)算子：重建/骨矩阵 RMS 不得回退（本地数据；缺失则 SKIP）。"""
     mesh_path = PROFILE / "Reference" / "Geo_Body.json"
     op_path = PROFILE / "Buffers" / "InverseOperator.R32_FLOAT.buf"
     if not (mesh_path.is_file() and op_path.is_file()):
@@ -110,11 +110,11 @@ def test_real_operator_thresholds():
     matrix_p50 = float(np.percentile(per_bone, 50))
     matrix_p95 = float(np.percentile(per_bone, 95))
     bad_bones = int((per_bone > 1e-3).sum() / 4)  # 4 samples → 折算成「骨条数」
-    # 实测：重建 RMS ~1.8e-5(=README 最大位置误差 1.73e-5)，骨 P95 ~5.7e-5，
-    # 另有约 4 根不可观测/欠定骨(P95 已排除)。阈值留余量拦回退(算子坏=1e-1 量级)。
+    # ATBM 离线重建档实测：重建 RMS 2.3e-5、骨 P95 2.7e-3、约 30 根欠定骨。
+    # 阈值留少量浮点余量；算子损坏时会升到 1e-1 量级。
     assert recon < 1e-4, ("重建 RMS 回退", recon)
-    assert matrix_p95 < 1e-3, ("骨矩阵 P95 回退", matrix_p95)
-    assert bad_bones <= 8, ("欠定骨数量异常增多", bad_bones)
+    assert matrix_p95 < 5e-3, ("骨矩阵 P95 回退", matrix_p95)
+    assert bad_bones <= 40, ("欠定骨数量异常增多", bad_bones)
     print(f"real_operator_thresholds OK  recon={recon:.2e} boneP50={matrix_p50:.2e} "
           f"boneP95={matrix_p95:.2e} badBones≈{bad_bones} (activeBones={int(active.sum())})")
 

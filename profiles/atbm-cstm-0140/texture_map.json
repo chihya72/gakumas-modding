@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "capture": "reconstructed",
+  "textures": {
+    "body.baseColor": {
+      "slot": "ps-t0",
+      "semantic": "baseColor",
+      "hash": "5ac4ddf8"
+    },
+    "body.packedMask": {
+      "slot": "ps-t1",
+      "semantic": "packedMask",
+      "hash": "32e027a9"
+    },
+    "body.shadeColor": {
+      "slot": "ps-t4",
+      "semantic": "shadeColor",
+      "hash": "8321a82b"
+    },
+    "body.section1.baseColor": {
+      "slot": "ps-t0",
+      "semantic": "baseColor",
+      "hash": "68c7e560"
+    },
+    "body.section1.packedMask": {
+      "slot": "ps-t1",
+      "semantic": "packedMask",
+      "hash": "96cf1a19"
+    },
+    "body.section1.shadeColor": {
+      "slot": "ps-t4",
+      "semantic": "shadeColor",
+      "hash": "66573a90"
+    }
+  }
+}

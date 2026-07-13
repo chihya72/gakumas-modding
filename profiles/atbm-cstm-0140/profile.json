@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "id": "rebuilt-atbm-cstm-0140-body-d43e51c9",
+  "status": "complete-inverse-skin",
+  "target": {
+    "actorId": "atbm",
+    "costumeId": "cstm-0140",
+    "bodyResource": "mdl_chr_atbm-cstm-0140_body"
+  },
+  "capture": {
+    "directory": "reconstructed",
+    "note": "抓帧目录已删除,仅存元数据",
+    "stableSignatureCaptures": []
+  },
+  "layout": {
+    "topology": "trianglelist",
+    "indexFormat": "R16_UINT",
+    "positionNormalTangentStride": 40,
+    "colorUvStride": 12,
+    "inference": "reconstructed-from-exported-package"
+  },
+  "skinning": {
+    "drawInput": "CPU-skinned or runtime-skinned final vertex buffer",
+    "status": "inverse-skin operator built from matched library Mesh",
+    "inverseSkin": {
+      "sourceVertexCount": 18972,
+      "weightedBoneCount": 132,
+      "coefficientCount": 528,
+      "posedVertexStride": 40,
+      "inverseOperator": "Buffers/InverseOperator.R32_FLOAT.buf",
+      "meshJson": "Reference/Geo_Body.json",
+      "skeletonJson": "Reference/Geo_Body.skeleton.json",
+      "boneNaming": "boneNameHash(命名 110/132)",
+      "unobservableBones": []
+    }
+  },
+  "components": [
+    {
+      "id": "body",
+      "confidence": "reconstructed",
+      "ibHash": "d43e51c9",
+      "vbHashes": {
+        "positionNormalTangent": "draw:000414:vb0",
+        "colorUv": "draw:000414:vb1"
+      },
+      "resourceFiles": {},
+      "vertices": 18972,
+      "indices": 77961,
+      "mainFirstIndex": 0,
+      "tailFirstIndices": [],
+      "materialSections": [
+        {
+          "id": "body.section0",
+          "role": "main",
+          "firstIndex": 0,
+          "indexCount": 76890,
+          "representativeDraw": 414,
+          "textureKeyPrefix": "body"
+        },
+        {
+          "id": "body.section1",
+          "role": "co",
+          "firstIndex": 76890,
+          "indexCount": 1071,
+          "representativeDraw": 671,
+          "textureKeyPrefix": "body.section1",
+          "draws": [
+            85,
+            227,
+            291,
+            414,
+            671
+          ]
+        }
+      ],
+      "draws": [
+        85,
+        227,
+        291,
+        414,
+        671
+      ],
+      "mainDraw": 414
+    }
+  ]
+}

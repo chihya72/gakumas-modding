@@ -1,0 +1,1431 @@
+{
+  "ok": true,
+  "captureDir": "D:\\Games\\gakumas\\FrameAnalysis-2026-07-13-015228",
+  "outputDir": "profiles\\hmsz-hair-0023-hair",
+  "selected": {
+    "draw": 244,
+    "score": 191.217,
+    "reasons": [
+      "ib/vb0/vb1 同 draw 齐全",
+      "符合 Gakumas Body 常见 40+12 双 VB 布局",
+      "同一资源组在 6 个 pass 中重复出现"
+    ],
+    "vs": "fe50b7a82b0f37be",
+    "ps": "306c290b065e95cc",
+    "ibHash": "a7f03695",
+    "vbHashes": {
+      "positionNormalTangent": "259e5e0d",
+      "colorUv": "12abfadf"
+    },
+    "resourceFiles": {
+      "ib": "000244-ib=a7f03695-vs=fe50b7a82b0f37be-ps=306c290b065e95cc.buf",
+      "vb0": "000244-vb0=259e5e0d-vs=fe50b7a82b0f37be-ps=306c290b065e95cc.buf",
+      "vb1": "000244-vb1=12abfadf-vs=fe50b7a82b0f37be-ps=306c290b065e95cc.buf"
+    },
+    "vertices": 11459,
+    "indices": 46758,
+    "ibByteWidth": 93516,
+    "vb0ByteWidth": 458360,
+    "vb1ByteWidth": 137508,
+    "textureBindingCount": 8,
+    "layout": {
+      "positionNormalTangentStride": 40,
+      "colorUvStride": 12,
+      "vertices": 11459,
+      "confidence": "known-gakumas-body-layout"
+    },
+    "drawCall": {
+      "draw": 244,
+      "vs": "fe50b7a82b0f37be",
+      "ps": "306c290b065e95cc",
+      "ibHash": "a7f03695",
+      "indexCount": 46758,
+      "instanceCount": 1,
+      "startIndex": 0,
+      "baseVertex": 0,
+      "startInstance": 0
+    }
+  },
+  "expectedVertexCount": 11459,
+  "expectedVertexCounts": [
+    11459
+  ],
+  "bodyResourceHint": "mdl_chr_hmsz-hair-0023_hair",
+  "candidateCount": 207,
+  "candidates": [
+    {
+      "draw": 240,
+      "score": 223.153,
+      "reasons": [
+        "ib/vb0/vb1 同 draw 齐全",
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 6 个 pass 中重复出现"
+      ],
+      "vs": "e0ceaa854f457e74",
+      "ps": "58352a72263d897c",
+      "ibHash": "398a5635",
+      "vbHashes": {
+        "positionNormalTangent": null,
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000240-ib-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf",
+        "vb0": "000240-vb0-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf",
+        "vb1": "000240-vb1-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf"
+      },
+      "vertices": 21045,
+      "indices": 69108,
+      "ibByteWidth": 138216,
+      "vb0ByteWidth": 841800,
+      "vb1ByteWidth": 252540,
+      "textureBindingCount": 2,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 21045,
+        "confidence": "known-gakumas-body-layout"
+      },
+      "drawCall": {
+        "draw": 240,
+        "vs": "e0ceaa854f457e74",
+        "ps": "58352a72263d897c",
+        "ibHash": "398a5635",
+        "indexCount": 69108,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 227,
+      "score": 223.153,
+      "reasons": [
+        "ib/vb0/vb1 同 draw 齐全",
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 6 个 pass 中重复出现"
+      ],
+      "vs": "fe50b7a82b0f37be",
+      "ps": "f872756c910a6eb7",
+      "ibHash": "398a5635",
+      "vbHashes": {
+        "positionNormalTangent": null,
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000227-ib-vs=fe50b7a82b0f37be-ps=f872756c910a6eb7.buf",
+        "vb0": "000227-vb0-vs=fe50b7a82b0f37be-ps=f872756c910a6eb7.buf",
+        "vb1": "000227-vb1-vs=fe50b7a82b0f37be-ps=f872756c910a6eb7.buf"
+      },
+      "vertices": 21045,
+      "indices": 69108,
+      "ibByteWidth": 138216,
+      "vb0ByteWidth": 841800,
+      "vb1ByteWidth": 252540,
+      "textureBindingCount": 8,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 21045,
+        "confidence": "known-gakumas-body-layout"
+      },
+      "drawCall": {
+        "draw": 227,
+        "vs": "fe50b7a82b0f37be",
+        "ps": "f872756c910a6eb7",
+        "ibHash": "398a5635",
+        "indexCount": 69108,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 192,
+      "score": 223.153,
+      "reasons": [
+        "ib/vb0/vb1 同 draw 齐全",
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 6 个 pass 中重复出现"
+      ],
+      "vs": "5b7fff8ecccaf579",
+      "ps": "cf02c2d50d3f2230",
+      "ibHash": "398a5635",
+      "vbHashes": {
+        "positionNormalTangent": null,
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000192-ib-vs=5b7fff8ecccaf579-ps=cf02c2d50d3f2230.buf",
+        "vb0": "000192-vb0-vs=5b7fff8ecccaf579-ps=cf02c2d50d3f2230.buf",
+        "vb1": "000192-vb1-vs=5b7fff8ecccaf579-ps=cf02c2d50d3f2230.buf"
+      },
+      "vertices": 21045,
+      "indices": 69108,
+      "ibByteWidth": 138216,
+      "vb0ByteWidth": 841800,
+      "vb1ByteWidth": 252540,
+      "textureBindingCount": 6,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 21045,
+        "confidence": "known-gakumas-body-layout"
+      },
+      "drawCall": {
+        "draw": 192,
+        "vs": "5b7fff8ecccaf579",
+        "ps": "cf02c2d50d3f2230",
+        "ibHash": "398a5635",
+        "indexCount": 69108,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 172,
+      "score": 223.153,
+      "reasons": [
+        "ib/vb0/vb1 同 draw 齐全",
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 6 个 pass 中重复出现"
+      ],
+      "vs": "5b7fff8ecccaf579",
+      "ps": "cf02c2d50d3f2230",
+      "ibHash": "398a5635",
+      "vbHashes": {
+        "positionNormalTangent": null,
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000172-ib-vs=5b7fff8ecccaf579-ps=cf02c2d50d3f2230.buf",
+        "vb0": "000172-vb0-vs=5b7fff8ecccaf579-ps=cf02c2d50d3f2230.buf",
+        "vb1": "000172-vb1-vs=5b7fff8ecccaf579-ps=cf02c2d50d3f2230.buf"
+      },
+      "vertices": 21045,
+      "indices": 69108,
+      "ibByteWidth": 138216,
+      "vb0ByteWidth": 841800,
+      "vb1ByteWidth": 252540,
+      "textureBindingCount": 6,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 21045,
+        "confidence": "known-gakumas-body-layout"
+      },
+      "drawCall": {
+        "draw": 172,
+        "vs": "5b7fff8ecccaf579",
+        "ps": "cf02c2d50d3f2230",
+        "ibHash": "398a5635",
+        "indexCount": 69108,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 14,
+      "score": 223.153,
+      "reasons": [
+        "ib/vb0/vb1 同 draw 齐全",
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 6 个 pass 中重复出现"
+      ],
+      "vs": "221c573337491c78",
+      "ps": "a04da6e49886b206",
+      "ibHash": "398a5635",
+      "vbHashes": {
+        "positionNormalTangent": null,
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000014-ib-vs=221c573337491c78-ps=a04da6e49886b206.buf",
+        "vb0": "000014-vb0-vs=221c573337491c78-ps=a04da6e49886b206.buf",
+        "vb1": "000014-vb1-vs=221c573337491c78-ps=a04da6e49886b206.buf"
+      },
+      "vertices": 21045,
+      "indices": 69108,
+      "ibByteWidth": 138216,
+      "vb0ByteWidth": 841800,
+      "vb1ByteWidth": 252540,
+      "textureBindingCount": 2,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 21045,
+        "confidence": "known-gakumas-body-layout"
+      },
+      "drawCall": {
+        "draw": 14,
+        "vs": "221c573337491c78",
+        "ps": "a04da6e49886b206",
+        "ibHash": "398a5635",
+        "indexCount": 69108,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 4,
+      "score": 223.153,
+      "reasons": [
+        "ib/vb0/vb1 同 draw 齐全",
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 6 个 pass 中重复出现"
+      ],
+      "vs": "436f9c16af3b54cf",
+      "ps": "a04da6e49886b206",
+      "ibHash": "398a5635",
+      "vbHashes": {
+        "positionNormalTangent": null,
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000004-ib-vs=436f9c16af3b54cf-ps=a04da6e49886b206.buf",
+        "vb0": "000004-vb0-vs=436f9c16af3b54cf-ps=a04da6e49886b206.buf",
+        "vb1": "000004-vb1-vs=436f9c16af3b54cf-ps=a04da6e49886b206.buf"
+      },
+      "vertices": 21045,
+      "indices": 69108,
+      "ibByteWidth": 138216,
+      "vb0ByteWidth": 841800,
+      "vb1ByteWidth": 252540,
+      "textureBindingCount": 2,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 21045,
+        "confidence": "known-gakumas-body-layout"
+      },
+      "drawCall": {
+        "draw": 4,
+        "vs": "436f9c16af3b54cf",
+        "ps": "a04da6e49886b206",
+        "ibHash": "398a5635",
+        "indexCount": 69108,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 247,
+      "score": 191.217,
+      "reasons": [
+        "ib/vb0/vb1 同 draw 齐全",
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 6 个 pass 中重复出现"
+      ],
+      "vs": "e0ceaa854f457e74",
+      "ps": "58352a72263d897c",
+      "ibHash": "a7f03695",
+      "vbHashes": {
+        "positionNormalTangent": "259e5e0d",
+        "colorUv": "12abfadf"
+      },
+      "resourceFiles": {
+        "ib": "000247-ib=a7f03695-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf",
+        "vb0": "000247-vb0=259e5e0d-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf",
+        "vb1": "000247-vb1=12abfadf-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf"
+      },
+      "vertices": 11459,
+      "indices": 46758,
+      "ibByteWidth": 93516,
+      "vb0ByteWidth": 458360,
+      "vb1ByteWidth": 137508,
+      "textureBindingCount": 0,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 11459,
+        "confidence": "known-gakumas-body-layout"
+      },
+      "drawCall": {
+        "draw": 247,
+        "vs": "e0ceaa854f457e74",
+        "ps": "58352a72263d897c",
+        "ibHash": "a7f03695",
+        "indexCount": 46758,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 244,
+      "score": 191.217,
+      "reasons": [
+        "ib/vb0/vb1 同 draw 齐全",
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 6 个 pass 中重复出现"
+      ],
+      "vs": "fe50b7a82b0f37be",
+      "ps": "306c290b065e95cc",
+      "ibHash": "a7f03695",
+      "vbHashes": {
+        "positionNormalTangent": "259e5e0d",
+        "colorUv": "12abfadf"
+      },
+      "resourceFiles": {
+        "ib": "000244-ib=a7f03695-vs=fe50b7a82b0f37be-ps=306c290b065e95cc.buf",
+        "vb0": "000244-vb0=259e5e0d-vs=fe50b7a82b0f37be-ps=306c290b065e95cc.buf",
+        "vb1": "000244-vb1=12abfadf-vs=fe50b7a82b0f37be-ps=306c290b065e95cc.buf"
+      },
+      "vertices": 11459,
+      "indices": 46758,
+      "ibByteWidth": 93516,
+      "vb0ByteWidth": 458360,
+      "vb1ByteWidth": 137508,
+      "textureBindingCount": 8,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 11459,
+        "confidence": "known-gakumas-body-layout"
+      },
+      "drawCall": {
+        "draw": 244,
+        "vs": "fe50b7a82b0f37be",
+        "ps": "306c290b065e95cc",
+        "ibHash": "a7f03695",
+        "indexCount": 46758,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 242,
+      "score": 191.217,
+      "reasons": [
+        "ib/vb0/vb1 同 draw 齐全",
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 6 个 pass 中重复出现"
+      ],
+      "vs": "fe50b7a82b0f37be",
+      "ps": "f872756c910a6eb7",
+      "ibHash": "a7f03695",
+      "vbHashes": {
+        "positionNormalTangent": "259e5e0d",
+        "colorUv": "12abfadf"
+      },
+      "resourceFiles": {
+        "ib": "000242-ib=a7f03695-vs=fe50b7a82b0f37be-ps=f872756c910a6eb7.buf",
+        "vb0": "000242-vb0=259e5e0d-vs=fe50b7a82b0f37be-ps=f872756c910a6eb7.buf",
+        "vb1": "000242-vb1=12abfadf-vs=fe50b7a82b0f37be-ps=f872756c910a6eb7.buf"
+      },
+      "vertices": 11459,
+      "indices": 46758,
+      "ibByteWidth": 93516,
+      "vb0ByteWidth": 458360,
+      "vb1ByteWidth": 137508,
+      "textureBindingCount": 8,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 11459,
+        "confidence": "known-gakumas-body-layout"
+      },
+      "drawCall": {
+        "draw": 242,
+        "vs": "fe50b7a82b0f37be",
+        "ps": "f872756c910a6eb7",
+        "ibHash": "a7f03695",
+        "indexCount": 46758,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 179,
+      "score": 191.217,
+      "reasons": [
+        "ib/vb0/vb1 同 draw 齐全",
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 6 个 pass 中重复出现"
+      ],
+      "vs": "5b7fff8ecccaf579",
+      "ps": "cf02c2d50d3f2230",
+      "ibHash": "a7f03695",
+      "vbHashes": {
+        "positionNormalTangent": "259e5e0d",
+        "colorUv": "12abfadf"
+      },
+      "resourceFiles": {
+        "ib": "000179-ib=a7f03695-vs=5b7fff8ecccaf579-ps=cf02c2d50d3f2230.buf",
+        "vb0": "000179-vb0=259e5e0d-vs=5b7fff8ecccaf579-ps=cf02c2d50d3f2230.buf",
+        "vb1": "000179-vb1=12abfadf-vs=5b7fff8ecccaf579-ps=cf02c2d50d3f2230.buf"
+      },
+      "vertices": 11459,
+      "indices": 46758,
+      "ibByteWidth": 93516,
+      "vb0ByteWidth": 458360,
+      "vb1ByteWidth": 137508,
+      "textureBindingCount": 6,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 11459,
+        "confidence": "known-gakumas-body-layout"
+      },
+      "drawCall": {
+        "draw": 179,
+        "vs": "5b7fff8ecccaf579",
+        "ps": "cf02c2d50d3f2230",
+        "ibHash": "a7f03695",
+        "indexCount": 46758,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 16,
+      "score": 191.217,
+      "reasons": [
+        "ib/vb0/vb1 同 draw 齐全",
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 6 个 pass 中重复出现"
+      ],
+      "vs": "221c573337491c78",
+      "ps": "a04da6e49886b206",
+      "ibHash": "a7f03695",
+      "vbHashes": {
+        "positionNormalTangent": "259e5e0d",
+        "colorUv": "12abfadf"
+      },
+      "resourceFiles": {
+        "ib": "000016-ib=a7f03695-vs=221c573337491c78-ps=a04da6e49886b206.buf",
+        "vb0": "000016-vb0=259e5e0d-vs=221c573337491c78-ps=a04da6e49886b206.buf",
+        "vb1": "000016-vb1=12abfadf-vs=221c573337491c78-ps=a04da6e49886b206.buf"
+      },
+      "vertices": 11459,
+      "indices": 46758,
+      "ibByteWidth": 93516,
+      "vb0ByteWidth": 458360,
+      "vb1ByteWidth": 137508,
+      "textureBindingCount": 0,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 11459,
+        "confidence": "known-gakumas-body-layout"
+      },
+      "drawCall": {
+        "draw": 16,
+        "vs": "221c573337491c78",
+        "ps": "a04da6e49886b206",
+        "ibHash": "a7f03695",
+        "indexCount": 46758,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 5,
+      "score": 191.217,
+      "reasons": [
+        "ib/vb0/vb1 同 draw 齐全",
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 6 个 pass 中重复出现"
+      ],
+      "vs": "436f9c16af3b54cf",
+      "ps": "a04da6e49886b206",
+      "ibHash": "a7f03695",
+      "vbHashes": {
+        "positionNormalTangent": "259e5e0d",
+        "colorUv": "12abfadf"
+      },
+      "resourceFiles": {
+        "ib": "000005-ib=a7f03695-vs=436f9c16af3b54cf-ps=a04da6e49886b206.buf",
+        "vb0": "000005-vb0=259e5e0d-vs=436f9c16af3b54cf-ps=a04da6e49886b206.buf",
+        "vb1": "000005-vb1=12abfadf-vs=436f9c16af3b54cf-ps=a04da6e49886b206.buf"
+      },
+      "vertices": 11459,
+      "indices": 46758,
+      "ibByteWidth": 93516,
+      "vb0ByteWidth": 458360,
+      "vb1ByteWidth": 137508,
+      "textureBindingCount": 2,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 11459,
+        "confidence": "known-gakumas-body-layout"
+      },
+      "drawCall": {
+        "draw": 5,
+        "vs": "436f9c16af3b54cf",
+        "ps": "a04da6e49886b206",
+        "ibHash": "a7f03695",
+        "indexCount": 46758,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 80,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "002f9206",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000080-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000080-vb0=002f9206-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 80,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 79,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "002f9206",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000079-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000079-vb0=002f9206-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 79,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 78,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "0474d546",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000078-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000078-vb0=0474d546-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 78,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 77,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "0474d546",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000077-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000077-vb0=0474d546-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 77,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 76,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "0474d546",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000076-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000076-vb0=0474d546-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 76,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 75,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "0474d546",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000075-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000075-vb0=0474d546-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 75,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 74,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "392b5f32",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000074-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000074-vb0=392b5f32-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 74,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 73,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "392b5f32",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000073-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000073-vb0=392b5f32-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 73,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 72,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "392b5f32",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000072-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000072-vb0=392b5f32-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 72,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 71,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "392b5f32",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000071-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000071-vb0=392b5f32-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 71,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 70,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "392b5f32",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000070-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000070-vb0=392b5f32-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 70,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 69,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "392b5f32",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000069-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000069-vb0=392b5f32-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 69,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 68,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "a639bb4a",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000068-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000068-vb0=a639bb4a-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 68,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 67,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "a639bb4a",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000067-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000067-vb0=a639bb4a-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 67,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 66,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "a639bb4a",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000066-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000066-vb0=a639bb4a-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 66,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 65,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "a639bb4a",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000065-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000065-vb0=a639bb4a-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 65,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 64,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "a639bb4a",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000064-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000064-vb0=a639bb4a-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 64,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 63,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "a639bb4a",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000063-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000063-vb0=a639bb4a-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 63,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 62,
+      "score": 187.184,
+      "reasons": [
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 19 个 pass 中重复出现"
+      ],
+      "vs": "15751eb080b9bcfc",
+      "ps": "ae4e6fdc09590dc5",
+      "ibHash": "dbd82e34",
+      "vbHashes": {
+        "positionNormalTangent": "a639bb4a",
+        "colorUv": null
+      },
+      "resourceFiles": {
+        "ib": "000062-ib=dbd82e34-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf",
+        "vb0": "000062-vb0=a639bb4a-vs=15751eb080b9bcfc-ps=ae4e6fdc09590dc5.buf"
+      },
+      "vertices": 64,
+      "indices": 120,
+      "ibByteWidth": 240,
+      "vb0ByteWidth": 2560,
+      "vb1ByteWidth": null,
+      "textureBindingCount": 4,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 64,
+        "confidence": "partial-vb0-only-assumption"
+      },
+      "drawCall": {
+        "draw": 62,
+        "vs": "15751eb080b9bcfc",
+        "ps": "ae4e6fdc09590dc5",
+        "ibHash": "dbd82e34",
+        "indexCount": 120,
+        "instanceCount": 1,
+        "startIndex": 0,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    },
+    {
+      "draw": 246,
+      "score": 150.694,
+      "reasons": [
+        "ib/vb0/vb1 同 draw 齐全",
+        "符合 Gakumas Body 常见 40+12 双 VB 布局",
+        "同一资源组在 6 个 pass 中重复出现"
+      ],
+      "vs": "e0ceaa854f457e74",
+      "ps": "58352a72263d897c",
+      "ibHash": "d9cfd2ab",
+      "vbHashes": {
+        "positionNormalTangent": "c927c774",
+        "colorUv": "3a178935"
+      },
+      "resourceFiles": {
+        "ib": "000246-ib=d9cfd2ab-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf",
+        "vb0": "000246-vb0=c927c774-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf",
+        "vb1": "000246-vb1=3a178935-vs=e0ceaa854f457e74-ps=58352a72263d897c.buf"
+      },
+      "vertices": 5394,
+      "indices": 12300,
+      "ibByteWidth": 40578,
+      "vb0ByteWidth": 215760,
+      "vb1ByteWidth": 64728,
+      "textureBindingCount": 0,
+      "layout": {
+        "positionNormalTangentStride": 40,
+        "colorUvStride": 12,
+        "vertices": 5394,
+        "confidence": "known-gakumas-body-layout"
+      },
+      "drawCall": {
+        "draw": 246,
+        "vs": "e0ceaa854f457e74",
+        "ps": "58352a72263d897c",
+        "ibHash": "d9cfd2ab",
+        "indexCount": 12300,
+        "instanceCount": 1,
+        "startIndex": 7989,
+        "baseVertex": 0,
+        "startInstance": 0
+      }
+    }
+  ],
+  "warnings": [
+    "这是 runtime-only profile：帧数据不能单独还原完整 Unity 骨架名、权重和 BindPose。",
+    "若 VB 文件名没有 hash，已写入 resourceFiles 作为读取兜底。"
+  ]
+}

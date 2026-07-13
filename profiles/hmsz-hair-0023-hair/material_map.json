@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "materials": {
+    "hair": {
+      "source": "frame-analysis-runtime",
+      "mainDraw": 244,
+      "pixelShader": "306c290b065e95cc",
+      "textureSlots": [
+        {
+          "key": "hair.baseColor",
+          "slot": "ps-t0",
+          "semantic": "baseColor",
+          "hash": "d41d50d3"
+        },
+        {
+          "key": "hair.packedMask",
+          "slot": "ps-t1",
+          "semantic": "packedMask",
+          "hash": "4ce51833"
+        },
+        {
+          "key": "hair.t2",
+          "slot": "ps-t2",
+          "semantic": "t2",
+          "hash": "0ff26bed"
+        },
+        {
+          "key": "hair.t3",
+          "slot": "ps-t3",
+          "semantic": "t3",
+          "hash": "9e00a8ad"
+        },
+        {
+          "key": "hair.shadeColor",
+          "slot": "ps-t4",
+          "semantic": "shadeColor",
+          "hash": "e9da7063"
+        },
+        {
+          "key": "hair.ramp",
+          "slot": "ps-t5",
+          "semantic": "ramp",
+          "hash": "b008542b"
+        },
+        {
+          "key": "hair.t6",
+          "slot": "ps-t6",
+          "semantic": "t6",
+          "hash": "763ec073"
+        },
+        {
+          "key": "hair.rampAdd",
+          "slot": "ps-t7",
+          "semantic": "rampAdd",
+          "hash": "12892972"
+        }
+      ],
+      "materialSections": [
+        {
+          "id": "hair.section0",
+          "role": "main",
+          "firstIndex": 0,
+          "indexCount": 46758,
+          "draws": [
+            5,
+            16,
+            179,
+            242,
+            244,
+            247
+          ],
+          "representativeDraw": 244,
+          "vertexShader": "fe50b7a82b0f37be",
+          "pixelShader": "306c290b065e95cc",
+          "textureKeyPrefix": "hair",
+          "pixelShaders": [
+            "306c290b065e95cc",
+            "58352a72263d897c",
+            "a04da6e49886b206",
+            "cf02c2d50d3f2230",
+            "f872756c910a6eb7"
+          ],
+          "textureSlots": [
+            {
+              "key": "hair.baseColor",
+              "slot": "ps-t0",
+              "semantic": "baseColor",
+              "hash": "d41d50d3"
+            },
+            {
+              "key": "hair.packedMask",
+              "slot": "ps-t1",
+              "semantic": "packedMask",
+              "hash": "4ce51833"
+            },
+            {
+              "key": "hair.t2",
+              "slot": "ps-t2",
+              "semantic": "t2",
+              "hash": "0ff26bed"
+            },
+            {
+              "key": "hair.t3",
+              "slot": "ps-t3",
+              "semantic": "t3",
+              "hash": "9e00a8ad"
+            },
+            {
+              "key": "hair.shadeColor",
+              "slot": "ps-t4",
+              "semantic": "shadeColor",
+              "hash": "e9da7063"
+            },
+            {
+              "key": "hair.ramp",
+              "slot": "ps-t5",
+              "semantic": "ramp",
+              "hash": "b008542b"
+            },
+            {
+              "key": "hair.t6",
+              "slot": "ps-t6",
+              "semantic": "t6",
+              "hash": "763ec073"
+            },
+            {
+              "key": "hair.rampAdd",
+              "slot": "ps-t7",
+              "semantic": "rampAdd",
+              "hash": "12892972"
+            }
+          ]
+        }
+      ],
+      "note": "t0/t1/t4 语义按 Gakumas Body 模板命名；未识别槽位保留原 slot。"
+    }
+  }
+}

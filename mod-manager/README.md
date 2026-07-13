@@ -3,9 +3,6 @@
 面向**使用者**的 GakumasMI Mod 包管理器（WPF / XAML / Stylet MVVM）。作为
 `3dmigoto-gkms` 后续更新的一部分维护与发布，版本号、Release tag 与其保持一致。
 
-规划与设计文档见 [`docs/plan.md`](docs/plan.md)（范围、包格式、里程碑）与
-[`docs/gui-development-flow.md`](docs/gui-development-flow.md)（界面拆解与开发流程）。
-
 ## 目录
 
 - `src/GakumasModManager/`：WPF 桌面应用。
@@ -15,7 +12,6 @@
   - `Services/`：文件操作与核心逻辑（扫描/启停/重载/d3dx.ini）；
     `Core/NativeMethods.cs` 只放 Win32 边界，`Services/AsstProxy.cs` 包装给 ViewModel。
 - `tests/GakumasModManager.ScannerSmoke/`：扫描、启停、d3dx.ini 备份的 smoke 测试。
-- `docs/`：规划、GUI 开发流程与参考图。
 - `GakumasModManager.sln`：包管理器专用解决方案。
 - `run_gakumas_mm.bat`：本地启动脚本。
 
@@ -74,4 +70,4 @@ dotnet run --project mod-manager\tests\GakumasModManager.ScannerSmoke\GakumasMod
   `GakumasModManager\` 子目录并可建桌面快捷方式，`d3dx.ini`/`Mods` 已存在不覆盖。
   安装脚本见 [`installer/GakumasModManager.iss`](installer/GakumasModManager.iss)。
 
-plan.md 三阶段里程碑已全部落地。后续为增量打磨（封面缩略图渲染、抓帧键/重载键写回等按需）。
+当前功能已落地，后续只做缺陷修复和明确需求。

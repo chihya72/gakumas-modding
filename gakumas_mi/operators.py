@@ -6,11 +6,12 @@ import bpy
 from bpy.types import Operator
 
 
-def _png_to_dds(image_path):
-    """把 PNG/其它图像转成未压缩 RGBA8_UNORM_SRGB 的 DDS（DX10 头），返回临时 DDS 路径。
+def _png_to_dds(image_path, srgb=True):
+    """把 PNG/其它图像转成未压缩 RGBA8 的 DDS（DX10 头），返回临时 DDS 路径。
 
-    用 Blender 自带图像 API 读取(无需外部工具);设为 Non-Color，让存储的 sRGB 字节
-    原样写入 DDS，再以 _SRGB 格式标记，使游戏采样结果与原 BC7_UNORM_SRGB 一致。
+    用 Blender 自带图像 API 读取(无需外部工具);设为 Non-Color，让存储的字节原样
+    写入 DDS。t0/t4 原版是 BC7_UNORM_SRGB → srgb=True;t1 PackedMask 原版是
+    BC7_UNORM 线性 → 必须 srgb=False,否则 shader 自动 sRGB 解码,阈值被压暗。
     """
     import numpy as np
 
@@ -28,8 +29,9 @@ def _png_to_dds(image_path):
         buffer = np.nan_to_num(buffer, nan=0.0, posinf=1.0, neginf=0.0)
         rgba = buffer.reshape(height, width, 4)[::-1]  # Blender 自下而上 → DDS 自上而下
         rgba8 = np.clip(rgba * 255.0 + 0.5, 0.0, 255.0).astype(np.uint8)
-        output = Path(tempfile.gettempdir()) / f"gmi_{Path(image_path).stem}.dds"
-        core.write_rgba8_dds(output, width, height, rgba8.tobytes(), srgb=True)
+        suffix = "" if srgb else "_unorm"
+        output = Path(tempfile.gettempdir()) / f"gmi_{Path(image_path).stem}{suffix}.dds"
+        core.write_rgba8_dds(output, width, height, rgba8.tobytes(), srgb=srgb)
         return str(output)
     finally:
         bpy.data.images.remove(image)
@@ -59,10 +61,14 @@ def _prepare_cover_image(path, max_dim=1024):
         bpy.data.images.remove(image)
 
 
-def _neutral_material_dds(semantic):
+def _neutral_material_dds(semantic, component_id="body"):
     """生成临时的中性 t1/t4 DDS，盖掉游戏原版遮罩/阴影对新贴图的干扰。"""
-    rgba = core.NEUTRAL_PACKED_MASK if semantic == "packedMask" else core.NEUTRAL_SHADE_COLOR
-    output = Path(tempfile.gettempdir()) / f"gmi_neutral_{semantic}.dds"
+    if semantic == "packedMask":
+        # hair 的 t1.A ≠ AO:写 255 会漏出未替换的原版 t4,必须走 A=0 的 hair 常量
+        rgba = core.HAIR_NEUTRAL_PACKED_MASK if component_id == "hair" else core.NEUTRAL_PACKED_MASK
+    else:
+        rgba = core.NEUTRAL_SHADE_COLOR
+    output = Path(tempfile.gettempdir()) / f"gmi_neutral_{component_id}_{semantic}.dds"
     core.write_solid_rgba8_dds(output, rgba)
     return str(output)
 from mathutils import Matrix, Vector
@@ -129,7 +135,7 @@ def _resolve_body_json_library(scene):
             return ref
     library_dir = bpy.path.abspath(scene.gmi_body_json_library_dir)
     if not library_dir:
-        raise ValueError("请先选择 Body JSON资源库目录")
+        raise ValueError("请先选择网格 JSON 资源库目录")
     result = core.resolve_body_json_resource(profile_dir, library_dir, scene.gmi_component_id)
     scene.gmi_source_mesh_json = result["meshJson"]
     scene.gmi_skeleton_json = result.get("skeletonJson") or ""
@@ -720,6 +726,86 @@ def _synthesize_export_native_colors(profile_dir, component_id, data, target_bas
     }
 
 
+# hair 描边色 nibble (R高,R低,G高)/15 是全网格常量(实测:蓝紫(0,0,1)/粉(1,0,0)/金(4,2,1)),
+# ≠ body 的逐顶点基础色曲线——逐顶点合成会让暗部塌成绿色。宁小勿大(描边宁暗勿亮)。
+HAIR_OUTLINE_TIERS = {
+    "DARK": (0, 0, 1),
+    "PINK": (1, 0, 0),
+    "BLONDE": (4, 2, 1),
+    "BLACK": (0, 0, 0),
+}
+
+
+def _hair_export_colors(reference, data, tier, outline_width_mode, no_outline_vertices):
+    """hair COLOR 语义:R/G 高位 nibble = 描边色常量(按色相档);
+    G低=ramp行、B=0~15 细宽度、A=144/0 高光掩码,从参考网格 COLOR 最近邻拷贝。"""
+    if reference.data.color_attributes.get("COLOR") is None:
+        raise ValueError("参考网格没有 COLOR 属性,无法拷贝 hair 描边宽度/高光掩码(请重新导入带权重参考模型)")
+    ref_colors = _vertex_colors(reference.data)
+    tree = KDTree(len(reference.data.vertices))
+    for index, vertex in enumerate(reference.data.vertices):
+        tree.insert(core._to_unity(reference.matrix_world @ vertex.co), index)
+    tree.balance()
+    r_high, r_low, g_high = HAIR_OUTLINE_TIERS[tier]
+    r_byte = r_high * 16 + r_low
+    colors = []
+    for index, position in enumerate(data["vertices"]):
+        _, nearest, _ = tree.find(position)
+        _, ref_g, ref_b, ref_a = ref_colors[nearest]
+        b8 = core._safe_unorm8(ref_b)
+        if outline_width_mode == "DISABLE_ALL" or data["vertexIndices"][index] in no_outline_vertices:
+            b8 &= 0xF0
+        colors.append((
+            r_byte / 255.0,
+            (g_high * 16 + (core._safe_unorm8(ref_g) & 0x0F)) / 255.0,
+            b8 / 255.0,
+            core._safe_unorm8(ref_a) / 255.0,
+        ))
+    return colors, {
+        "method": "hair_outline_constant_plus_reference_nn",
+        "outlineTier": tier,
+        "outlineNibbles": [r_high, r_low, g_high],
+        "referenceVertices": len(reference.data.vertices),
+        "totalVertices": len(colors),
+    }
+
+
+# hairprop 描边=按部件常量(实测 ttmr/hski/hmsz 原版发饰:金属件 (3,3,3)+高光掩码 A=144,
+# 暗色/布件 (0,0,0)+A=0;B=8 细宽度)。按材质槽的「材质类型」映射;亮色布件(如白花)想要
+# 灰描边可把该槽材质类型设为 metal。发饰几何与参考不重叠,B/A 不走参考最近邻拷贝。
+HAIRPROP_OUTLINE_BY_CLASS = {
+    "metal": ((3, 3, 3), 144),
+    "skin": ((1, 0, 0), 0),
+}
+HAIRPROP_OUTLINE_DEFAULT = ((0, 0, 0), 0)
+HAIRPROP_OUTLINE_WIDTH = 8
+
+
+def _hairprop_export_colors(obj, data, outline_width_mode, no_outline_vertices):
+    """hairprop COLOR 语义:R/G 高位 nibble = 逐材质槽描边色常量,B=8,A=金属144/其余0。"""
+    per_slot = {}
+    for index, slot in enumerate(obj.material_slots):
+        key = getattr(slot.material, "gmi_material_class", "cloth") if slot.material else "cloth"
+        (r_high, r_low, g_high), a8 = HAIRPROP_OUTLINE_BY_CLASS.get(key, HAIRPROP_OUTLINE_DEFAULT)
+        per_slot[index] = (r_high * 16 + r_low, g_high * 16, a8)
+    default = (0, 0, HAIRPROP_OUTLINE_DEFAULT[1])
+    colors = []
+    class_counts = {}
+    for index, slot_index in enumerate(data["materials"]):
+        r8, g8, a8 = per_slot.get(int(slot_index), default)
+        b8 = HAIRPROP_OUTLINE_WIDTH
+        if outline_width_mode == "DISABLE_ALL" or data["vertexIndices"][index] in no_outline_vertices:
+            b8 = 0
+        colors.append((r8 / 255.0, g8 / 255.0, b8 / 255.0, a8 / 255.0))
+        class_counts[int(slot_index)] = class_counts.get(int(slot_index), 0) + 1
+    return colors, {
+        "method": "hairprop_outline_constant_per_slot",
+        "slotOutlineBytes": {str(k): list(v) for k, v in per_slot.items()},
+        "slotVertexCounts": {str(k): v for k, v in class_counts.items()},
+        "totalVertices": len(colors),
+    }
+
+
 def _apply_semantic_weight_correction(target, reference, old_dominant):
     reference_groups = {group.index: group.name for group in reference.vertex_groups}
     semantic_names = _semantic_bone_names(reference_groups.values())
@@ -909,6 +995,7 @@ def _inverse_skin_export_data(
     if uv0_layer is None:
         raise ValueError(f"切线计算后 UV 层丢失：{uv0_layer_name}")
     vertices, normals, tangents, uv0, uv1, colors, skin, faces, materials = ([] for _ in range(9))
+    vertex_indices = []
     tangent_groups = {}
     color_per_slot = color_per_slot or {}
     truncated_weight = 0.0
@@ -958,6 +1045,7 @@ def _inverse_skin_export_data(
             vertices.append(position); normals.append(normal); tangents.append(tangent)
             uv0.append(tex0); uv1.append(tex1); colors.append(color); skin.append(ordered)
             materials.append(int(polygon.material_index))
+            vertex_indices.append(int(loop.vertex_index))
             key = (
                 round(position[0], 5), round(position[1], 5), round(position[2], 5),
                 int(polygon.material_index),
@@ -996,7 +1084,7 @@ def _inverse_skin_export_data(
     return {
         "vertices": vertices, "normals": normals, "tangents": tangents,
         "uv0": uv0, "uv1": uv1, "colors": colors, "skin": skin, "faces": faces,
-        "materials": materials,
+        "materials": materials, "vertexIndices": vertex_indices,
         "uvLayers": {
             "uv0": uv0_layer.name if uv0_layer is not None else "",
             "uv1": uv1_layer.name if uv1_layer is not None else "",
@@ -1126,8 +1214,8 @@ class GMI_OT_import_profile_object(Operator):
 
 class GMI_OT_resolve_body_json_library(Operator):
     bl_idname = "gmi.resolve_body_json_library"
-    bl_label = "解析 Body JSON资源库"
-    bl_description = "根据当前配置档自动匹配 assetstudio-body-json 中的原模型 JSON 和骨架 JSON"
+    bl_label = "匹配网格 JSON 资源库"
+    bl_description = "按制作目标和当前配置档匹配原模型 JSON 与骨架 JSON"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -1148,7 +1236,7 @@ class GMI_OT_resolve_body_json_library(Operator):
 class GMI_OT_extract_profile_from_frame_dump(Operator):
     bl_idname = "gmi.extract_profile_from_frame_dump"
     bl_label = "从抓帧生成配置档"
-    bl_description = "扫描 FrameAnalysis 抓帧目录，自动识别 Body 的 Draw/VB/IB/贴图绑定并生成 runtime-only 配置档"
+    bl_description = "扫描 FrameAnalysis，识别当前组件的 Draw/VB/IB/贴图并生成 runtime-only 配置档"
 
     def execute(self, context):
         scene = context.scene
@@ -1158,7 +1246,7 @@ class GMI_OT_extract_profile_from_frame_dump(Operator):
             self.report({"ERROR"}, "请先选择 FrameAnalysis 抓帧目录")
             return {"CANCELLED"}
         if not scene.gmi_body_json_library_dir:
-            self.report({"ERROR"}, "请先选择 Body JSON资源库目录")
+            self.report({"ERROR"}, "请先选择网格 JSON 资源库目录")
             return {"CANCELLED"}
         try:
             if not output_dir:
@@ -1169,6 +1257,7 @@ class GMI_OT_extract_profile_from_frame_dump(Operator):
                 hints = core.body_json_vertex_hints(
                     bpy.path.abspath(scene.gmi_body_json_library_dir),
                     scene.gmi_body_resource,
+                    mesh_name=core.component_mesh_name(scene.gmi_component_id),
                 )
                 expected_vertex_counts = hints["vertexCounts"]
                 entry = hints["exact"]
@@ -1201,7 +1290,7 @@ class GMI_OT_extract_profile_from_frame_dump(Operator):
 class GMI_OT_build_full_profile(Operator):
     bl_idname = "gmi.build_full_profile"
     bl_label = "一键生成完整配置档"
-    bl_description = "从抓帧目录 + Body JSON资源库 一次生成 ①注入信息 ②结构数据 ③逆算子 的完整配置档"
+    bl_description = "从抓帧目录和对应网格资源库生成注入信息、结构数据与逆算子"
 
     def execute(self, context):
         scene = context.scene
@@ -1211,7 +1300,7 @@ class GMI_OT_build_full_profile(Operator):
             self.report({"ERROR"}, "请先填写抓帧目录")
             return {"CANCELLED"}
         if not library_dir:
-            self.report({"ERROR"}, "请先填写 Body JSON资源库目录")
+            self.report({"ERROR"}, "请先填写网格 JSON 资源库目录")
             return {"CANCELLED"}
         try:
             output_dir = bpy.path.abspath(scene.gmi_extract_output_dir)
@@ -1221,7 +1310,11 @@ class GMI_OT_build_full_profile(Operator):
             expected_vertex_count = None
             expected_vertex_counts = []
             if scene.gmi_body_resource:
-                hints = core.body_json_vertex_hints(library_dir, scene.gmi_body_resource)
+                hints = core.body_json_vertex_hints(
+                    library_dir,
+                    scene.gmi_body_resource,
+                    mesh_name=core.component_mesh_name(component_id),
+                )
                 expected_vertex_counts = hints["vertexCounts"]
                 entry = hints["exact"]
                 if entry:
@@ -1235,7 +1328,7 @@ class GMI_OT_build_full_profile(Operator):
                 expected_vertex_counts=expected_vertex_counts,
                 body_resource=(scene.gmi_body_resource or None),
             )
-            # ②结构数据 + ③逆算子（可选指定 Body 以消歧）
+            # ②结构数据 + ③逆算子（可选指定目标资源以消歧）
             report = core.complete_inverse_skin_profile(
                 output_dir, library_dir, component_id,
                 body_resource=(scene.gmi_body_resource or None),
@@ -1443,6 +1536,77 @@ class GMI_OT_transfer_profile_weights(Operator):
             messages.extend(alignment_warnings)
             level = {"WARNING"} if (risk["reviewVertices"] or alignment_warnings) else {"INFO"}
             self.report(level, "；".join(messages))
+            return {"FINISHED"}
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+
+
+class GMI_OT_bind_hairprop_rigid(Operator):
+    bl_idname = "gmi.bind_hairprop_rigid"
+    bl_label = "发饰刚体跟随头部"
+    bl_description = "将发饰全部顶点绑定到 Head_Hair，只随头部整体移动和旋转"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        scene = context.scene
+        if scene.gmi_component_id != "hairprop":
+            self.report({"ERROR"}, "请先把组件设为 hairprop")
+            return {"CANCELLED"}
+        try:
+            reference = _profile_weight_reference(context)
+            if reference.get("gmi_component_id") != "hairprop":
+                raise ValueError("当前带权重参考模型不是 hairprop profile")
+            armature = next(
+                (modifier.object for modifier in reference.modifiers
+                 if modifier.type == "ARMATURE" and modifier.object
+                 and modifier.object.data.bones.get("Head_Hair")),
+                None,
+            )
+            if armature is None:
+                raise ValueError("参考骨架没有 Head_Hair 骨骼，请重新导入 hairprop 参考模型")
+
+            target = context.active_object
+            if not (target and target.type == "MESH") or target is reference:
+                candidates = [
+                    obj for obj in context.selected_objects
+                    if obj.type == "MESH" and obj is not reference
+                    and not obj.get("gmi_weighted_reference") and not obj.get("gmi_reference_only")
+                ]
+                if len(candidates) == 1:
+                    target = candidates[0]
+                    context.view_layer.objects.active = target
+                elif len(candidates) > 1:
+                    raise ValueError("选中了多个作者网格，请只激活发饰模型")
+                else:
+                    raise ValueError("请激活要绑定的发饰作者网格")
+            if target.get("gmi_weighted_reference") or target.get("gmi_reference_only"):
+                raise ValueError("不能把配置档参考模型作为作者发饰绑定")
+
+            world = target.matrix_world.copy()
+            target.parent = None
+            target.matrix_world = world
+            for modifier in list(target.modifiers):
+                if modifier.type == "ARMATURE":
+                    target.modifiers.remove(modifier)
+            target.vertex_groups.clear()
+            group = target.vertex_groups.new(name="Head_Hair")
+            group.add(range(len(target.data.vertices)), 1.0, "REPLACE")
+            modifier = target.modifiers.new(name="GMI 发饰刚体跟随头部", type="ARMATURE")
+            modifier.object = armature
+
+            target["gmi_profile_weights"] = True
+            target["gmi_profile_id"] = reference.get("gmi_profile_id", "")
+            target["gmi_profile_dir"] = reference.get("gmi_profile_dir", "")
+            target["gmi_component_id"] = "hairprop"
+            target["gmi_rigid_head_follow"] = True
+            target["gmi_weight_report"] = json.dumps({
+                "method": "RIGID_HEAD_HAIR",
+                "bone": "Head_Hair",
+                "vertices": len(target.data.vertices),
+                "influencesPerVertex": 1,
+            }, ensure_ascii=False, separators=(",", ":"))
+            self.report({"INFO"}, f"已绑定 {len(target.data.vertices)} 个顶点 → Head_Hair；仅刚体跟随头部")
             return {"FINISHED"}
         except Exception as exc:
             self.report({"ERROR"}, str(exc))
@@ -1728,28 +1892,56 @@ class GMI_OT_export_inverse_skin_mod(Operator):
             )
             known_textures = profile_set["textures"].get("textures", {})
             material_textures = {}
+            texture_prefix = scene.gmi_component_id
             for key, value, semantic in (
-                ("body.baseColor", scene.gmi_base_color_file, None),
-                ("body.packedMask", scene.gmi_packed_mask_file, "packedMask"),
-                ("body.shadeColor", scene.gmi_shade_color_file, "shadeColor"),
+                (f"{texture_prefix}.baseColor", scene.gmi_base_color_file, None),
+                (f"{texture_prefix}.packedMask", scene.gmi_packed_mask_file, "packedMask"),
+                (f"{texture_prefix}.shadeColor", scene.gmi_shade_color_file, "shadeColor"),
             ):
                 if value:
                     path = bpy.path.abspath(value)
                     if not path.lower().endswith(".dds"):
-                        path = _png_to_dds(path)  # PNG/其它图像 → 临时 DDS
+                        # PNG → 临时 DDS;t1 是线性数据,不能标 sRGB
+                        path = _png_to_dds(path, srgb=semantic != "packedMask")
                     material_textures[key] = path
                 elif semantic and scene.gmi_neutral_material and key in known_textures:
                     # 没提供时用中性贴图盖掉原版 t1/t4（仅当配置档有该槽位）
-                    material_textures[key] = _neutral_material_dds(semantic)
-            # 描边颜色来源:复选框 或 「描边颜色」=取自基础色 → 基础色曲线;黑色常量 → 黑边;
+                    material_textures[key] = _neutral_material_dds(semantic, scene.gmi_component_id)
+            # 描边颜色来源：「描边颜色」=取自基础色 → 基础色曲线；黑色常量 → 黑边；
             # 按材质预设 → 保留 gather 的逐材质预设色。宽度已在 gather 按「描边宽度」处理,这里不动。
+            # hair 例外:描边色是全网格常量档,B/A 从参考网格最近邻拷贝(实机验证语义)。
             export_color_synthesis = None
-            if scene.gmi_enable_native_color_transfer or scene.gmi_vertex_color_mode == "BASECOLOR":
+            if scene.gmi_component_id == "hair":
+                reference = _profile_weight_reference(context)
+                if reference.get("gmi_component_id") != "hair":
+                    raise ValueError("场景中的带权重参考模型不是 hair,无法拷贝 hair 顶点色语义")
+                no_outline = set()
+                if scene.gmi_outline_width_mode == "RISK_ONLY":
+                    no_outline = (
+                        _vertex_group_indices(obj, "GMI_NO_OUTLINE")
+                        | _vertex_group_indices(obj, "GMI_REVIEW_HIGH_RISK")
+                    )
+                data["colors"], export_color_synthesis = _hair_export_colors(
+                    reference, data, scene.gmi_hair_outline_tier,
+                    scene.gmi_outline_width_mode, no_outline,
+                )
+            elif scene.gmi_component_id == "hairprop":
+                # 发饰同属常量描边语义(暗部逐顶点合成会塌绿),按材质槽类型给常量
+                no_outline = set()
+                if scene.gmi_outline_width_mode == "RISK_ONLY":
+                    no_outline = (
+                        _vertex_group_indices(obj, "GMI_NO_OUTLINE")
+                        | _vertex_group_indices(obj, "GMI_REVIEW_HIGH_RISK")
+                    )
+                data["colors"], export_color_synthesis = _hairprop_export_colors(
+                    obj, data, scene.gmi_outline_width_mode, no_outline,
+                )
+            elif scene.gmi_vertex_color_mode == "BASECOLOR":
                 data["colors"], export_color_synthesis = _synthesize_export_native_colors(
                     profile_dir,
                     scene.gmi_component_id,
                     data,
-                    material_textures.get("body.baseColor") or scene.gmi_base_color_file,
+                    material_textures.get(f"{texture_prefix}.baseColor") or scene.gmi_base_color_file,
                     _material_slot_color_map(obj),
                 )
             elif scene.gmi_vertex_color_mode == "CONSTANT_BLACK":
@@ -1771,7 +1963,7 @@ class GMI_OT_export_inverse_skin_mod(Operator):
                     continue
                 path = bpy.path.abspath(value)
                 if not path.lower().endswith(".dds"):
-                    path = _png_to_dds(path)
+                    path = _png_to_dds(path, srgb=semantic != "packedMask")
                 native_co_textures[semantic] = path
             cover_src = bpy.path.abspath(scene.gmi_cover_image) if scene.gmi_cover_image else ""
             if not cover_src:
@@ -1847,8 +2039,8 @@ class GMI_OT_export_validated_mod(Operator):
 
 class GMI_OT_create_body_material_template(Operator):
     bl_idname = "gmi.create_body_material_template"
-    bl_label = "创建身体材质模板"
-    bl_description = "为当前对象创建带 t0/t1/t4 语义记录的材质模板"
+    bl_label = "创建预览材质模板"
+    bl_description = "为当前对象创建记录 t0/t1/t4 语义的 Blender 预览材质"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -1857,30 +2049,37 @@ class GMI_OT_create_body_material_template(Operator):
             self.report({"ERROR"}, "请选择要添加材质模板的网格")
             return {"CANCELLED"}
         scene = context.scene
-        material = bpy.data.materials.new("GMI_身体材质模板")
+        component_id = scene.gmi_component_id
+        target_name = "发饰" if component_id == "hairprop" else "发型" if component_id == "hair" else "身体"
+        material = bpy.data.materials.new(f"GMI_{target_name}材质模板")
         material.use_nodes = True
-        material["gmi_material_profile"] = "body"
+        material["gmi_material_profile"] = component_id
         material["gmi_t0_base_color"] = bpy.path.abspath(scene.gmi_base_color_file) if scene.gmi_base_color_file else ""
         material["gmi_t1_packed_mask"] = bpy.path.abspath(scene.gmi_packed_mask_file) if scene.gmi_packed_mask_file else ""
         material["gmi_t4_shade_color"] = bpy.path.abspath(scene.gmi_shade_color_file) if scene.gmi_shade_color_file else ""
-        material["gmi_co_t0_base_color"] = bpy.path.abspath(scene.gmi_opacity_texture_file) if scene.gmi_opacity_texture_file else ""
-        material["gmi_co_t1_packed_mask"] = bpy.path.abspath(scene.gmi_opacity_packed_mask_file) if scene.gmi_opacity_packed_mask_file else ""
-        material["gmi_co_t4_shade_color"] = bpy.path.abspath(scene.gmi_opacity_shade_color_file) if scene.gmi_opacity_shade_color_file else ""
+        if component_id == "body":
+            material["gmi_co_t0_base_color"] = bpy.path.abspath(scene.gmi_opacity_texture_file) if scene.gmi_opacity_texture_file else ""
+            material["gmi_co_t1_packed_mask"] = bpy.path.abspath(scene.gmi_opacity_packed_mask_file) if scene.gmi_opacity_packed_mask_file else ""
+            material["gmi_co_t4_shade_color"] = bpy.path.abspath(scene.gmi_opacity_shade_color_file) if scene.gmi_opacity_shade_color_file else ""
         material["gmi_t1_channels"] = "R=阴影阈值, G=光滑度, B=金属度, A=AO/间接光"
         material["gmi_t4_channels"] = "RGB=基础色暗色版, A=原生sdw二值遮罩"
 
         nodes = material.node_tree.nodes
         principled = nodes.get("Principled BSDF")
         if principled:
-            principled.label = "游戏身体主材质近似预览"
-        for label, path, location in (
-            ("body t0 基础色 / BaseColor", scene.gmi_base_color_file, (-600, 200)),
-            ("body t1 混合遮罩", scene.gmi_packed_mask_file, (-600, 0)),
-            ("body t4 暗面材质 / ShadeMap", scene.gmi_shade_color_file, (-600, -200)),
-            ("co t0 基础色 / m_bdyco", scene.gmi_opacity_texture_file, (-950, 200)),
-            ("co t1 混合遮罩", scene.gmi_opacity_packed_mask_file, (-950, 0)),
-            ("co t4 暗面材质 / ShadeMap", scene.gmi_opacity_shade_color_file, (-950, -200)),
-        ):
+            principled.label = f"游戏{target_name}主材质近似预览"
+        textures = [
+            (f"{component_id} t0 基础色 / BaseColor", scene.gmi_base_color_file, (-600, 200)),
+            (f"{component_id} t1 混合遮罩", scene.gmi_packed_mask_file, (-600, 0)),
+            (f"{component_id} t4 暗面材质 / ShadeMap", scene.gmi_shade_color_file, (-600, -200)),
+        ]
+        if component_id == "body":
+            textures.extend((
+                ("co t0 基础色 / m_bdyco", scene.gmi_opacity_texture_file, (-950, 200)),
+                ("co t1 混合遮罩", scene.gmi_opacity_packed_mask_file, (-950, 0)),
+                ("co t4 暗面材质 / ShadeMap", scene.gmi_opacity_shade_color_file, (-950, -200)),
+            ))
+        for label, path, location in textures:
             node = nodes.new(type="ShaderNodeTexImage")
             node.label = label
             node.name = f"GMI_{label.split()[0]}"
@@ -1896,7 +2095,7 @@ class GMI_OT_create_body_material_template(Operator):
             obj.data.materials[0] = material
         else:
             obj.data.materials.append(material)
-        self.report({"INFO"}, "已创建身体材质模板；真实游戏绑定仍以导出时 t0/t1/t4 DDS 为准")
+        self.report({"INFO"}, f"已创建{target_name}预览材质；游戏绑定仍以导出时 t0/t1/t4 为准")
         return {"FINISHED"}
 
 
@@ -1949,7 +2148,7 @@ def _compute_vertex_ao(obj, samples=20):
 
 class GMI_OT_bake_material_maps(Operator):
     bl_idname = "gmi.bake_material_maps"
-    bl_label = "按材质烘焙 t1/t4"
+    bl_label = "按材质生成 t1/t4"
     bl_description = (
         "按各材质槽的「材质类型」预设，从基础色 t0 派生分材质 t1/t4 并设为导出贴图。"
         "比平铺中性更接近游戏观感"
@@ -1960,6 +2159,11 @@ class GMI_OT_bake_material_maps(Operator):
         import numpy as np
 
         scene = context.scene
+        target_name = (
+            "发饰" if scene.gmi_component_id == "hairprop"
+            else "发型" if scene.gmi_component_id == "hair"
+            else "身体"
+        )
         obj = context.active_object
         if not obj or obj.type != "MESH":
             self.report({"ERROR"}, "请选择网格")
@@ -2000,7 +2204,7 @@ class GMI_OT_bake_material_maps(Operator):
                 bpy.data.images.remove(image)
 
         try:
-            base8, width, height = _load_base_texture(scene.gmi_base_color_file, "body 基础色 t0")
+            base8, width, height = _load_base_texture(scene.gmi_base_color_file, f"{target_name}基础色 t0")
         except Exception as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
@@ -2059,10 +2263,12 @@ class GMI_OT_bake_material_maps(Operator):
         if scene.gmi_form_shading:
             ao = _compute_vertex_ao(obj)
             form_map = _slot_form_map(opaque_slots, width, ao)
+        # hair 组件未覆盖区/缝隙用 hair 预设补(其 t1.A=0 语义 ≠ body 中性的 AO=255)
+        neutral_key = "hair" if scene.gmi_component_id == "hair" else "neutral"
         t1, t4 = core.bake_material_maps(
             id_map, base8, class_per_slot, presets,
             form_map=form_map, form_strength=scene.gmi_form_strength,
-            toon_per_slot=toon_per_slot,
+            toon_per_slot=toon_per_slot, neutral_key=neutral_key,
         )
         channel_files = {
             0: scene.gmi_t1_r_file,
@@ -2110,7 +2316,7 @@ class GMI_OT_bake_material_maps(Operator):
             co_t1, co_t4 = core.bake_material_maps(
                 co_id_map, co_base8, class_per_slot, presets,
                 form_map=co_form_map, form_strength=scene.gmi_form_strength,
-                toon_per_slot=toon_per_slot,
+                toon_per_slot=toon_per_slot, neutral_key=neutral_key,
             )
             co_t1_path = out / "gmi_baked_co_packedMask.dds"
             co_t4_path = out / "gmi_baked_co_shadeColor.dds"
@@ -2143,7 +2349,7 @@ class GMI_OT_bake_material_maps(Operator):
             channel_note = f"；通道覆盖：{' / '.join(parts)}"
         self.report(
             {"INFO"},
-            f"已烘焙 body t1/t4（{covered}% UV 覆盖{co_note}；材质：{'、'.join(used)}{form_note}{channel_note}）；"
+            f"已生成{target_name} t1/t4（{covered}% UV 覆盖{co_note}；材质：{'、'.join(used)}{form_note}{channel_note}）；"
             f"已设为导出 t1/t4，可直接校验导出",
         )
         return {"FINISHED"}
@@ -2179,6 +2385,7 @@ CLASSES = (
     GMI_OT_import_reference,
     GMI_OT_import_weighted_reference,
     GMI_OT_transfer_profile_weights,
+    GMI_OT_bind_hairprop_rigid,
     GMI_OT_transfer_profile_weights_smart,
     GMI_OT_select_high_risk_vertices,
     GMI_OT_validate_mesh,

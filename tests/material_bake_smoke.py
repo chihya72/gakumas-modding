@@ -77,4 +77,22 @@ black = np.zeros((4, 4, 3), np.uint8)
 shade = core.shade_color_from_base(black, 0.5, -6, 1.1)
 assert shade.shape == (4, 4, 3)
 
+# hair 语义(m_hair_21_001 实机验证):t1 常量 (67,32,0,0)——A 必须 0,≠ body 的 AO=255;
+# t4 = base_lin × 逐通道冷阴影乘数 (0.378,0.367,0.474),A=0。
+assert core.HAIR_NEUTRAL_PACKED_MASK == (67, 32, 0, 0)
+t1h, t4h = core.bake_material_maps(id_map, base, {0: "hair", 1: "hair"}, presets)
+assert t1h[10, 5].tolist() == [67, 32, 0, 0], t1h[10, 5].tolist()
+assert t4h[10, 5, 3] == 0 and t4h[10, 60, 3] == 0
+# 红基础 (200,0,0):lin(0.784)×0.378 → sRGB ≈ 129
+assert 120 <= int(t4h[10, 5, 0]) <= 138, t4h[10, 5].tolist()
+assert t4h[10, 5, 1] == 0 and t4h[10, 5, 2] == 0, t4h[10, 5].tolist()
+# 蓝通道乘数 0.474 > 红 0.378 → 冷阴影:同亮度蓝基础的阴影比红基础亮
+assert int(t4h[10, 60, 2]) > int(t4h[10, 5, 0]), (t4h[10, 60].tolist(), t4h[10, 5].tolist())
+# hair 组件未覆盖区用 hair 预设补(neutral_key),不能落回 body 中性的 A=255
+id_hole = id_map.copy()
+id_hole[:4, :4] = -1
+t1n, t4n = core.bake_material_maps(id_hole, base, {0: "hair", 1: "hair"}, presets, neutral_key="hair")
+assert t1n[0, 0].tolist() == [67, 32, 0, 0], t1n[0, 0].tolist()
+assert t4n[0, 0, 3] == 0
+
 print("material_bake_smoke OK")

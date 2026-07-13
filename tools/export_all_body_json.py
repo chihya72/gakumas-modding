@@ -1,4 +1,8 @@
-"""Batch export Gakumas body Mesh JSON and optional skeleton sidecar JSON.
+"""Batch export Gakumas Mesh JSON and optional skeleton sidecar JSON.
+
+Defaults export body（--suffix _body --mesh-name Geo_Body）。发饰库示例：
+  python tools/export_all_body_json.py --input all_hair --suffix _hair \
+      --mesh-name Geo_HairProp --output build/assetstudio-hairprop-json --skeleton
 
 Input layout:
   all_body/
@@ -31,15 +35,15 @@ def log(message: str) -> None:
     print(message, flush=True)
 
 
-def find_mesh_json(directory: Path) -> Path | None:
-    direct = directory / "Geo_Body.json"
+def find_mesh_json(directory: Path, mesh_name: str = "Geo_Body") -> Path | None:
+    direct = directory / f"{mesh_name}.json"
     if direct.is_file():
         return direct
-    matches = list(directory.rglob("Geo_Body.json"))
+    matches = list(directory.rglob(f"{mesh_name}.json"))
     if len(matches) == 1:
         return matches[0]
     if len(matches) > 1:
-        raise RuntimeError(f"找到多个 Geo_Body.json，无法判断使用哪一个：{directory}")
+        raise RuntimeError(f"找到多个 {mesh_name}.json，无法判断使用哪一个：{directory}")
     return None
 
 
@@ -62,6 +66,7 @@ def run_assetstudio(
     output_dir: Path,
     unity_version: str,
     game: str,
+    mesh_name: str = "Geo_Body",
 ) -> tuple[int, str]:
     command = [
         str(assetstudio_cli),
@@ -74,7 +79,7 @@ def run_assetstudio(
         "--types",
         "Mesh",
         "--names",
-        r"^Geo_Body$",
+        f"^{mesh_name}$",
         "--export_type",
         "JSON",
         "--group_assets",
@@ -118,7 +123,10 @@ def is_valid_skeleton_json(path: Path) -> tuple[bool, str]:
     return True, ""
 
 
-def export_skeleton_json(bundle: Path, mesh_json: Path, output: Path, unity_version: str) -> dict:
+def export_skeleton_json(
+    bundle: Path, mesh_json: Path, output: Path, unity_version: str,
+    mesh_name: str = "Geo_Body",
+) -> dict:
     try:
         import UnityPy
     except ImportError as exc:
@@ -126,8 +134,22 @@ def export_skeleton_json(bundle: Path, mesh_json: Path, output: Path, unity_vers
 
     UnityPy.config.FALLBACK_UNITY_VERSION = unity_version
     env = UnityPy.load(str(bundle))
+
+    # _hair 包里有 Geo_Hair 和 Geo_HairProp 两个 renderer，
+    # 必须选 m_Mesh 指向目标网格名的那个，不能取第一个带骨的。
+    target_mesh_path_ids = set()
+    for obj in env.objects:
+        if obj.type.name != "Mesh":
+            continue
+        try:
+            if obj.read().m_Name == mesh_name:
+                target_mesh_path_ids.add(obj.path_id)
+        except Exception:
+            continue
+
     renderer_object = None
     renderer = None
+    fallback = None  # (obj, candidate) 第一个带骨的，仅当按网格名匹配不到时使用
     last_error = None
     for obj in env.objects:
         if obj.type.name != "SkinnedMeshRenderer":
@@ -138,14 +160,23 @@ def export_skeleton_json(bundle: Path, mesh_json: Path, output: Path, unity_vers
             if not bones:
                 last_error = RuntimeError(f"SkinnedMeshRenderer {obj.path_id} 没有 m_Bones")
                 continue
-            renderer = candidate
-            renderer_object = obj
-            break
+            mesh_ptr = getattr(candidate, "m_Mesh", None)
+            if mesh_ptr is not None and getattr(mesh_ptr, "path_id", 0) in target_mesh_path_ids:
+                renderer = candidate
+                renderer_object = obj
+                break
+            if fallback is None:
+                fallback = (obj, candidate)
         except Exception as exc:  # keep scanning; some bundles have stale/unreadable objects
             last_error = exc
+    if renderer is None and fallback is not None and not target_mesh_path_ids:
+        # 网格名匹配不可用（如 Mesh 对象不可读）时退回旧行为
+        renderer_object, renderer = fallback
     if renderer_object is None or renderer is None:
         detail = f"；最后错误：{last_error}" if last_error else ""
-        raise RuntimeError(f"没有可读取且带骨骼的 SkinnedMeshRenderer：{bundle}{detail}")
+        raise RuntimeError(
+            f"没有 m_Mesh 指向 {mesh_name} 且带骨骼的 SkinnedMeshRenderer：{bundle}{detail}"
+        )
 
     mesh = json.loads(mesh_json.read_text(encoding="utf-8"))
     weighted = []
@@ -227,10 +258,10 @@ def export_skeleton_json(bundle: Path, mesh_json: Path, output: Path, unity_vers
     return data
 
 
-def body_files(input_dir: Path) -> list[Path]:
+def body_files(input_dir: Path, suffix: str = "_body") -> list[Path]:
     return sorted(
         path for path in input_dir.iterdir()
-        if path.is_file() and path.name.startswith("mdl_chr_") and path.name.endswith("_body")
+        if path.is_file() and path.name.startswith("mdl_chr_") and path.name.endswith(suffix)
     )
 
 
@@ -248,8 +279,11 @@ def main() -> int:
     parser.add_argument("--game", default="Normal", help="AssetStudio --game 参数，默认 Normal")
     parser.add_argument("--limit", type=int, default=0, help="只处理前 N 个，调试用")
     parser.add_argument("--force", action="store_true", help="已存在也重新导出")
-    parser.add_argument("--skeleton", action="store_true", help="同时生成 Geo_Body.skeleton.json")
+    parser.add_argument("--skeleton", action="store_true", help="同时生成 <mesh-name>.skeleton.json")
+    parser.add_argument("--suffix", default="_body", help="bundle 文件名后缀过滤，默认 _body（发饰用 _hair）")
+    parser.add_argument("--mesh-name", default="Geo_Body", help="要导出的网格名，默认 Geo_Body（发饰用 Geo_HairProp）")
     args = parser.parse_args()
+    mesh_name = args.mesh_name
 
     input_dir = args.input.resolve()
     output_dir = args.output.resolve()
@@ -259,19 +293,19 @@ def main() -> int:
     if not assetstudio.is_file():
         raise SystemExit(f"找不到 AssetStudio CLI：{assetstudio}")
 
-    bundles = body_files(input_dir)
+    bundles = body_files(input_dir, args.suffix)
     if args.limit > 0:
         bundles = bundles[:args.limit]
     if not bundles:
-        raise SystemExit(f"没有在 {input_dir} 找到 mdl_chr_*_body 文件")
+        raise SystemExit(f"没有在 {input_dir} 找到 mdl_chr_*{args.suffix} 文件")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     summary = []
     for index, bundle in enumerate(bundles, 1):
         body_id = bundle.name
         body_out = output_dir / body_id
-        mesh_json = body_out / "Geo_Body.json"
-        skeleton_json = body_out / "Geo_Body.skeleton.json"
+        mesh_json = body_out / f"{mesh_name}.json"
+        skeleton_json = body_out / f"{mesh_name}.skeleton.json"
         body_out.mkdir(parents=True, exist_ok=True)
 
         status = "skipped"
@@ -284,11 +318,11 @@ def main() -> int:
         else:
             if args.force and mesh_json.exists():
                 mesh_json.unlink()
-            code, output = run_assetstudio(assetstudio, bundle, body_out, args.unity_version, args.game)
-            found = find_mesh_json(body_out)
+            code, output = run_assetstudio(assetstudio, bundle, body_out, args.unity_version, args.game, mesh_name)
+            found = find_mesh_json(body_out, mesh_name)
             if found is None:
                 status = "mesh-missing"
-                message = f"AssetStudio exit={code}，但没有生成 Geo_Body.json"
+                message = f"AssetStudio exit={code}，但没有生成 {mesh_name}.json"
                 (body_out / "assetstudio.log").write_text(output, encoding="utf-8", errors="ignore")
                 log(f"  失败：{message}")
                 summary.append({
@@ -315,7 +349,7 @@ def main() -> int:
                     skeleton_json.unlink()
                     log(f"  已删除无效骨架 JSON：{reason}")
                     try:
-                        data = export_skeleton_json(bundle, mesh_json, skeleton_json, args.unity_version)
+                        data = export_skeleton_json(bundle, mesh_json, skeleton_json, args.unity_version, mesh_name)
                         valid, reason = is_valid_skeleton_json(skeleton_json)
                         if not valid:
                             skeleton_json.unlink(missing_ok=True)
@@ -331,7 +365,7 @@ def main() -> int:
                 try:
                     if args.force:
                         skeleton_json.unlink(missing_ok=True)
-                    data = export_skeleton_json(bundle, mesh_json, skeleton_json, args.unity_version)
+                    data = export_skeleton_json(bundle, mesh_json, skeleton_json, args.unity_version, mesh_name)
                     valid, reason = is_valid_skeleton_json(skeleton_json)
                     if not valid:
                         skeleton_json.unlink(missing_ok=True)

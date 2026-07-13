@@ -4,8 +4,41 @@
 发布包用 `python tools/package_blender_addon.py` 生成（代码版不含 Body JSON 资源库；
 加 `--with-body-lib` 可一并打包）。本地包不提交到公开仓库。
 
+## 0.7.4 — hair/hairprop 语义转正：发型替换全链内建（圆香波波头实机校准）
+
+以 scsp 圆香波波头 + 三件发饰 → hmsz-hair-0023 的全程实机迭代为校准样本
+（踩坑总表见 [`research/hair-replacement.md`](research/hair-replacement.md) §7）：
+
+- **「头发」材质预设按实测修正**：t1 = (0.263, 0.125, 0, **A=0**)——hair 的 t1.A 不是
+  body 的 AO，写 255 会打开暗面项、漏出未替换的原版 t4（蓝紫阴影）；光滑度写高会以
+  黄绿色漏进阴影。t4 改为逐通道冷阴影 `linearMul`：`t4_lin = base_lin × (0.378, 0.367,
+  0.474)`，替代 body 的单一 darken。中性 t1 在 hair 组件下也自动走 A=0 常量。
+- **PNG→DDS 按语义选格式**：t0/t4 = sRGB(DXGI 29)、t1 = 线性(DXGI 28)。此前 t1 一律
+  sRGB 会被 GPU 二次解码（阈值 0.45→0.056），整体暗沉——该隐患对 body mod 同样存在。
+- **hair 顶点色转正**：描边色 nibble `(R高,R低,G高)/15` 为全网格常量档（深色/粉红/
+  金浅/纯黑），不再用 body 的逐顶点基础色曲线（暗部量化塌成绿描边）；G低（ramp 行）/
+  B（0~15 细宽度）/A（144/0 高光掩码）从带权重参考网格最近邻拷贝。
+- **hairprop 顶点色转正**：按材质槽「材质类型」写常量——metal = 灰 `(3,3,3)` + A=144，
+  其余 = 黑 `(0,0,0)` + A=0，B=8；不再走 body 曲线（黑蝴蝶结绿边）。VB1 手动补丁流程
+  全部作废。
+- **文档**：发型道具 = Geo_Hair + Geo_HairProp 双组件（游戏内无单独发饰选择，完整替换
+  = 同一次抓帧出 hair + hairprop 两个包）；证伪旧「发饰包 / 跨包共用 Geo_Hair」表述；
+  制作目标 tooltip 与 README 同步。
+- **profiles 精简为默认三件套**：`atbm-cstm-0140`（带原生 co 第二材质段的 body 默认档，
+  由已导出包离线重建，附 `rebuild_profile.py`）+ `hmsz-hair-0023-hair`（发型默认档）+
+  `hmsz-hair-0023-hairprop`（配套发饰档，发型道具双组件成对保留）。插件默认配置档路径
+  与测试（blender_smoke / inverse_skin_numeric / profile_contract_smoke）同步切换；
+  旧 hski-cstm-0000 PoC 冻结契约随档移除，契约冒烟改锁新默认档的几何/骨架/算子/co 段。
+
 ## 0.7.3 — manifest 面向包管理器：目标显示游戏资源名 + 强制预览图
 
+- **Blender 作者界面收敛为四步**：全局选择“身体（body）/发饰（hairprop）”，按
+  `① 准备配置档 → ② 绑定模型 → ③ 准备材质 → ④ 导出模组` 操作；实验、runtime-only、
+  直接 GPU 导出等入口默认折叠。发饰页把 `Head_Hair` 刚体与物理骨权重路线明确为二选一，
+  hairprop 材质页不再显示 body 专用原生 co。
+- **修复发饰 profile 的顶点数提示仍扫描 `Geo_Body.json`**：Blender 的完整/分步配置档入口
+  现在都按组件传入 `Geo_HairProp`；新增 Blender 4.2 UI 冒烟检查覆盖目标枚举、折叠 API、
+  图标与两条 profile 入口。
 - **导出 manifest `targets` 改为被替换的游戏内模型资源名**（如 `mdl_chr_hski-cstm-0000_body`），
   取自 profile `target.bodyResource/hairResource/faceResource`（按组件），而非旧的
   `body.weightedMesh`。让用户在包管理器里直接看到本 mod 替换了游戏里的哪个 body/hair/face；
@@ -38,9 +71,7 @@
   无 `Unrecognised entry` / `Duplicate TextureOverride` 告警，暗光/正常/镜面场景均正常。
 - 测试：`tests/mod_ini_contract.py` 的 `test_pixel_shader_slot_variants_are_conditional`
   改写为 `test_body_layout_is_runtime_autodetected`，断言地标探测三分支结构（7/7 通过）。
-- 详细复盘（FrameAnalysis/AssetRipper 反查、镜面 `1a922dbd/55266f0f` 排除、gmi_common
-  共享方案的取舍）见
-  [`research/archive/session-20260704-gmi-global-layout-and-mirror.md`](research/archive/session-20260704-gmi-global-layout-and-mirror.md)。
+- 详细复盘结论已收敛进当前实现与回归测试。
 
 ## 0.7.1 — body / bdyco 材质贴图彻底分离
 
@@ -124,7 +155,7 @@
 - 新拓扑衣服顶点 COLOR 默认使用「衣物常量」安全色，避免原版区域/拓扑相关 COLOR
   串到错误几何上产生移动色块。
 - 描边颜色来源可选：取自基础色 / 按材质预设 / 黑色常量。
-- COLOR 的安全族结论见 [`research/color-scan-20260627-091033.md`](research/color-scan-20260627-091033.md)：
+- COLOR 的安全族结论已收敛进插件预设与回归测试：
   中性化 R/G/A，保留 B 高位 `0xf0`，仅用 B 低位作描边宽度。
 
 ## 0.5.30 — 首次导出稳定性与 UV/COLOR 防错

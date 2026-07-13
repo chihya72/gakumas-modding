@@ -39,7 +39,10 @@ def main():
     expected_vertex_count = None
     expected_vertex_counts = []
     if args.body_json_library and args.body_resource:
-        hints = core.body_json_vertex_hints(args.body_json_library, args.body_resource)
+        hints = core.body_json_vertex_hints(
+            args.body_json_library, args.body_resource,
+            mesh_name=core.component_mesh_name(args.component),
+        )
         expected_vertex_counts = hints["vertexCounts"]
         if hints["exact"]:
             expected_vertex_count = hints["exact"].get("vertexCount")

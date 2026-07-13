@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 7, 3),
+    "version": (0, 7, 4),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "导入学马仕参考模型，并导出绑定配置档的 3DMigoto 模组",
@@ -30,10 +30,10 @@ def _material_class_items():
 
 
 def _default_profile_dir():
-    bundled = Path(__file__).resolve().parent / "profiles" / "hski-cstm-0000"
+    bundled = Path(__file__).resolve().parent / "profiles" / "atbm-cstm-0140"
     if bundled.is_dir():
         return str(bundled)
-    development = Path(__file__).resolve().parents[1] / "profiles" / "hski-cstm-0000"
+    development = Path(__file__).resolve().parents[1] / "profiles" / "atbm-cstm-0140"
     return str(development) if development.is_dir() else ""
 
 
@@ -49,13 +49,13 @@ def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
     bpy.types.Scene.gmi_tool_mode = EnumProperty(
-        name="模式",
-        description="选择当前要执行的工作流步骤",
+        name="当前步骤",
+        description="按 ① 到 ④ 完成模组制作",
         items=[
-            ("EXTRACT", "提取 / 导入", "抓帧+资源库生成完整配置档并导入参考模型"),
-            ("SKINNING", "蒙皮转权", "把配置档权重转移给作者模型"),
-            ("TEXTURE", "材质模板", "绑定身体多贴图或单贴图替换"),
-            ("EXPORT", "导出模组", "校验并导出可安装模组"),
+            ("EXTRACT", "① 准备配置档", "从抓帧和资源库生成完整配置档并导入参考"),
+            ("SKINNING", "② 绑定模型", "为作者模型传递权重或绑定发饰到头部"),
+            ("TEXTURE", "③ 准备材质", "指定或生成 t0/t1/t4 贴图"),
+            ("EXPORT", "④ 导出模组", "校验并导出可安装模组"),
         ],
         default="EXTRACT",
     )
@@ -71,19 +71,32 @@ def register():
         description="可选；留空时自动写入 FrameAnalysis 目录下的 GakumasMI-profile",
     )
     bpy.types.Scene.gmi_body_json_library_dir = StringProperty(
-        name="Body JSON资源库", subtype="DIR_PATH", default=_default_body_json_dir(),
-        description="AssetStudio 批量导出的 assetstudio-body-json 目录；插件会自动匹配 Geo_Body.json 和骨架 JSON",
+        name="网格 JSON 资源库", subtype="DIR_PATH", default=_default_body_json_dir(),
+        description="AssetStudio 批量导出的资源库；身体匹配 Geo_Body，发型匹配 Geo_Hair，发饰匹配 Geo_HairProp",
     )
     bpy.types.Scene.gmi_body_resource = StringProperty(
-        name="角色 / Body", default="",
-        description="填角色代号即可（如 hmsz）：同款多角色时用于消歧，并只扫描该角色文件夹、显著加速匹配。也可填完整 body 名",
+        name="目标资源（可选）", default="",
+        description="用于消歧或加速匹配；可填角色代号，或完整的 body / hair 资源名",
     )
     bpy.types.Scene.gmi_extract_draw = IntProperty(
         name="主 Draw", default=0, min=0,
         description="0 表示自动选择；填入 3DMigoto 顶部显示的 Draw 编号可强制指定",
     )
     bpy.types.Scene.gmi_output_dir = StringProperty(name="输出目录", subtype="DIR_PATH")
-    bpy.types.Scene.gmi_component_id = StringProperty(name="组件", default="body")
+    bpy.types.Scene.gmi_component_id = EnumProperty(
+        name="制作目标",
+        description="选择要替换的游戏组件；后续四个步骤共用此目标",
+        items=[
+            ("body", "身体（body）", "替换 Geo_Body 身体或服装网格"),
+            ("hair", "发型（hair）",
+             "替换 Geo_Hair 发型网格。游戏内一个「发型」道具 = 发型 + 发饰两个独立部件，"
+             "完整替换需再以「发饰」为目标出第二个模组包（同一次抓帧即可）"),
+            ("hairprop", "发饰（hairprop）",
+             "替换 Geo_HairProp 发饰网格。发饰是发型道具的附属部件（与发型同包、"
+             "独立 drawcall），游戏内没有单独的发饰选择，单独建配置档、单独出包"),
+        ],
+        default="body",
+    )
     bpy.types.Scene.gmi_source_mesh_json = StringProperty(name="原模型 JSON", subtype="FILE_PATH")
     bpy.types.Scene.gmi_skeleton_json = StringProperty(name="骨架 JSON", subtype="FILE_PATH")
     bpy.types.Scene.gmi_bone_remap_file = StringProperty(name="骨骼映射", subtype="FILE_PATH")
@@ -95,17 +108,12 @@ def register():
         name="风险距离", default=0.02, min=0.0001, unit="LENGTH",
         description="距离参考身体表面超过该值的顶点会标记为高风险",
     )
-    bpy.types.Scene.gmi_enable_native_color_transfer = BoolProperty(
-        name="从基础色提取描边色（复刻原版）", default=False,
-        description="导出时逐顶点把该点基础色编码进 COLOR(实测原版系数),描边 VS 解出≈基础色→衣服自身"
-                    "颜色的暗化描边,贴合衣服、不死黑;ramp行/宽度/光照仍按材质预设锁定(防色块、对称)。需填基础色 t0",
-    )
     bpy.types.Scene.gmi_texture_key = StringProperty(name="贴图键", default="body.baseColor")
     bpy.types.Scene.gmi_texture_file = StringProperty(name="DDS 文件", subtype="FILE_PATH")
     bpy.types.Scene.gmi_base_color_file = StringProperty(name="基础色 t0", subtype="FILE_PATH")
-    bpy.types.Scene.gmi_packed_mask_file = StringProperty(name="body 混合遮罩 t1", subtype="FILE_PATH")
+    bpy.types.Scene.gmi_packed_mask_file = StringProperty(name="混合遮罩 t1", subtype="FILE_PATH")
     bpy.types.Scene.gmi_shade_color_file = StringProperty(
-        name="body 暗面材质 t4/sdw", subtype="FILE_PATH",
+        name="暗面材质 t4/sdw", subtype="FILE_PATH",
         description="暗面时使用的材质颜色图；RGB 应是基础色 t0 的暗化版，A 是近似二值材质遮罩，不是透明度",
     )
     bpy.types.Scene.gmi_t1_r_file = StringProperty(
@@ -160,6 +168,17 @@ def register():
         ],
         default="BASECOLOR",
     )
+    bpy.types.Scene.gmi_hair_outline_tier = EnumProperty(
+        name="发型描边色档",
+        description="hair 描边色是全网格常量(非逐顶点);按发色明度选档,实机偏亮可换更暗一档",
+        items=[
+            ("DARK", "深色发(蓝紫/黑褐)", "nibble (0,0,1),实测自蓝紫发"),
+            ("PINK", "粉/红发", "nibble (1,0,0),实测自粉发"),
+            ("BLONDE", "金/浅色发", "nibble (4,2,1),实测自金发"),
+            ("BLACK", "纯黑描边", "nibble (0,0,0),最保守"),
+        ],
+        default="DARK",
+    )
     bpy.types.Scene.gmi_form_shading = BoolProperty(
         name="几何AO软化阴影", default=False,
         description="从网格几何烘 AO,只对凹陷缝隙(腋下/裆部/衣褶内)加深阴影;对光滑凸面(腿/裤袜)无效——硬光影分界要靠 toon 阈值",
@@ -204,12 +223,13 @@ def unregister():
         "gmi_extract_draw", "gmi_output_dir", "gmi_component_id",
         "gmi_source_mesh_json", "gmi_skeleton_json", "gmi_bone_remap_file",
         "gmi_unmapped_bone_fallback",
-        "gmi_transfer_risk_distance", "gmi_enable_native_color_transfer",
+        "gmi_transfer_risk_distance",
         "gmi_texture_key", "gmi_texture_file", "gmi_package_id",
         "gmi_base_color_file", "gmi_packed_mask_file", "gmi_shade_color_file",
         "gmi_t1_r_file", "gmi_t1_g_file", "gmi_t1_b_file", "gmi_t1_a_file",
         "gmi_opacity_texture_file", "gmi_opacity_packed_mask_file", "gmi_opacity_shade_color_file",
         "gmi_neutral_material", "gmi_outline_width_mode", "gmi_vertex_color_mode",
+        "gmi_hair_outline_tier",
         "gmi_form_shading", "gmi_form_strength",
         "gmi_package_name", "gmi_author", "gmi_cover_image",
     ):

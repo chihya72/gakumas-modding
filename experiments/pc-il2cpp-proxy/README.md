@@ -5,8 +5,7 @@
 `SkinnedMeshRenderer.set_sharedMesh`，把每个被赋值的蒙皮网格打到日志，并标记出
 匹配 `FrameAnalysis-2026-06-29-065048` 那套服装的 body 分段（顶点数 20278 / 18037 / 5206 / 2012）。
 
-这是**检测版**：只读不改，用来确认"能不能在 PC 上拦到角色 body 的 Mesh"。确认后再在同一个
-hook 点把 `mesh` 参数换成自建 Mesh，就是 GIMI 式换网格（动画 + 透明全由游戏处理）。
+这是已冻结的**只读检测实验**，不属于当前 3DMigoto 正式路线。
 
 ## 编译
 
@@ -44,8 +43,8 @@ cmake --build build --config Release
 ## 如果一条都不出现
 
 说明这游戏的 body mesh 不是经 `set_sharedMesh` 属性赋值的（可能 AssetBundle 原生反序列化直接写字段）。
-那就改用"按需枚举"：`Resources.FindObjectsOfTypeAll(typeof(SkinnedMeshRenderer))` 全场扫描。
-告诉我，我加一版枚举式（挂个热键触发）。
+替代调查方向是用 `Resources.FindObjectsOfTypeAll(typeof(SkinnedMeshRenderer))` 全场扫描；
+当前实验不继续实现该分支。
 
 ## 备注 / 风险
 

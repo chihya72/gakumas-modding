@@ -1,7 +1,7 @@
 # Hunting / Frame Analysis 工作流
 
-> 环境：`D:\Games\gakumas`  
-> 基准目标：`research/baseline/target.json`
+> 环境：游戏安装目录
+> 具体目标由当次 profile 和游戏场景决定。
 
 ## 当前配置
 
@@ -79,4 +79,4 @@ analyse_options = dump_tex jps_dds desc mono share_dupes
 - [x] 抓帧目录大小合理；
 - [x] 能从调用记录定位咲季身体、脸与头发的候选 Drawcall。
 
-首帧输出：`D:\Games\gakumas\FrameAnalysis-2026-06-21-105931`，分析结果见 `profiles/hski-cstm-0000/`。
+抓帧输出位于游戏目录的 `FrameAnalysis-*`；生成结果写入本次目标 profile。

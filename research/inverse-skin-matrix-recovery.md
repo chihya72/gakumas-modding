@@ -14,7 +14,7 @@ Compute Shader，不需要 AssetBundle、Unity 编辑器或进程内 Runtime。
 
 ## 已验证数据
 
-- Profile：`hski-cstm-0000`
+- 验证 Profile：`hski-cstm-0000`（历史样本，已从当前 profiles 移除）
 - Body IB：`4d5dfe7b`
 - 动态 VB0：`e189fd22`
 - 顶点：17,615
@@ -107,12 +107,11 @@ TTMR 模型最终应在其自身角色/服装场景抓取并生成 `ttmr-cstm-01
 
 结论：不依赖 AssetBundle、Unity Runtime 或原始骨骼常量缓冲，已能从最终
 CPU-skinned Body VB 在 GPU 上恢复当前姿势矩阵，并用其正确驱动同源 bind mesh。
-下一阶段是把 `SkinSourceCS` 的固定 HSKI bind mesh 替换为 Blender 导出的
-任意拓扑顶点、权重与索引缓冲。
+后续任意拓扑导出也已完成，见下一节。
 
 ## 任意拓扑与作者流程更新（2026-06-22 晚）
 
-上述“下一阶段”已经完成技术验证：TTMR 测试 FBX 展开为 37,761 个 GPU 顶点后，
+任意拓扑技术验证已完成：TTMR 测试 FBX 展开为 37,761 个 GPU 顶点后，
 可由恢复矩阵驱动并替换 HSKI Body。由此确认任意拓扑 GPU 路线成立。
 
 同时确认，恢复矩阵只定义 HSKI Profile 的动画空间，不会自动让 TTMR 骨架权重

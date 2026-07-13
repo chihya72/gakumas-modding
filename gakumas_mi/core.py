@@ -54,6 +54,9 @@ NEUTRAL_PACKED_MASK = (255, 0, 0, 255)
 # t4 ShadeColor: RGB 为暗色版 baseColor；A 按原生 sdw 近似二值材质遮罩。
 # 中性 t4.A=0，避免把原版 shade mask 带到自定义 atlas 上。
 NEUTRAL_SHADE_COLOR = (128, 128, 128, 0)
+# hair 的 t1 语义 ≠ body:A 不是 AO(写 255 会漏出未替换的原版 t4),实测原版
+# hair t1 常量 ≈ (67,32,0,0)(m_hair_21_001 实机验证),中性即预设本身。
+HAIR_NEUTRAL_PACKED_MASK = (67, 32, 0, 0)
 
 
 def write_solid_rgba8_dds(path, rgba, size=4, srgb=False):
@@ -63,6 +66,13 @@ def write_solid_rgba8_dds(path, rgba, size=4, srgb=False):
         for channel in rgba
     )
     write_rgba8_dds(path, size, size, bytes([r, g, b, a]) * (size * size), srgb=srgb)
+
+
+def _dds_formats_compatible(expected, actual):
+    return expected == actual or {expected, actual} in (
+        {"BC7_UNORM", "R8G8B8A8_UNORM"},
+        {"BC7_UNORM_SRGB", "R8G8B8A8_UNORM_SRGB"},
+    )
 
 
 def load_material_presets():
@@ -124,6 +134,15 @@ def shade_color_from_base(base_rgb8, darken, hue_shift_deg, sat_scale):
     h = (h + hue_shift_deg / 360.0) % 1.0
     s = np.clip(s * sat_scale, 0.0, 1.0)
     out = _linear_to_srgb(_hsv_to_rgb(h, s, v))
+    return np.clip(out * 255.0 + 0.5, 0, 255).astype(np.uint8)
+
+
+def shade_color_linear_mul(base_rgb8, mul_rgb):
+    """由 baseColor 按线性光逐通道乘数派生 shadeColor(hair 冷阴影实测语义)。"""
+    import numpy as np
+    lin = _srgb_to_linear(base_rgb8.astype(np.float32) / 255.0)
+    lin = lin * np.asarray(mul_rgb, dtype=np.float32)
+    out = _linear_to_srgb(lin)
     return np.clip(out * 255.0 + 0.5, 0, 255).astype(np.uint8)
 
 
@@ -218,7 +237,7 @@ def rasterize_vertex_scalar(uv_tris, scalar_tris, size, dilate=8):
 
 def bake_material_maps(id_map, base_rgb8, class_per_slot, presets,
                        form_map=None, form_strength=0.0, smoothness_max=1.0,
-                       toon_override=None, toon_per_slot=None):
+                       toon_override=None, toon_per_slot=None, neutral_key="neutral"):
     """按材质ID图烘焙 t1(packedMask)/t4(shadeColor)的 RGBA8 数组。
 
     id_map: (H,W) int 材质槽索引(-1=未覆盖→中性);base_rgb8: (H,W,3 或 4) uint8;
@@ -226,6 +245,7 @@ def bake_material_maps(id_map, base_rgb8, class_per_slot, presets,
     form_map: 可选 (H,W) 0..1 几何 AO/曲率图(NaN=无),用于给 toon/AO 通道
     叠加随形体的空间渐变,避免 flat toon 在圆柱体上出硬光影分界。
     form_strength: 渐变强度(0=关闭)。
+    neutral_key: 未覆盖区(-1)使用的预设键;hair 组件传 "hair"(其 t1.A=0 语义 ≠ body)。
     返回 (t1_rgba8, t4_rgba8),均为 (H,W,4) uint8。
     """
     import numpy as np
@@ -251,11 +271,18 @@ def bake_material_maps(id_map, base_rgb8, class_per_slot, presets,
         t1[mask, 1] = round(min(smooth, smoothness_max) * 255)
         t1[mask, 2] = round(metal * 255)
 
-    neutral = presets["neutral"]
+    def _shade_rgb(m4, base_pixels):
+        # hair 实测阴影 = base_lin × 逐通道冷阴影乘数,与 body 的单一 darken 不同
+        if m4.get("linearMul"):
+            return shade_color_linear_mul(base_pixels, m4["linearMul"])
+        return shade_color_from_base(
+            base_pixels, m4["darken"], m4["hueShiftDeg"], m4["satScale"])
+
+    neutral = presets.get(neutral_key) or presets["neutral"]
     n1, n4 = neutral["t1"], neutral["t4"]
     _fill(np.ones((h, w), bool), n1["toonShadowThreshold"], n1["smoothness"],
           n1["metallic"], n1["ao"])
-    t4[..., :3] = shade_color_from_base(base, n4["darken"], n4["hueShiftDeg"], n4["satScale"])
+    t4[..., :3] = _shade_rgb(n4, base)
     t4[..., 3] = round(n4["alpha"] * 255)
     for slot, key in class_per_slot.items():
         preset = presets.get(key)
@@ -272,8 +299,7 @@ def bake_material_maps(id_map, base_rgb8, class_per_slot, presets,
         if m4.get("fixedColor"):  # 兼容旧预设：允许固定阴影色，不从底色派生
             t4[mask, 0], t4[mask, 1], t4[mask, 2] = m4["fixedColor"]
         else:
-            t4[mask, :3] = shade_color_from_base(
-                base[mask], m4["darken"], m4["hueShiftDeg"], m4["satScale"])
+            t4[mask, :3] = _shade_rgb(m4, base[mask])
         # t4.A 不暴露给作者手调；它是材质类型预设的二值结果。
         t4[mask, 3] = round(m4["alpha"] * 255)
     return t1, t4
@@ -1128,6 +1154,20 @@ def extract_profile_from_frame_dump(capture_dir, output_dir, component_id="body"
     return report
 
 
+# 组件 → 资源库网格 JSON 名。库目录结构不变（每个 bundle 一个文件夹），
+# 只是文件夹里的网格/骨架 JSON 按组件命名（Geo_Body.json / Geo_HairProp.json ...）。
+_COMPONENT_MESH_NAMES = {
+    "body": "Geo_Body",
+    "hair": "Geo_Hair",
+    "hairprop": "Geo_HairProp",
+    "face": "Geo_Face",
+}
+
+
+def component_mesh_name(component_id):
+    return _COMPONENT_MESH_NAMES.get(str(component_id or "body"), "Geo_Body")
+
+
 def component_by_id(profile, component_id):
     for component in profile["components"]:
         if component["id"] == component_id:
@@ -1179,9 +1219,11 @@ def build_bone_name_hierarchy_template(json_dir):
     if not root.is_dir():
         return template
     for body_dir in sorted(p for p in root.iterdir() if p.is_dir()):
-        skel_path = body_dir / "Geo_Body.skeleton.json"
-        if not skel_path.is_file():
+        # 库文件名按组件而异（Geo_Body/Geo_HairProp/...），骨架 sidecar 统一 *.skeleton.json
+        skel_candidates = sorted(body_dir.glob("*.skeleton.json"))
+        if not skel_candidates:
             continue
+        skel_path = skel_candidates[0]
         try:
             nodes = load_json(skel_path).get("nodes", [])
         except Exception:
@@ -1301,8 +1343,11 @@ def resolve_profile_reference(profile_dir):
     return result
 
 
-def scan_body_json_library(json_dir, name_filter=None):
-    """Scan an AssetStudio body JSON library. Includes mesh-only entries.
+def scan_body_json_library(json_dir, name_filter=None, mesh_name="Geo_Body"):
+    """Scan an AssetStudio mesh JSON library. Includes mesh-only entries.
+
+    mesh_name: which mesh JSON to look for in each bundle folder
+    (Geo_Body / Geo_HairProp / ...); see component_mesh_name().
 
     name_filter: optional case-insensitive substring (e.g. a character code like
     "hmsz"); only folders whose name contains it are loaded. This both narrows
@@ -1320,14 +1365,14 @@ def scan_body_json_library(json_dir, name_filter=None):
     for body_dir in sorted(path for path in root.iterdir() if path.is_dir()):
         if filter_lower and filter_lower not in body_dir.name.lower():
             continue
-        mesh_json = body_dir / "Geo_Body.json"
+        mesh_json = body_dir / f"{mesh_name}.json"
         if not mesh_json.is_file():
             continue
         try:
             summary = _mesh_summary(mesh_json)
         except Exception:
             continue
-        skeleton_json = body_dir / "Geo_Body.skeleton.json"
+        skeleton_json = body_dir / f"{mesh_name}.skeleton.json"
         has_skeleton = _valid_skeleton_sidecar(skeleton_json)
         entries.append({
             "body": body_dir.name,
@@ -1339,7 +1384,7 @@ def scan_body_json_library(json_dir, name_filter=None):
     return entries
 
 
-def resolve_exact_body_json_entry(json_dir, body_resource):
+def resolve_exact_body_json_entry(json_dir, body_resource, mesh_name="Geo_Body"):
     """Return one exact body entry from the JSON library, or None.
 
     This is used before frame-profile extraction: if the author already knows
@@ -1349,14 +1394,14 @@ def resolve_exact_body_json_entry(json_dir, body_resource):
     body_resource = (body_resource or "").strip()
     if not body_resource or body_resource == "unknown":
         return None
-    entries = scan_body_json_library(json_dir, name_filter=body_resource)
+    entries = scan_body_json_library(json_dir, name_filter=body_resource, mesh_name=mesh_name)
     exact = [entry for entry in entries if entry["body"] == body_resource]
     if len(exact) == 1:
         return dict(exact[0])
     return None
 
 
-def body_json_vertex_hints(json_dir, body_resource):
+def body_json_vertex_hints(json_dir, body_resource, mesh_name="Geo_Body"):
     """Return candidate vertex counts from the body library for a user hint.
 
     A full body name should resolve to one exact mesh. A short actor code such as
@@ -1371,7 +1416,7 @@ def body_json_vertex_hints(json_dir, body_resource):
             "vertexCounts": [],
             "exact": None,
         }
-    entries = scan_body_json_library(json_dir, name_filter=body_resource)
+    entries = scan_body_json_library(json_dir, name_filter=body_resource, mesh_name=mesh_name)
     exact = [entry for entry in entries if entry["body"] == body_resource]
     pool = exact if len(exact) == 1 else entries
     return {
@@ -1383,7 +1428,7 @@ def body_json_vertex_hints(json_dir, body_resource):
 
 
 def resolve_body_json_resource(profile_dir, json_dir, component_id="body"):
-    """Resolve profile body Mesh/Skeleton JSON from a shared body JSON library."""
+    """Resolve a profile component's Mesh/Skeleton JSON from its resource library."""
     profile_set = load_profile_set(profile_dir)
     profile = profile_set["profile"]
     component = component_by_id(profile, component_id)
@@ -1395,11 +1440,16 @@ def resolve_body_json_resource(profile_dir, json_dir, component_id="body"):
         body_resource = ""
     name_filter = body_resource or None
 
-    entries = scan_body_json_library(json_dir, name_filter=name_filter)
+    mesh_name = component_mesh_name(component_id)
+    component_label = "发饰" if component_id == "hairprop" else "发型" if component_id == "hair" else "Body"
+    entries = scan_body_json_library(json_dir, name_filter=name_filter, mesh_name=mesh_name)
     if not entries:
         if name_filter:
-            raise ValueError(f"资源库里没有名称含「{name_filter}」的 body，请检查角色代号或资源库目录。")
-        raise ValueError(f"Body JSON 资源库没有可用样本：{json_dir}")
+            raise ValueError(
+                f"资源库里没有名称含「{name_filter}」且带 {mesh_name}.json 的条目，"
+                "请检查角色代号或资源库目录。"
+            )
+        raise ValueError(f"{mesh_name} JSON 资源库没有可用样本：{json_dir}")
 
     # 顶点数 = 身体网格的可靠标识(整个 VB);索引数只作软偏好——游戏内主体 Draw 常
     # 不含次网格(牙齿/舌头等),其索引数会比 mesh 的 m_Indices 略少,所以不能要求相等。
@@ -1412,9 +1462,9 @@ def resolve_body_json_resource(profile_dir, json_dir, component_id="body"):
         if len(exact) == 1:
             if vertex_count and int(exact[0].get("vertexCount") or 0) != vertex_count:
                 raise ValueError(
-                    f"指定 Body {body_resource} 是 {exact[0].get('vertexCount')} 顶点，"
-                    f"但抓帧主 Body 是 {vertex_count} 顶点。"
-                    "请确认抓帧角色/服装与 Body JSON资源库对应，或清空「指定 Body」后按顶点数自动匹配。"
+                    f"指定{component_label}资源 {body_resource} 是 {exact[0].get('vertexCount')} 顶点，"
+                    f"但抓帧主{component_label}是 {vertex_count} 顶点。"
+                    "请确认抓帧目标与网格 JSON 资源库对应，或清空「目标资源」后按顶点数自动匹配。"
                 )
             result = dict(exact[0])
             result["match"] = "bodyResource"
@@ -1423,7 +1473,10 @@ def resolve_body_json_resource(profile_dir, json_dir, component_id="body"):
     vmatches = [entry for entry in entries if entry["vertexCount"] == vertex_count]
     if not vmatches:
         scope = f"(已按「{name_filter}」过滤)" if name_filter else ""
-        raise ValueError(f"资源库{scope}里没有 {vertex_count} 顶点的 body。请确认抓帧/角色/资源库是否对应。")
+        raise ValueError(
+            f"资源库{scope}里没有 {vertex_count} 顶点的{component_label}。"
+            "请确认抓帧目标与资源库是否对应。"
+        )
 
     imatches = [entry for entry in vmatches if entry["indexCount"] == index_count]
     pool = imatches if imatches else vmatches
@@ -1442,7 +1495,7 @@ def resolve_body_json_resource(profile_dir, json_dir, component_id="body"):
     suffix = " ..." if len(pool) > 12 else ""
     raise ValueError(
         f"{vertex_count} 顶点仍匹配到多个候选:\n{names}{suffix}\n"
-        "请在「指定 Body」填更精确的名字(角色代号不够时填完整 body 名)。"
+        "请在「目标资源」填更精确的名字（角色代号不够时填完整资源名）。"
     )
 
 
@@ -1509,8 +1562,10 @@ def _parse_body_target(body_name):
     core_name = body_name
     if core_name.startswith("mdl_chr_"):
         core_name = core_name[len("mdl_chr_"):]
-    if core_name.endswith("_body"):
-        core_name = core_name[: -len("_body")]
+    for suffix in ("_body", "_hair", "_face"):
+        if core_name.endswith(suffix):
+            core_name = core_name[: -len(suffix)]
+            break
     actor, _, costume = core_name.partition("-")
     return actor, costume
 
@@ -1543,8 +1598,9 @@ def complete_inverse_skin_profile(profile_dir, library_dir, component_id="body",
     # (2) Structural data: copy matched Mesh + Skeleton into the profile.
     reference_dir = profile_dir / "Reference"
     reference_dir.mkdir(parents=True, exist_ok=True)
-    mesh_dst = reference_dir / "Geo_Body.json"
-    skeleton_dst = reference_dir / "Geo_Body.skeleton.json"
+    mesh_name = component_mesh_name(component_id)
+    mesh_dst = reference_dir / f"{mesh_name}.json"
+    skeleton_dst = reference_dir / f"{mesh_name}.skeleton.json"
     shutil.copy2(Path(resolved["meshJson"]), mesh_dst)
     skeleton_src = resolved.get("skeletonJson")
     if skeleton_src and Path(skeleton_src).is_file():
@@ -1598,8 +1654,8 @@ def complete_inverse_skin_profile(profile_dir, library_dir, component_id="body",
         "coefficientCount": operator_meta["coefficientCount"],
         "posedVertexStride": stride,
         "inverseOperator": operator_rel,
-        "meshJson": "Reference/Geo_Body.json",
-        "skeletonJson": "Reference/Geo_Body.skeleton.json",
+        "meshJson": f"Reference/{mesh_name}.json",
+        "skeletonJson": f"Reference/{mesh_name}.skeleton.json",
         "boneNaming": bone_naming,
         "unobservableBones": unobservable,
     }
@@ -2408,7 +2464,7 @@ def write_inverse_skin_package(
                 f"{texture_key} must be {expected_size[0]}x{expected_size[1]}, got "
                 f"{description['width']}x{description['height']}"
             )
-        if entry.get("format") and description["format"] != entry["format"]:
+        if entry.get("format") and not _dds_formats_compatible(entry["format"], description["format"]):
             raise ValueError(
                 f"{texture_key} must be {entry['format']}, got {description['format']}"
             )
@@ -2445,7 +2501,7 @@ def write_inverse_skin_package(
                     f"{native_section_id}.{semantic} must be {expected_size[0]}x{expected_size[1]}, got "
                     f"{description['width']}x{description['height']}"
                 )
-            if entry.get("format") and description["format"] != entry["format"]:
+            if entry.get("format") and not _dds_formats_compatible(entry["format"], description["format"]):
                 raise ValueError(
                     f"{native_section_id}.{semantic} must be {entry['format']}, got {description['format']}"
                 )
@@ -2685,7 +2741,9 @@ filename = Buffers\\{ib_buffer_name}
     cover_name = _prepare_cover(package_dir, cover_image)
     # 目标改成被替换的游戏内模型资源名（如 mdl_chr_hski-cstm-0000_body），
     # 让用户直接看到本 mod 替换了游戏里的哪个 body/hair/face。缺资源名时回退到旧语义。
-    resource_field = {"body": "bodyResource", "hair": "hairResource", "face": "faceResource"}.get(component_id)
+    resource_field = {
+        "body": "bodyResource", "hair": "hairResource", "hairprop": "bodyResource", "face": "faceResource"
+    }.get(component_id)
     replaced_resource = (target.get(resource_field) if resource_field else None) or f"{component_id}.weightedMesh"
     manifest = {
         "schemaVersion": 2,

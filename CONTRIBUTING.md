@@ -9,16 +9,15 @@
 |---|---|---|
 | `gakumas_mi/` | Blender 作者插件（产品线 1，版本 0.7.x） | 插件代码/着色器/预设只放这里 |
 | `3dmigoto-gkms/` | 游戏 mod 插件（产品线 2，版本 0.4.x） | d3d11.dll、d3dx.ini、ShaderFixes |
-| `mod-manager/` | 使用者侧包管理器（随产品线 2 发布） | `src/` C# 代码、`tests/` smoke、`docs/` 设计文档 |
+| `mod-manager/` | 使用者侧包管理器（随产品线 2 发布） | `src/` C# 代码、`tests/` smoke、使用说明放 README |
 | `tools/` | 离线脚本（导出/构建/审计/打包） | 一个脚本一个文件，snake_case |
 | `tests/` | Python 回归/冒烟测试 | `test` 语义文件名，CI 可跑的进 `ci.yml` |
 | `profiles/` | 角色/服装配置档 | `<actor>-<costume>/` 一档一目录 |
 | `experiments/` | 已验证但非主线的探索代码 | 一条路线一个子目录，必须带 README |
 | `research/` | 研究文档与抓帧证据数据 | 见第 3 节文档规范 |
-| `research/archive/` | 已归档文档（避坑证据） | 只进不改；归档必登记索引 |
 | 仓库根目录 | **只允许** `README.md`、`CHANGELOG.md`、`CONTRIBUTING.md` 与 dot 配置文件 | **禁止新增其它根目录文件** |
 
-产品文档跟产品走：某产品线的规划/设计/使用文档放该产品目录（如 `mod-manager/docs/`、
+产品文档跟产品走：某产品线的设计/使用文档放该产品目录（如
 `3dmigoto-gkms/FLIP-RESIZE-PATCH.md`）；跨产品的研究、抓帧证据、路线记录才进 `research/`。
 
 本地数据目录（gitignored，永不入库）：`all_body/`、`build/`、`dist/`、`checkpoints/`、
@@ -36,25 +35,22 @@ AI 会话产物、临时脚本一律进 `ai-model-workspace/` 或系统临时目
 
 ## 3. 文档规范
 
-**四份权威文档**（状态冲突时以此为准，改代码必须同步改它们）：
+**四份权威文档**（状态冲突时以此为准，相关事实变化时同步更新）：
 
 | 文档 | 权威范围 |
 |---|---|
 | `README.md` | 项目总览、仓库结构、工作流入口 |
 | `CHANGELOG.md` | Blender 插件（gakumas-mi）逐版本变更；release workflow 从它生成 notes，**不可移动** |
 | `research/current-status-and-roadmap.md` | 当前状态、完成度、后续计划 |
-| `research/README.md` | research 目录索引（当前有效 + 已归档） |
+| `research/README.md` | research 目录索引 |
 
 规则：
 
 1. **新文档必须登记**：research 下新增文档，同一提交里登记进 `research/README.md` 索引。
 2. **进度只有一个出处**：同一事实不得在多份文档维护副本；其它地方只放链接。
    （产品实现进度记录在该产品 README；项目级状态记录在 current-status-and-roadmap。）
-3. **归档流程**：结论已并入权威文档、不再演进的过程记录，用 `git mv` 移入
-   `research/archive/`，文件头加归档说明（归档日期 + 结论去向），修正全部入链，
-   登记索引「已归档」表。归档文档只进不改。
-4. **删除**：内容已合并到其它文档的重复文件直接删；有避坑价值的过程记录归档而非删除。
-5. 文档内引用仓库文件用相对路径 Markdown 链接，不写裸路径。
+3. **完成即删除**：计划、会话复盘和重复说明在结论并入权威文档后删除，历史由 Git 保存。
+4. 文档内引用仓库文件用相对路径 Markdown 链接，不写裸路径。
 
 ## 4. 提交规范
 

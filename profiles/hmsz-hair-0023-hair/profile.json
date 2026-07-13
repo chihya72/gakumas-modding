@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "id": "frame-FrameAnalysis-2026-07-13-015228-hair-a7f03695",
+  "status": "complete-inverse-skin",
+  "target": {
+    "actorId": "hmsz",
+    "costumeId": "hair-0023",
+    "bodyResource": "mdl_chr_hmsz-hair-0023_hair"
+  },
+  "capture": {
+    "directory": "D:\\Games\\gakumas\\FrameAnalysis-2026-07-13-015228",
+    "timestamp": "2026-07-13T01:52:28+08:00",
+    "files": 16877,
+    "bytes": 12009205836,
+    "stableSignatureCaptures": [
+      "D:\\Games\\gakumas\\FrameAnalysis-2026-07-13-015228"
+    ]
+  },
+  "layout": {
+    "topology": "trianglelist",
+    "indexFormat": "R16_UINT",
+    "positionNormalTangentStride": 40,
+    "colorUvStride": 12,
+    "inference": "known-gakumas-body-layout"
+  },
+  "skinning": {
+    "drawInput": "CPU-skinned or runtime-skinned final vertex buffer",
+    "status": "inverse-skin operator built from matched library Mesh",
+    "inverseSkin": {
+      "sourceVertexCount": 11459,
+      "weightedBoneCount": 73,
+      "coefficientCount": 292,
+      "posedVertexStride": 40,
+      "inverseOperator": "Buffers/InverseOperator.R32_FLOAT.buf",
+      "meshJson": "Reference/Geo_Hair.json",
+      "skeletonJson": "Reference/Geo_Hair.skeleton.json",
+      "boneNaming": "skeleton",
+      "unobservableBones": []
+    }
+  },
+  "components": [
+    {
+      "id": "hair",
+      "kind": "body",
+      "source": "frame-analysis-runtime",
+      "confidence": "body-resource-vertex-selected",
+      "ibHash": "a7f03695",
+      "vbHashes": {
+        "positionNormalTangent": "259e5e0d",
+        "colorUv": "12abfadf"
+      },
+      "resourceFiles": {
+        "ib": "000244-ib=a7f03695-vs=fe50b7a82b0f37be-ps=306c290b065e95cc.buf",
+        "vb0": "000244-vb0=259e5e0d-vs=fe50b7a82b0f37be-ps=306c290b065e95cc.buf",
+        "vb1": "000244-vb1=12abfadf-vs=fe50b7a82b0f37be-ps=306c290b065e95cc.buf"
+      },
+      "vertices": 11459,
+      "indices": 46758,
+      "mainFirstIndex": 0,
+      "tailFirstIndices": [],
+      "materialSections": [
+        {
+          "id": "hair.section0",
+          "role": "main",
+          "firstIndex": 0,
+          "indexCount": 46758,
+          "draws": [
+            5,
+            16,
+            179,
+            242,
+            244,
+            247
+          ],
+          "representativeDraw": 244,
+          "vertexShader": "fe50b7a82b0f37be",
+          "pixelShader": "306c290b065e95cc",
+          "textureKeyPrefix": "hair",
+          "pixelShaders": [
+            "306c290b065e95cc",
+            "58352a72263d897c",
+            "a04da6e49886b206",
+            "cf02c2d50d3f2230",
+            "f872756c910a6eb7"
+          ]
+        }
+      ],
+      "draws": [
+        5,
+        16,
+        179,
+        242,
+        244,
+        247
+      ],
+      "mainDraw": 244,
+      "hashNotes": {
+        "positionNormalTangent": "filename",
+        "colorUv": "filename"
+      }
+    }
+  ]
+}

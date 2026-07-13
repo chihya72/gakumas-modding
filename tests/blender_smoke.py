@@ -13,7 +13,7 @@ import gakumas_mi
 
 gakumas_mi.register()
 scene = bpy.context.scene
-scene.gmi_profile_dir = str(ROOT / "profiles" / "hski-cstm-0000")
+scene.gmi_profile_dir = str(ROOT / "profiles" / "atbm-cstm-0140")
 scene.gmi_capture_dir = ""
 scene.gmi_output_dir = str(ROOT / "build" / "blender-smoke")
 scene.gmi_component_id = "body"
@@ -23,8 +23,8 @@ scene.gmi_author = "GakumasMI"
 
 assert bpy.ops.gmi.import_reference() == {"FINISHED"}
 obj = bpy.context.active_object
-assert len(obj.data.vertices) == 17615
-assert len(obj.data.polygons) == 24888
+assert len(obj.data.vertices) == 18972
+assert len(obj.data.polygons) == 25987
 assert len(obj.data.uv_layers) == 2
 assert bpy.ops.gmi.validate_mesh() == {"FINISHED"}
 assert bpy.ops.gmi.export_mesh_mod() == {"FINISHED"}
@@ -33,10 +33,10 @@ scene.gmi_source_mesh_json = ""
 scene.gmi_skeleton_json = ""
 assert bpy.ops.gmi.import_weighted_reference() == {"FINISHED"}
 weighted_obj = bpy.context.active_object
-assert len(weighted_obj.data.vertices) == 17615
-assert len(weighted_obj.vertex_groups) == 152
+assert len(weighted_obj.data.vertices) == 18972
+assert len(weighted_obj.vertex_groups) == 132
 assert weighted_obj.parent.type == "ARMATURE"
-assert len(weighted_obj.parent.data.bones) == 152
+assert len(weighted_obj.parent.data.bones) == 133
 assert bpy.ops.gmi.validate_mesh() == {"FINISHED"}
 
 # Product workflow: an arbitrary author mesh receives Profile weights, risk

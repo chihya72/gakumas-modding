@@ -1,10 +1,9 @@
 # 透明材质：当前状态与结论
 
-更新：2026-07-05
+更新：2026-07-13
 
-> **优先级状态（2026-07-05）**：镂空/cutout（原生 `m_bdyco`/`NATIVE_CO`）已验证完成、是当前正式边界；
-> 玻璃/薄纱级**真连续半透明已暂缓、优先级降低**（完成度按"仅镂空"边界计 ~85%，见
-> [`current-status-and-roadmap.md`](current-status-and-roadmap.md) §1/P3）。下文的真半透明探索仅作存档，不主动排期。
+> 镂空/cutout（原生 `m_bdyco`/`NATIVE_CO`）已验证完成；玻璃/薄纱级连续半透明
+> 不在当前支持范围。
 
 ## 0. 唯一当前路线
 
@@ -128,12 +127,6 @@ atlasCutout=1
 | 全局前向透明 shader hook | 污染 UI/场景透明 draw | 不可作为默认方案 |
 | 运行时手动模拟 `m_bdyco` 状态 | 透明行为不等价 | 不可行 |
 | 几何侧 alpha 裁切 | 破坏几何，只能处理局部全透明三角 | 不可作为透明方案 |
-
-旧实验过程保留在归档中，仅作避坑证据：
-
-- [`archive/transparent-pass-status-and-planB-20260628.md`](archive/transparent-pass-status-and-planB-20260628.md)
-- [`archive/alpha-transparency-frameanalysis-20260628.md`](archive/alpha-transparency-frameanalysis-20260628.md)
-- [`archive/selfbuilt-cutout-and-blend-removed-20260630.md`](archive/selfbuilt-cutout-and-blend-removed-20260630.md)
 
 ## 6. 当前约束
 
