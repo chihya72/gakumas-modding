@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 7, 6),
+    "version": (0, 7, 8),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "学园偶像大师换装/换发 mod 制作：抓帧生成配置档 → 绑定作者模型 → 导出 3DMigoto 逆蒙皮模组",
@@ -136,10 +136,16 @@ def register():
         description="必填。角色的固有色贴图，PNG 或 DDS，必须为正方形。"
                     "留空不报错，但 mod.ini 不会生成 ps-t0 → 游戏沿用原贴图，颜色整体错乱",
     )
+    bpy.types.Scene.gmi_hair_use_base_alpha = BoolProperty(
+        name="使用 t0.A 发丝覆盖率", default=True,
+        description="仅发型生效。默认保留作者 Alpha，用于刘海眉眼透出；关闭时 PNG 转 DDS 会把"
+                    "t0.A 归零。现成 DDS 不会被重写，请自行确认其 Alpha",
+    )
     bpy.types.Scene.gmi_packed_mask_file = StringProperty(
         name="混合遮罩 t1", subtype="FILE_PATH",
-        description="打包遮罩（线性空间）：R=toon 阴影阈值 / G=光滑度 / B=金属度 / A=AO。"
-                    "发型语义不同：A 必须为 0。没有现成图就留空，用下方「按材质生成 t1/t4」",
+        description="线性打包遮罩：R=toon 阴影阈值 / G=光滑度 / B=金属度 / "
+                    "A=镜面/间接/HHL 可见性。当前不替换 hair t6，发型安全预设把 A 归零。"
+                    "没有现成图就留空，用下方「按材质生成 t1/t4」",
     )
     bpy.types.Scene.gmi_shade_color_file = StringProperty(
         name="暗面材质 t4/sdw", subtype="FILE_PATH",
@@ -154,7 +160,7 @@ def register():
     )
     bpy.types.Scene.gmi_hairprop_packed_mask_file = StringProperty(
         name="发饰混合遮罩 t1", subtype="FILE_PATH",
-        description="发饰的打包遮罩，语义同发型（A 必须为 0）。"
+        description="发饰的线性打包遮罩；A 门控镜面/间接光，安全预设为 0。"
                     "留空可用「按材质生成 t1/t4」对激活的发饰网格生成",
     )
     bpy.types.Scene.gmi_hairprop_shade_color_file = StringProperty(
@@ -220,7 +226,8 @@ def register():
     )
     bpy.types.Scene.gmi_hair_outline_tier = EnumProperty(
         name="发型描边色档",
-        description="发型描边色是全网格常量（不是逐顶点），按发色明度选档；"
+        description="安全导出模式把描边色写成全网格常量档；原版可按发片逐顶点变化。"
+                    "请按发色明度选档；"
                     "进游戏后描边偏亮就换更暗一档，宁小勿大",
         items=[
             ("DARK", "深色发(蓝紫/黑褐)", "nibble (0,0,1)，实测自蓝紫发"),
@@ -288,7 +295,7 @@ def unregister():
         "gmi_unmapped_bone_fallback",
         "gmi_transfer_risk_distance",
         "gmi_texture_key", "gmi_texture_file", "gmi_package_id",
-        "gmi_base_color_file", "gmi_packed_mask_file", "gmi_shade_color_file",
+        "gmi_base_color_file", "gmi_hair_use_base_alpha", "gmi_packed_mask_file", "gmi_shade_color_file",
         "gmi_hairprop_base_color_file", "gmi_hairprop_packed_mask_file", "gmi_hairprop_shade_color_file",
         "gmi_t1_r_file", "gmi_t1_g_file", "gmi_t1_b_file", "gmi_t1_a_file",
         "gmi_opacity_texture_file", "gmi_opacity_packed_mask_file", "gmi_opacity_shade_color_file",

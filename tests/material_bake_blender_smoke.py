@@ -1,6 +1,6 @@
 """在 Blender 内实测 gmi.bake_material_maps 操作器。
 
-    blender --background --python tests/material_bake_blender_smoke.py
+    blender --background --factory-startup --python-exit-code 1 --python tests/material_bake_blender_smoke.py
 """
 import sys
 import tempfile
@@ -9,10 +9,10 @@ from pathlib import Path
 import bpy
 import numpy as np
 
-ROOT = Path(r"D:\GIT\gakumas-modding")
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import gakumas_mi
-from gakumas_mi import core
+from gakumas_mi import core, operators
 
 gakumas_mi.register()
 
@@ -84,5 +84,33 @@ co_d4 = core.inspect_dds(co_t4_path)
 assert (co_d1["width"], co_d1["height"]) == (co_size, co_size), co_d1
 assert co_d1["format"] == "DXGI_28", co_d1
 assert co_d4["format"] == "DXGI_29", co_d4
+
+# body/hair/hairprop 必须写不同临时文件；否则完整发型包中后烘焙的发饰会覆盖 Hair t1/t4。
+assert Path(t1_path).name == "gmi_baked_body_packedMask.dds", t1_path
+assert Path(co_t1_path).name == "gmi_baked_body_co_packedMask.dds", co_t1_path
+obj["gmi_component_id"] = "hair"
+m_skin.gmi_material_class = "hair"
+m_metal.gmi_material_class = "hair"
+m_metal.gmi_alpha_mode = "OPAQUE"
+assert bpy.ops.gmi.bake_material_maps() == {"FINISHED"}
+hair_t1 = Path(scene.gmi_packed_mask_file)
+hair_t4 = Path(scene.gmi_shade_color_file)
+hair_bytes = hair_t1.read_bytes()
+assert hair_t1.name == "gmi_baked_hair_packedMask.dds"
+assert set(hair_bytes[151::4]) == {0}, "安全 hair t1.A 必须为 0"
+
+obj["gmi_component_id"] = "hairprop"
+scene.gmi_hairprop_base_color_file = str(co_png_path)
+assert bpy.ops.gmi.bake_material_maps() == {"FINISHED"}
+prop_t1 = Path(scene.gmi_hairprop_packed_mask_file)
+prop_t4 = Path(scene.gmi_hairprop_shade_color_file)
+assert prop_t1.name == "gmi_baked_hairprop_packedMask.dds"
+assert prop_t4.name == "gmi_baked_hairprop_shadeColor.dds"
+assert hair_t1.read_bytes() == hair_bytes, "HairProp 烘焙覆盖了 Hair t1"
+assert hair_t1 != prop_t1 and hair_t4 != prop_t4
+
+# 普通 PNG 默认 A=255；hair 安全转换必须能强制 t0.A=0。
+forced_t0 = Path(operators._png_to_dds(str(png_path), alpha_override=0))
+assert set(forced_t0.read_bytes()[151::4]) == {0}
 
 print("material_bake_blender_smoke OK:", t1_path, t4_path, co_t1_path, co_t4_path)

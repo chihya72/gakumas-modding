@@ -98,11 +98,13 @@ def draw_texture_step(layout, scene, context):
     material.label(text="指定三张导出贴图（正方形）", icon="MATERIAL")
     material.label(text="t0 必填；t1/t4 没有现成的就留空，用下方按材质生成")
     material.prop(scene, "gmi_base_color_file", text="基础色 t0")
+    if is_hair:
+        material.prop(scene, "gmi_hair_use_base_alpha")
     material.prop(scene, "gmi_packed_mask_file", text="混合遮罩 t1")
     material.prop(scene, "gmi_shade_color_file", text="暗面材质 t4 / sdw")
     material.prop(scene, "gmi_neutral_material")
     if is_hair:
-        material.label(text="发型语义特殊：t1.A 必须 0；t4=基础色×冷阴影乘数", icon="INFO")
+        material.label(text="Hair：默认保留 t0.A；t1.A 默认安全归零；自动 t4 是缺图 fallback", icon="INFO")
         prop = material.box()
         prop.label(text="发饰贴图（只在制作发饰时填写）", icon="LINKED")
         prop.prop(scene, "gmi_hairprop_base_color_file")
@@ -159,7 +161,13 @@ def draw_texture_step(layout, scene, context):
         advanced.prop(scene, "gmi_t1_r_file")
         advanced.prop(scene, "gmi_t1_g_file")
         advanced.prop(scene, "gmi_t1_b_file")
-        advanced.prop(scene, "gmi_t1_a_file")
+        active_component = _active_component(scene, context.active_object)
+        a_label = (
+            "t1.A HHL / 镜面可见性" if active_component == "hair"
+            else "t1.A 材质可见性（通常 0）" if active_component == "hairprop"
+            else "t1.A AO / 间接光"
+        )
+        advanced.prop(scene, "gmi_t1_a_file", text=a_label)
         advanced.label(text="填四张=整图合成；只填部分=生成后覆盖对应通道")
 
     header, texture = layout.panel("GMI_single_texture_export", default_closed=True)
@@ -261,7 +269,7 @@ class GMI_PT_main(Panel):
     bl_category = "GakumasMI"
 
     def draw_header(self, context):
-        self.layout.label(text="v0.7.6")
+        self.layout.label(text="v0.7.8")
 
     def draw(self, context):
         scene = context.scene

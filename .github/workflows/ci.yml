@@ -1,8 +1,6 @@
 name: CI
 
-# 纯 Python / 不依赖 Blender 的冒烟测试。
-# 说明：needs-Blender 的测试（blender_smoke / material_bake_blender_smoke）和
-# 需要本地游戏抓帧的 profile_contract_smoke 无法在 CI 跑，故只跑可移植的两个。
+# 纯 Python 回归 + Blender 4.2/4.5 安装、UI、材质和导出闭环。
 
 on:
   push:
@@ -34,3 +32,44 @@ jobs:
           python tests/export_buffers_regression.py
           python tests/mod_ini_contract.py
           python tests/inverse_skin_numeric.py
+          python tests/weight_transfer_smart.py
+
+  blender:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "4.2.7"
+            series: "4.2"
+            sha256: "6e5eed5b753d0fde5cf42d08972ccd4b7c16b6b888cb5e5c734fdb7457a26ff1"
+          - version: "4.5.3"
+            series: "4.5"
+            sha256: "975c58fcb244273838534bba771e64ad87739216b0f9b39a888531a49a72d845"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 打包插件
+        run: python tools/package_blender_addon.py -o dist/gakumas_mi.zip
+
+      - name: 下载 Blender ${{ matrix.version }}
+        run: |
+          url="https://ftp.halifax.rwth-aachen.de/blender/release/Blender${{ matrix.series }}/blender-${{ matrix.version }}-linux-x64.tar.xz"
+          curl --fail --location --retry 3 "$url" -o blender.tar.xz
+          echo "${{ matrix.sha256 }}  blender.tar.xz" | sha256sum --check
+          tar -xf blender.tar.xz
+          echo "BLENDER=$PWD/blender-${{ matrix.version }}-linux-x64/blender" >> "$GITHUB_ENV"
+
+      - name: Blender 安装与闭环测试
+        env:
+          BLENDER_USER_CONFIG: ${{ runner.temp }}/blender-config
+          BLENDER_USER_SCRIPTS: ${{ runner.temp }}/blender-scripts
+        run: |
+          "$BLENDER" --background --factory-startup --python-exit-code 1 --python tests/blender_install_smoke.py -- dist/gakumas_mi.zip
+          "$BLENDER" --background --factory-startup --python-exit-code 1 --python tests/blender_ui_smoke.py
+          "$BLENDER" --background --factory-startup --python-exit-code 1 --python tests/material_bake_blender_smoke.py
+          "$BLENDER" --background --factory-startup --python-exit-code 1 --python tests/blender_smoke.py

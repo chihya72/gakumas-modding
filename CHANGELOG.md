@@ -4,6 +4,22 @@
 发布包用 `python tools/package_blender_addon.py` 生成（代码版不含 Body JSON 资源库；
 加 `--with-body-lib` 可一并打包）。本地包不提交到公开仓库。
 
+## 0.7.8 — Hair Coverage Alpha 默认修正与步骤③贴图指南
+
+- Hair `t0.A` 默认改为保留作者 Alpha，修复刘海眉毛/眼睛无法透出的问题；仍可关闭选项将 PNG
+  Alpha 清零，作为不需要 Coverage 的兼容路径。
+- 新增步骤③ Body / Hair / HairProp 贴图路径、通道和准备要求文档，并链接到主页 README。
+- 修正 Hair/HairProp Alpha、t1/t4 与发饰独立贴图的开发者说明。
+
+## 0.7.7 — 发型贴图烘焙隔离与 Alpha 安全
+
+- Hair、HairProp 与 body/co 的 t1/t4 烘焙改用组件独立临时文件名，修复完整发型制作时
+  后烘焙的 HairProp 静默覆盖 Hair PackedMask/ShadeColor，导致旧 t6 蓝纹和错位灰影。
+- Hair PNG t0 默认在转 DDS 时将 Alpha 归零；只有明确制作了 coverage Alpha 时才开启
+  「使用 t0.A 发丝覆盖率」。HairProp 始终保留作者 Alpha。
+- Hair/HairProp atlas 未覆盖区统一使用 A=0 的安全 t1，步骤③同步修正 t1.A/t4 说明。
+- Blender 材质闭环新增组件文件隔离、Hair t1.A=0 与 PNG Alpha override 回归。
+
 ## 0.7.6 — 共享基础发型选择器稳定化 + 工作流面板重构
 
 - 侧边栏按工作流重构：删除「当前步骤」下拉，① ~ ④ 改为常驻可折叠子面板，

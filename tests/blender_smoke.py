@@ -1,116 +1,131 @@
+"""Blender 内的最小逆蒙皮导出闭环，不依赖游戏抓帧或 gitignored 资产。"""
+
+import json
 import sys
+import tempfile
 from pathlib import Path
 
 import bpy
-import bmesh
 
 
-ROOT = Path(r"D:\GIT\gakumas-modding")
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import gakumas_mi
 
 
-gakumas_mi.register()
-scene = bpy.context.scene
-scene.gmi_profile_dir = str(ROOT / "profiles" / "atbm-cstm-0140")
-scene.gmi_capture_dir = ""
-scene.gmi_output_dir = str(ROOT / ".local" / "test-output" / "blender-smoke")
-scene.gmi_component_id = "body"
-scene.gmi_package_id = "test.blender.mesh"
-scene.gmi_package_name = "Blender Smoke Mesh"
-scene.gmi_author = "GakumasMI"
+IDENTITY_BIND = {
+    "M00": 1.0, "M01": 0.0, "M02": 0.0, "M03": 0.0,
+    "M10": 0.0, "M11": 1.0, "M12": 0.0, "M13": 0.0,
+    "M20": 0.0, "M21": 0.0, "M22": 1.0, "M23": 0.0,
+    "M30": 0.0, "M31": 0.0, "M32": 0.0, "M33": 1.0,
+}
 
-assert bpy.ops.gmi.import_reference() == {"FINISHED"}
-obj = bpy.context.active_object
-assert len(obj.data.vertices) == 18972
-assert len(obj.data.polygons) == 25987
-assert len(obj.data.uv_layers) == 2
-assert bpy.ops.gmi.validate_mesh() == {"FINISHED"}
-assert bpy.ops.gmi.export_mesh_mod() == {"FINISHED"}
 
-scene.gmi_source_mesh_json = ""
-scene.gmi_skeleton_json = ""
-assert bpy.ops.gmi.import_weighted_reference() == {"FINISHED"}
-weighted_obj = bpy.context.active_object
-assert len(weighted_obj.data.vertices) == 18972
-assert len(weighted_obj.vertex_groups) == 132
-assert weighted_obj.parent.type == "ARMATURE"
-assert len(weighted_obj.parent.data.bones) == 133
-assert bpy.ops.gmi.validate_mesh() == {"FINISHED"}
+def _write_json(path, value):
+    path.write_text(json.dumps(value), encoding="utf-8")
 
-# Product workflow: an arbitrary author mesh receives Profile weights, risk
-# attributes and can be exported without keeping the foreign armature.
-target = weighted_obj.copy()
-target.data = weighted_obj.data.copy()
-target.name = "AuthorMesh"
-bpy.context.collection.objects.link(target)
-target.parent = None
-# Keep the smoke fixture below the R16 expanded-loop limit. Real author meshes
-# are validated against the same limit during export.
-bm = bmesh.new()
-bm.from_mesh(target.data)
-bmesh.ops.delete(bm, geom=list(bm.faces)[10000:], context="FACES_ONLY")
-bm.to_mesh(target.data)
-bm.free()
-if "gmi_weighted_reference" in target:
-    del target["gmi_weighted_reference"]
-for selected in bpy.context.selected_objects:
-    selected.select_set(False)
-target.select_set(True)
-bpy.context.view_layer.objects.active = target
-assert bpy.ops.gmi.transfer_profile_weights() == {"FINISHED"}
-assert target["gmi_profile_weights"] is True
-assert "GMI_WEIGHT_RISK" in target.data.color_attributes
-assert "GMI_REVIEW_HIGH_RISK" in target.vertex_groups
-assert bpy.ops.gmi.validate_mesh() == {"FINISHED"}
-assert bpy.ops.gmi.create_native_body_sets() == {"FINISHED"}
-assert "GMI_NATIVE_HAND" in weighted_obj.vertex_groups
-assert "GMI_NATIVE_NECK" in weighted_obj.vertex_groups
 
-scene.gmi_package_id = "test.blender.weighted"
-scene.gmi_package_name = "Blender Weighted Mod"
-material_root = ROOT / ".local" / "test-output" / "inverse-skin-generated" / "test.ttmr-outfit-on-hski" / "Textures"
-scene.gmi_base_color_file = str(material_root / "Body.BaseColor.dds")
-scene.gmi_packed_mask_file = str(material_root / "Body.PackedMask.dds")
-scene.gmi_shade_color_file = str(material_root / "Body.ShadeColor.dds")
-bpy.context.view_layer.objects.active = target
-target.select_set(True)
-weighted_obj.select_set(False)
-assert bpy.ops.gmi.export_inverse_skin_mod() == {"FINISHED"}
-weighted_root = ROOT / ".local" / "test-output" / "blender-smoke" / "test.blender.weighted"
-assert (weighted_root / "Buffers" / "Body.BindSkin.R32_UINT.buf").is_file()
-assert (weighted_root / "Textures" / "Body.PackedMask.dds").is_file()
-ini = (weighted_root / "mod.ini").read_text(encoding="utf-8")
-assert "ps-t0 = Resource" in ini and "ps-t1 = Resource" in ini and "ps-t4 = Resource" in ini
+def _write_profile(root):
+    profile = root / "profile"
+    (profile / "Buffers").mkdir(parents=True)
+    (profile / "Reference").mkdir()
+    inverse = {
+        "sourceVertexCount": 1,
+        "weightedBoneCount": 1,
+        "coefficientCount": 4,
+        "posedVertexStride": 40,
+        "inverseOperator": "Buffers/InverseOperator.R32_FLOAT.buf",
+        "meshJson": "Reference/Geo_Body.json",
+        "skeletonJson": "Reference/Geo_Body.skeleton.json",
+        "unobservableBones": [],
+    }
+    _write_json(profile / "profile.json", {
+        "schemaVersion": 1,
+        "id": "blender-e2e",
+        "target": {
+            "actorId": "test",
+            "costumeId": "cstm-0000",
+            "bodyResource": "mdl_chr_test-cstm-0000_body",
+        },
+        "components": [{
+            "id": "body", "ibHash": "4d5dfe7b", "indices": 3,
+            "mainFirstIndex": 0, "inverseSkin": inverse,
+        }],
+    })
+    _write_json(profile / "drawcall_map.json", {
+        "components": {"body": {"passBindings": {
+            "main": {"draw": 1, "vertexShader": "aaaa1111"},
+        }}},
+    })
+    _write_json(profile / "texture_map.json", {"textures": {}})
+    _write_json(profile / "material_map.json", {"materials": {}})
+    _write_json(profile / "Reference" / "Geo_Body.json", {})
+    _write_json(profile / "Reference" / "Geo_Body.skeleton.json", {
+        "weightedBoneCount": 1,
+        "nodes": [{"name": "Bone", "weightedIndex": 0, "bindPose": IDENTITY_BIND}],
+    })
+    (profile / inverse["inverseOperator"]).write_bytes(b"\0" * 16)
+    return profile
 
-scene.gmi_package_id = "test.blender.surface"
-scene.gmi_package_name = "Blender Smoke Surface"
-assert bpy.ops.gmi.export_surface_mod() == {"FINISHED"}
 
-scene.gmi_package_id = "test.blender.texture"
-scene.gmi_package_name = "Blender Smoke Texture"
-scene.gmi_texture_key = "body.baseColor"
-scene.gmi_texture_file = str(
-    ROOT / "mods" / "poc-recolor-hski-body" / "Textures" / "Body.BaseColor.dds"
-)
-assert bpy.ops.gmi.export_texture_mod() == {"FINISHED"}
+def _create_mesh():
+    mesh = bpy.data.meshes.new("AuthorMesh")
+    mesh.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
+    uv = mesh.uv_layers.new(name="UV0")
+    for loop in mesh.loops:
+        uv.data[loop.index].uv = ((0, 0), (1, 0), (0, 1))[loop.vertex_index]
+    obj = bpy.data.objects.new("AuthorMesh", mesh)
+    bpy.context.collection.objects.link(obj)
+    group = obj.vertex_groups.new(name="Bone")
+    group.add([0, 1, 2], 1.0, "REPLACE")
+    obj["gmi_profile_weights"] = True
+    obj["gmi_component_id"] = "body"
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    return obj
 
-mesh_buffer = (
-    ROOT / ".local" / "test-output" / "blender-smoke" / "test.blender.mesh"
-    / "Buffers" / "Body.IB.R16_UINT.buf"
-)
-texture = (
-    ROOT / ".local" / "test-output" / "blender-smoke" / "test.blender.texture"
-    / "Textures" / "Body.BaseColor.dds"
-)
-surface_root = ROOT / ".local" / "test-output" / "blender-smoke" / "test.blender.surface"
-assert mesh_buffer.stat().st_size == 149328
-assert texture.stat().st_size == 4194432
-assert (surface_root / "Buffers" / "Body.VB0.buf").stat().st_size == 704600
-assert (surface_root / "Buffers" / "Body.VB1.buf").stat().st_size == 211380
-assert (surface_root / "Buffers" / "Body.IB.R16_UINT.buf").stat().st_size == 149328
-assert (surface_root / "Buffers" / "Body.SurfaceMap.buf").stat().st_size == 563680
-print("GMI_SMOKE_OK", len(weighted_obj.data.vertices), len(weighted_obj.vertex_groups))
 
-gakumas_mi.unregister()
+def _create_cover(path):
+    image = bpy.data.images.new("cover", 2, 2, alpha=True)
+    image.generated_color = (0.2, 0.4, 0.8, 1.0)
+    image.filepath_raw = str(path)
+    image.file_format = "PNG"
+    image.save()
+
+
+with tempfile.TemporaryDirectory(prefix="gmi-blender-e2e-") as tmp:
+    tmp = Path(tmp)
+    profile = _write_profile(tmp)
+    cover = tmp / "cover.png"
+    _create_cover(cover)
+
+    gakumas_mi.register()
+    try:
+        _create_mesh()
+        scene = bpy.context.scene
+        scene.gmi_profile_dir = str(profile)
+        scene.gmi_output_dir = str(tmp / "out")
+        scene.gmi_package_id = "test.blender.e2e"
+        scene.gmi_package_name = "Blender E2E"
+        scene.gmi_author = "GakumasMI"
+        scene.gmi_cover_image = str(cover)
+        scene.gmi_neutral_material = False
+        scene.gmi_outline_width_mode = "DISABLE_ALL"
+        scene.gmi_vertex_color_mode = "CONSTANT_BLACK"
+
+        assert bpy.ops.gmi.export_inverse_skin_mod() == {"FINISHED"}
+        package = tmp / "out" / "test.blender.e2e"
+        for relative in (
+            "mod.ini", "manifest.json", "export-report.json",
+            "Buffers/Body.BindSkin.R32_UINT.buf",
+            "Buffers/Body.IB.R16_UINT.buf",
+            "Shaders/SkinCustomCS.hlsl",
+        ):
+            assert (package / relative).is_file(), relative
+        manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+        assert manifest["targets"] == ["mdl_chr_test-cstm-0000_body"], manifest
+        assert "hash = 4d5dfe7b" in (package / "mod.ini").read_text(encoding="utf-8")
+        print("GMI_BLENDER_E2E_OK", bpy.app.version_string)
+    finally:
+        gakumas_mi.unregister()

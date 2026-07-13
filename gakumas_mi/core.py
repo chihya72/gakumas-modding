@@ -55,8 +55,8 @@ NEUTRAL_PACKED_MASK = (255, 0, 0, 255)
 # t4 ShadeColor: RGB 为暗色版 baseColor；A 按原生 sdw 近似二值材质遮罩。
 # 中性 t4.A=0，避免把原版 shade mask 带到自定义 atlas 上。
 NEUTRAL_SHADE_COLOR = (128, 128, 128, 0)
-# hair 的 t1 语义 ≠ body:A 不是 AO(写 255 会漏出未替换的原版 t4),实测原版
-# hair t1 常量 ≈ (67,32,0,0)(m_hair_21_001 实机验证),中性即预设本身。
+# hair 与 body 共用 t1 算法；A 门控镜面/间接/HHL。当前不替换 t6 HHL，自定义 UV 下
+# A=0 可屏蔽旧高光。该 hmsz 实测值是安全中性预设，不代表所有原版 hair 都是常量图。
 HAIR_NEUTRAL_PACKED_MASK = (67, 32, 0, 0)
 
 
@@ -246,7 +246,7 @@ def bake_material_maps(id_map, base_rgb8, class_per_slot, presets,
     form_map: 可选 (H,W) 0..1 几何 AO/曲率图(NaN=无),用于给 toon/AO 通道
     叠加随形体的空间渐变,避免 flat toon 在圆柱体上出硬光影分界。
     form_strength: 渐变强度(0=关闭)。
-    neutral_key: 未覆盖区(-1)使用的预设键;hair 组件传 "hair"(其 t1.A=0 语义 ≠ body)。
+    neutral_key: 未覆盖区(-1)使用的预设键;hair 传 "hair"，以 A=0 屏蔽未替换 t6 HHL。
     返回 (t1_rgba8, t4_rgba8),均为 (H,W,4) uint8。
     """
     import numpy as np
