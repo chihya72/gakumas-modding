@@ -45,18 +45,28 @@ jobs:
       - name: 打包插件 zip
         run: python tools/package_blender_addon.py -o "dist/gakumas_mi-${{ steps.ver.outputs.version }}.zip"
 
-      - name: 生成 Release notes（CHANGELOG 该版本段 + Full Changelog）
+      - name: 生成面向用户的 Release notes（tag 注解 + Full Changelog）
         run: |
-          python - "${{ steps.ver.outputs.version }}" > release_notes.md <<'PY'
-          import re, sys, pathlib
-          ver = sys.argv[1]
-          txt = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
-          for sec in re.split(r'(?m)^## ', txt)[1:]:
-              if sec.split(" ", 1)[0] == ver:
-                  print("## " + sec.rstrip())
-                  break
-          else:
-              print(f"GakumasMI Blender 插件 {ver}")  # CHANGELOG 缺该版本时的兜底
+          python - "${{ steps.ver.outputs.version }}" "$GITHUB_REF_NAME" > release_notes.md <<'PY'
+          import subprocess, sys
+
+          version, tag = sys.argv[1:]
+          body = subprocess.check_output(
+              ["git", "for-each-ref", "--format=%(contents)", f"refs/tags/{tag}"],
+              text=True,
+          ).strip()
+          lines = body.splitlines()
+          theme = lines[0].strip() if lines else ""
+          changes = "\n".join(lines[1:]).strip()
+          if not theme or not changes or not any(
+              line.lstrip().startswith("- ") for line in changes.splitlines()
+          ):
+              raise SystemExit(
+                  "Blender Release tag 注解必须是：首行版本主题，空行后写面向用户的 '- ' 变更列表"
+              )
+          print(f"GakumasMI Blender 插件 **{version}** — {theme}\n")
+          print("本版变动：")
+          print(changes)
           PY
           # 上一个 gakumas-mi tag → Full Changelog 比较链接
           prev=$(git tag -l 'gakumas-mi-v*' --sort=-version:refname \

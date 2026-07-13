@@ -15,7 +15,7 @@ gakumas_mi.register()
 scene = bpy.context.scene
 scene.gmi_profile_dir = str(ROOT / "profiles" / "atbm-cstm-0140")
 scene.gmi_capture_dir = ""
-scene.gmi_output_dir = str(ROOT / "build" / "blender-smoke")
+scene.gmi_output_dir = str(ROOT / ".local" / "test-output" / "blender-smoke")
 scene.gmi_component_id = "body"
 scene.gmi_package_id = "test.blender.mesh"
 scene.gmi_package_name = "Blender Smoke Mesh"
@@ -70,7 +70,7 @@ assert "GMI_NATIVE_NECK" in weighted_obj.vertex_groups
 
 scene.gmi_package_id = "test.blender.weighted"
 scene.gmi_package_name = "Blender Weighted Mod"
-material_root = ROOT / "build" / "inverse-skin-generated" / "test.ttmr-outfit-on-hski" / "Textures"
+material_root = ROOT / ".local" / "test-output" / "inverse-skin-generated" / "test.ttmr-outfit-on-hski" / "Textures"
 scene.gmi_base_color_file = str(material_root / "Body.BaseColor.dds")
 scene.gmi_packed_mask_file = str(material_root / "Body.PackedMask.dds")
 scene.gmi_shade_color_file = str(material_root / "Body.ShadeColor.dds")
@@ -78,7 +78,7 @@ bpy.context.view_layer.objects.active = target
 target.select_set(True)
 weighted_obj.select_set(False)
 assert bpy.ops.gmi.export_inverse_skin_mod() == {"FINISHED"}
-weighted_root = ROOT / "build" / "blender-smoke" / "test.blender.weighted"
+weighted_root = ROOT / ".local" / "test-output" / "blender-smoke" / "test.blender.weighted"
 assert (weighted_root / "Buffers" / "Body.BindSkin.R32_UINT.buf").is_file()
 assert (weighted_root / "Textures" / "Body.PackedMask.dds").is_file()
 ini = (weighted_root / "mod.ini").read_text(encoding="utf-8")
@@ -97,14 +97,14 @@ scene.gmi_texture_file = str(
 assert bpy.ops.gmi.export_texture_mod() == {"FINISHED"}
 
 mesh_buffer = (
-    ROOT / "build" / "blender-smoke" / "test.blender.mesh"
+    ROOT / ".local" / "test-output" / "blender-smoke" / "test.blender.mesh"
     / "Buffers" / "Body.IB.R16_UINT.buf"
 )
 texture = (
-    ROOT / "build" / "blender-smoke" / "test.blender.texture"
+    ROOT / ".local" / "test-output" / "blender-smoke" / "test.blender.texture"
     / "Textures" / "Body.BaseColor.dds"
 )
-surface_root = ROOT / "build" / "blender-smoke" / "test.blender.surface"
+surface_root = ROOT / ".local" / "test-output" / "blender-smoke" / "test.blender.surface"
 assert mesh_buffer.stat().st_size == 149328
 assert texture.stat().st_size == 4194432
 assert (surface_root / "Buffers" / "Body.VB0.buf").stat().st_size == 704600

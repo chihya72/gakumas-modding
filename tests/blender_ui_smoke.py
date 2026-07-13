@@ -56,7 +56,7 @@ try:
     scene.gmi_component_id = "hairprop"
     scene.gmi_capture_dir = str(ROOT)
     scene.gmi_body_json_library_dir = str(ROOT)
-    scene.gmi_extract_output_dir = str(ROOT / "build" / "blender-ui-smoke")
+    scene.gmi_extract_output_dir = str(ROOT / ".local" / "test-output" / "blender-ui-smoke")
     scene.gmi_body_resource = "mdl_chr_test-hair-0001_hair"
 
     hairprop_layout = FakeLayout()

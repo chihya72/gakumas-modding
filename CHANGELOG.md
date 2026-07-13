@@ -24,9 +24,8 @@
 - **文档**：发型道具 = Geo_Hair + Geo_HairProp 双组件（游戏内无单独发饰选择，完整替换
   = 同一次抓帧出 hair + hairprop 两个包）；证伪旧「发饰包 / 跨包共用 Geo_Hair」表述；
   制作目标 tooltip 与 README 同步。
-- **profiles 精简为默认三件套**：`atbm-cstm-0140`（带原生 co 第二材质段的 body 默认档，
-  由已导出包离线重建，附 `rebuild_profile.py`）+ `hmsz-hair-0023-hair`（发型默认档）+
-  `hmsz-hair-0023-hairprop`（配套发饰档，发型道具双组件成对保留）。插件默认配置档路径
+- **profiles 精简为默认两件套**：`atbm-cstm-0140`（带原生 co 第二材质段的 body 默认档，
+  由已导出包离线重建，附 `rebuild_profile.py`）+ `hmsz-hair-0023-hair`（发型默认档）。插件默认配置档路径
   与测试（blender_smoke / inverse_skin_numeric / profile_contract_smoke）同步切换；
   旧 hski-cstm-0000 PoC 冻结契约随档移除，契约冒烟改锁新默认档的几何/骨架/算子/co 段。
 

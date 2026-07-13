@@ -13,7 +13,7 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8")
 sys.path.insert(0, r"D:\GIT\gakumas-modding")
 PROFILE_DIR = Path(__file__).resolve().parent
-LIBRARY_DIR = r"D:\GIT\gakumas-modding\build\assetstudio-body-json"
+LIBRARY_DIR = str(Path(__file__).resolve().parents[2] / ".local" / "assetstudio-body-json")
 
 IB_HASH = "d43e51c9"
 VERTICES, INDICES = 18972, 77961

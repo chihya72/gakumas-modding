@@ -129,7 +129,7 @@ python tools\export_all_body_json.py
 默认参数：
 
 - 输入目录：`all_body/`
-- 输出目录：`build/assetstudio-body-json/`
+- 输出目录：`.local/assetstudio-body-json/`
 - AssetStudio CLI：通过命令行参数指定本机的 `AssetStudio.CLI.exe`
 - Unity 版本：`6000.0.67f1`
 
@@ -137,7 +137,7 @@ python tools\export_all_body_json.py
 这些目录整体就是插件使用的 `Body JSON资源库`：
 
 ```text
-build/assetstudio-body-json/
+.local/assetstudio-body-json/
   mdl_chr_<角色>-cstm-<编号>_body/
     Geo_Body.json
     Geo_Body.skeleton.json
@@ -162,7 +162,7 @@ python tools\export_all_body_json.py --skeleton
 因此 500+ 套全部可用。
 
 `Body JSON资源库`（约数 GB）作为**单独资源包**发布，不打进插件 zip。开发环境默认指向
-`build/assetstudio-body-json/`；实际使用时把资源包目录路径填进插件「选项2」即可。
+`.local/assetstudio-body-json/`；实际使用时把资源包目录路径填进插件「选项2」即可。
 
 调试前几个文件：
 

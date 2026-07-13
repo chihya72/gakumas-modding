@@ -41,7 +41,7 @@ def _default_body_json_dir():
     bundled = Path(__file__).resolve().parent / "resources" / "assetstudio-body-json"
     if bundled.is_dir():
         return str(bundled)
-    development = Path(__file__).resolve().parents[1] / "build" / "assetstudio-body-json"
+    development = Path(__file__).resolve().parents[1] / ".local" / "assetstudio-body-json"
     return str(development) if development.is_dir() else ""
 
 

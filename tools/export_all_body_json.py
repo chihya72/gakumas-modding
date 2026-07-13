@@ -2,7 +2,7 @@
 
 Defaults export body（--suffix _body --mesh-name Geo_Body）。发饰库示例：
   python tools/export_all_body_json.py --input all_hair --suffix _hair \
-      --mesh-name Geo_HairProp --output build/assetstudio-hairprop-json --skeleton
+      --mesh-name Geo_HairProp --output .local/assetstudio-hairprop-json --skeleton
 
 Input layout:
   all_body/
@@ -10,7 +10,7 @@ Input layout:
     mdl_chr_hski-cstm-0000_body
 
 Output layout:
-  build/assetstudio-body-json/
+  .local/assetstudio-body-json/
     mdl_chr_amao-cstm-0000_body/
       Geo_Body.json
       Geo_Body.skeleton.json
@@ -271,8 +271,8 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=ROOT / "build" / "assetstudio-body-json",
-        help="输出目录，默认 ./build/assetstudio-body-json",
+        default=ROOT / ".local" / "assetstudio-body-json",
+        help="输出目录，默认 ./.local/assetstudio-body-json",
     )
     parser.add_argument("--assetstudio", type=Path, default=DEFAULT_AS_CLI, help="AssetStudio.CLI.exe 路径")
     parser.add_argument("--unity-version", default=DEFAULT_UNITY_VERSION, help="Unity 版本，默认 6000.0.67f1")

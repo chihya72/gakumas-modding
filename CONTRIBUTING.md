@@ -20,9 +20,11 @@
 产品文档跟产品走：某产品线的设计/使用文档放该产品目录（如
 `3dmigoto-gkms/FLIP-RESIZE-PATCH.md`）；跨产品的研究、抓帧证据、路线记录才进 `research/`。
 
-本地数据目录（gitignored，永不入库）：`all_body/`、`build/`、`dist/`、`checkpoints/`、
-`ai-model-workspace/`、`.local/`、`gakumas_mi/resources/assetstudio-body-json/`。
-AI 会话产物、临时脚本一律进 `ai-model-workspace/` 或系统临时目录，不落仓库。
+本地数据目录（gitignored，永不入库）：`all_body/`、`.local/`、`dist/`、`checkpoints/`、
+`ai-model-workspace/`、`gakumas_mi/resources/assetstudio-body-json/`。
+根目录 `build/` 禁止使用：AI mod 的脚本、源文件、中间产物、QA 图和最终包全部放进
+`ai-model-workspace/<项目名>/`；本地资源库与测试输出放 `.local/`；Blender 插件 ZIP 和
+Mod 管理器安装包只放 `dist/`。
 
 ## 2. 命名规范
 
@@ -69,5 +71,9 @@ AI 会话产物、临时脚本一律进 `ai-model-workspace/` 或系统临时目
   Release 标题写明组件，不用笼统的 "GakumasMI vX"。
 - gakumas-mi 发版三件套：`gakumas_mi/__init__.py` 的 `bl_info["version"]` +
   `CHANGELOG.md` 版本段 + tag，缺一不发。
+- Blender tag 必须使用注解格式：首行写简短版本主题，空行后写面向用户的 `- ` 变更列表。
+  Release 固定渲染为 `GakumasMI Blender 插件 **X.Y.Z** — 主题` + `本版变动：` + 列表 +
+  Full Changelog；禁止直接复制技术型 CHANGELOG、测试流水账或仓库内部链接。
+- Mod 管理器 Release 固定为 `本版更新` + `安装` + .NET 依赖 + Full Changelog。
 - 发布 zip 只打 git 跟踪文件（`tools/package_blender_addon.py` 已强制），
   防止本地 gitignored 数据混入。

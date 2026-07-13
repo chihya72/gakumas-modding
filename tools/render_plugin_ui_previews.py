@@ -4,7 +4,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "build" / "ui-previews"
+OUT = ROOT / ".local" / "ui-previews"
 OUT.mkdir(parents=True, exist_ok=True)
 FONT = r"C:\Windows\Fonts\Noto Sans SC (TrueType).otf"
 FONT_BOLD = r"C:\Windows\Fonts\Noto Sans SC Bold (TrueType).otf"
@@ -57,11 +57,11 @@ def extract():
     panel(d, 228, "步骤 1/4 · 生成完整配置档", 386)
     d.text((154, 270), "需要含 Geo_HairProp.json 的发饰资源库", font=ft(14), fill="#cbd0d8")
     field(d, 304, "抓帧目录", "D:/Games/gakumas/FrameAnalysis-2026-07-12-062317")
-    field(d, 384, "发饰 JSON 资源库", "D:/GIT/gakumas-modding/build/assetstudio-hairprop-json")
+    field(d, 384, "发饰 JSON 资源库", ".local/assetstudio-hairprop-json")
     field(d, 464, "目标 hair 资源（可选）", "mdl_chr_ttmr-hair-0023_hair")
     button(d, 550, "生成完整配置档", True)
     panel(d, 632, "步骤 1/4 · 导入参考", 220)
-    field(d, 674, "配置档目录", "profiles/hmsz-hair-0023-hairprop", 520)
+    field(d, 674, "配置档目录", "profiles/hmsz-hair-0023-hair", 520)
     button(d, 760, "导入参考模型与骨架", True)
     d.text((154, 820), "导入完成后进入 ② 绑定模型", font=ft(13), fill="#aeb4bd")
     panel(d, 876, ">  高级 / 分步 / 排错", 58)
@@ -98,7 +98,7 @@ def texture():
 def export():
     im, d = base("发饰 hairprop", "④ 导出模组")
     panel(d, 228, "步骤 4/4 · 模组信息", 360)
-    field(d, 270, "输出目录", "build/export")
+    field(d, 270, "输出目录", "ai-model-workspace/<项目名>/export")
     field(d, 350, "模组标识", "pm.ttmr.madoka-swimsuit-hairprop")
     field(d, 430, "模组名称", "圆香泳装配套发饰")
     field(d, 510, "预览图（必填）", "hairprop_preview.png", 420)
