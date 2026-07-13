@@ -52,7 +52,7 @@ jobs:
 
           version, tag = sys.argv[1:]
           body = subprocess.check_output(
-              ["git", "for-each-ref", "--format=%(contents)", f"refs/tags/{tag}"],
+              ["git", "tag", "-l", "--format=%(contents)", tag],
               text=True,
           ).strip()
           lines = body.splitlines()
