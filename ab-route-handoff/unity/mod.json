@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 2,
+  "id": "hmsz-0000-ruinurs",
+  "name": "rui-nurs-00 nurse dress for hmsz-cstm-0000",
+  "version": "0.1.0",
+  "author": "10725",
+  "priority": 0,
+  "enabled": true,
+  "replacements": [
+    {
+      "source": "mdl_chr_hmsz-cstm-0000_body",
+      "part": "body",
+      "priority": 0,
+      "bundle": "hmsz_0000_ruinurs.bundle",
+      "asset": "Assets/Mods/hmsz_0000/mdl_chr_hmsz-cstm-0000_body.prefab",
+      "type": "GameObject",
+      "renderers": [
+        { "rendererId": "body", "targetRenderer": "Geo_Body", "modRenderer": "Geo_Body" }
+      ],
+      "replaceMaterials": false,
+      "textures": [
+        { "rendererName": "Geo_Body", "materialSlot": 0, "property": "_BaseMap",  "asset": "Assets/Mods/hmsz_0000/rui_bdy_t0.png",   "type": "Texture2D" },
+        { "rendererName": "Geo_Body", "materialSlot": 0, "property": "_DefMap",   "asset": "Assets/Mods/hmsz_0000/rui_bdy_t1.png",   "type": "Texture2D" },
+        { "rendererName": "Geo_Body", "materialSlot": 0, "property": "_ShadeMap", "asset": "Assets/Mods/hmsz_0000/rui_bdy_t4.png",   "type": "Texture2D" },
+        { "rendererName": "Geo_Body", "materialSlot": 1, "property": "_BaseMap",  "asset": "Assets/Mods/hmsz_0000/rui_bdyco_t0.png", "type": "Texture2D" },
+        { "rendererName": "Geo_Body", "materialSlot": 1, "property": "_DefMap",   "asset": "Assets/Mods/hmsz_0000/rui_bdyco_t1.png", "type": "Texture2D" },
+        { "rendererName": "Geo_Body", "materialSlot": 1, "property": "_ShadeMap", "asset": "Assets/Mods/hmsz_0000/rui_bdyco_t4.png", "type": "Texture2D" }
+      ]
+    }
+  ]
+}

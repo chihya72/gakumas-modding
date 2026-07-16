@@ -28,6 +28,7 @@ tools/          离线脚本（AssetStudio 导出、逆算子构建、配置档�
 profiles/       各角色/服装配置档    tests/  冒烟与契约测试    research/  研究记录与路线
 3dmigoto-gkms/  游戏 mod 插件（自编译补丁版 d3d11.dll + d3dx.ini + ShaderFixes）
 mod-manager/    使用者侧 Mod 包管理器（WPF/Stylet，随 3dmigoto-gkms 发布）
+ab-route-handoff/  AB 路线交接包（IP 服装→学马：管线脚本 + 插件源码 + 新骨物理规范）
 ```
 
 ## 文档
@@ -37,6 +38,7 @@ mod-manager/    使用者侧 Mod 包管理器（WPF/Stylet，随 3dmigoto-gkms �
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 仓库规范（新建文件前必读） |
 | [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) | 进度 / 完成度 / 计划（**最新状态以此为准**） |
 | [research/step3-texture-input-guide.md](research/step3-texture-input-guide.md) | 步骤③ Body / Hair / HairProp 贴图路径、通道和准备要求 |
+| [ab-route-handoff/README.md](ab-route-handoff/README.md) | AB（AssetBundle）路线：IP 服装无损嫁接 + 新骨摆动物理的交接包 |
 | [gakumas_mi/README.md](gakumas_mi/README.md) · [3dmigoto-gkms/README.md](3dmigoto-gkms/README.md) · [mod-manager/README.md](mod-manager/README.md) | 三个子项目各自的安装与用法 |
 
 ## 致谢与上游开源
