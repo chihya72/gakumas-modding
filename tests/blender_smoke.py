@@ -60,7 +60,11 @@ def _write_profile(root):
     })
     _write_json(profile / "texture_map.json", {"textures": {}})
     _write_json(profile / "material_map.json", {"materials": {}})
-    _write_json(profile / "Reference" / "Geo_Body.json", {})
+    _write_json(profile / "Reference" / "Geo_Body.json", {
+        "m_VertexCount": 3,
+        "m_BindPose": [IDENTITY_BIND],
+        "m_Name": "mdl_chr_test-cstm-0000_body",
+    })
     _write_json(profile / "Reference" / "Geo_Body.skeleton.json", {
         "weightedBoneCount": 1,
         "nodes": [{"name": "Bone", "weightedIndex": 0, "bindPose": IDENTITY_BIND}],
@@ -99,6 +103,12 @@ with tempfile.TemporaryDirectory(prefix="gmi-blender-e2e-") as tmp:
     profile = _write_profile(tmp)
     cover = tmp / "cover.png"
     _create_cover(cover)
+    base = tmp / "base.png"
+    packed = tmp / "packed.png"
+    shade = tmp / "shade.png"
+    _create_cover(base)
+    _create_cover(packed)
+    _create_cover(shade)
 
     gakumas_mi.register()
     try:
@@ -126,6 +136,21 @@ with tempfile.TemporaryDirectory(prefix="gmi-blender-e2e-") as tmp:
         manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
         assert manifest["targets"] == ["mdl_chr_test-cstm-0000_body"], manifest
         assert "hash = 4d5dfe7b" in (package / "mod.ini").read_text(encoding="utf-8")
+        scene.gmi_base_color_file = str(base)
+        scene.gmi_packed_mask_file = str(packed)
+        scene.gmi_shade_color_file = str(shade)
+        assert bpy.ops.gmi.export_bundle_source() == {"FINISHED"}
+        bundle_src = package / "bundle-src"
+        for relative in (
+            "mdl_chr_test-cstm-0000_body.geojson.txt",
+            "test.blender.e2e_bones.json.txt",
+            "body_slot0_t0.png", "body_slot0_t1.png", "body_slot0_t4.png",
+            "mod.json",
+        ):
+            assert (bundle_src / relative).is_file(), relative
+        bundle_manifest = json.loads((bundle_src / "mod.json").read_text(encoding="utf-8"))
+        assert bundle_manifest["replacements"][0]["replaceMaterials"] is False
+        assert len(bundle_manifest["replacements"][0]["textures"]) == 3
         print("GMI_BLENDER_E2E_OK", bpy.app.version_string)
     finally:
         gakumas_mi.unregister()

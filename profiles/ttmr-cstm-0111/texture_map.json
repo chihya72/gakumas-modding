@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "capture": "reconstructed",
+  "textures": {
+    "body.baseColor": {
+      "slot": "ps-t0",
+      "hash": "11886fd6"
+    },
+    "body.packedMask": {
+      "slot": "ps-t1",
+      "hash": "953e8c43"
+    },
+    "body.shadeColor": {
+      "slot": "ps-t4",
+      "hash": "0fbc0d37"
+    }
+  }
+}

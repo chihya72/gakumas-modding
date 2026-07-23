@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "capture": "reconstructed",
+  "generatedFrom": "离线重建: 抓帧目录已删,hash 取自已导出包 pm.ttmr.madoka-swimsuit 的 mod.ini/manifest.json;Reference/逆算子由 body JSON 库再生。",
+  "components": {
+    "body": {
+      "mainDraw": 196,
+      "passBindings": {
+        "draw_000001": {
+          "role": "reconstructed",
+          "draw": 1,
+          "vertexShader": "221c573337491c78",
+          "pixelShader": null
+        },
+        "draw_000002": {
+          "role": "reconstructed",
+          "draw": 2,
+          "vertexShader": "436f9c16af3b54cf",
+          "pixelShader": null
+        },
+        "draw_000003": {
+          "role": "reconstructed",
+          "draw": 3,
+          "vertexShader": "fe50b7a82b0f37be",
+          "pixelShader": null
+        },
+        "draw_000004": {
+          "role": "reconstructed",
+          "draw": 4,
+          "vertexShader": "e0ceaa854f457e74",
+          "pixelShader": null
+        }
+      },
+      "sectionBindings": {}
+    }
+  }
+}

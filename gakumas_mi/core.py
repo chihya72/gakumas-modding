@@ -1301,6 +1301,9 @@ def _synthesize_skeleton_from_mesh(mesh_json_path, template=None):
             "weightedIndex": i,
             "boneNameHash": bone_hash,
             "bindPose": bind[i],
+            "localPosition": [0.0, 0.0, 0.0],
+            "localRotation": [0.0, 0.0, 0.0, 1.0],
+            "localScale": [1.0, 1.0, 1.0],
         })
     return {
         "schemaVersion": 1,
@@ -1310,6 +1313,310 @@ def _synthesize_skeleton_from_mesh(mesh_json_path, template=None):
         "nodeCount": bone_count + 1,
         "nodes": nodes,
     }
+
+
+def _bundle_bone_order(skeleton):
+    """Return topological weighted bones and the old mesh-index remap."""
+    nodes = skeleton.get("nodes") or []
+    weighted = []
+    old_to_node = {}
+    for node_index, node in enumerate(nodes):
+        if node.get("weightedIndex") is None:
+            continue
+        old_index = int(node["weightedIndex"])
+        if old_index in old_to_node:
+            raise ValueError(f"骨架 weightedIndex 重复：{old_index}")
+        old_to_node[old_index] = node_index
+        weighted.append((node_index, node, old_index))
+    if not weighted:
+        raise ValueError("骨架没有可打包的 weighted bone")
+
+    def parent_weighted_index(node_index):
+        parent = int(nodes[node_index].get("parent", -1))
+        visited = set()
+        while 0 <= parent < len(nodes) and parent not in visited:
+            visited.add(parent)
+            parent_node = nodes[parent]
+            if parent_node.get("weightedIndex") is not None:
+                return int(parent_node["weightedIndex"])
+            parent = int(parent_node.get("parent", -1))
+        return None
+
+    parent_by_old = {
+        old_index: parent_weighted_index(node_index)
+        for node_index, _node, old_index in weighted
+    }
+    pending = {node_index for node_index, _node, _old_index in weighted}
+    ordered = []
+    while pending:
+        progressed = False
+        for node_index, node, old_index in weighted:
+            if node_index not in pending:
+                continue
+            parent_old = parent_by_old[old_index]
+            parent_node = old_to_node.get(parent_old) if parent_old is not None else None
+            if parent_node is None or parent_node not in pending:
+                ordered.append((node, old_index, parent_old))
+                pending.remove(node_index)
+                progressed = True
+        if not progressed:
+            raise ValueError("骨架父子关系存在循环，无法生成 sidecar 顺序")
+
+    old_to_new = {old_index: index for index, (_node, old_index, _parent) in enumerate(ordered)}
+    bones = []
+    for index, (node, old_index, parent_old) in enumerate(ordered):
+        bones.append({
+            "index": index,
+            "name": node.get("name") or f"bone_{old_index}",
+            "parentIndex": old_to_new.get(parent_old, -1),
+            "localPosition": node.get("localPosition") or [0.0, 0.0, 0.0],
+            "localRotation": node.get("localRotation") or [0.0, 0.0, 0.0, 1.0],
+            "localScale": node.get("localScale") or [1.0, 1.0, 1.0],
+        })
+    return ordered, old_to_new, bones
+
+
+def _bundle_skin(skin, old_to_new, bind_pose_count):
+    result = []
+    for vertex_index, influences in enumerate(skin):
+        accumulated = {}
+        for item in influences:
+            if len(item) >= 3:
+                old_index, correction_index, weight = item[:3]
+                if abs(float(correction_index)) > 1e-6:
+                    raise ValueError(
+                        f"顶点 {vertex_index} 含逆蒙皮 correction；请先传递配置档权重再导出 bundle 源"
+                    )
+            elif len(item) == 2:
+                old_index, weight = item
+            else:
+                raise ValueError(f"顶点 {vertex_index} 的权重格式无效")
+            old_index = int(old_index)
+            if old_index < 0 or old_index >= bind_pose_count or old_index not in old_to_new:
+                raise ValueError(f"顶点 {vertex_index} 引用了无效骨骼索引：{old_index}")
+            weight = max(0.0, float(weight))
+            if weight:
+                new_index = old_to_new[old_index]
+                accumulated[new_index] = accumulated.get(new_index, 0.0) + weight
+        ordered = sorted(accumulated.items(), key=lambda item: item[1], reverse=True)[:4]
+        total = sum(weight for _index, weight in ordered)
+        if total <= 1e-8:
+            raise ValueError(f"顶点 {vertex_index} 没有有效骨骼权重")
+        indices = [index for index, _weight in ordered]
+        weights = [weight / total for _index, weight in ordered]
+        indices.extend([0] * (4 - len(indices)))
+        weights.extend([0.0] * (4 - len(weights)))
+        result.append({"weight": weights, "boneIndex": indices})
+    return result
+
+
+def _bundle_submeshes(faces, materials, vertex_count, material_slot_count):
+    if any(len(face) != 3 for face in faces):
+        raise ValueError("bundle 源要求所有面都是三角形")
+    per_vertex = len(materials) == vertex_count
+    per_face = len(materials) == len(faces)
+    if materials and not (per_vertex or per_face):
+        raise ValueError("材质索引数量与顶点/面数量不一致")
+
+    groups = {}
+    for face_index, face in enumerate(faces):
+        if any(int(index) < 0 or int(index) >= vertex_count for index in face):
+            raise ValueError(f"面 {face_index} 含越界顶点索引")
+        if per_vertex:
+            slot = int(materials[face[0]])
+            if any(int(materials[index]) != slot for index in face):
+                raise ValueError(f"面 {face_index} 的三个顶点跨材质槽")
+        elif per_face:
+            slot = int(materials[face_index])
+        else:
+            slot = 0
+        if slot < 0:
+            raise ValueError(f"面 {face_index} 的材质槽无效：{slot}")
+        groups.setdefault(slot, []).append(tuple(int(index) for index in face))
+
+    slot_count = max(1, int(material_slot_count or 0), max(groups, default=0) + 1)
+    indices = []
+    submeshes = []
+    for slot in range(slot_count):
+        grouped_faces = groups.get(slot, [])
+        start = len(indices)
+        indices.extend(index for face in grouped_faces for index in face)
+        used = indices[start:]
+        first_vertex = min(used) if used else 0
+        used_count = max(used) - first_vertex + 1 if used else 0
+        # ponytail: Unity oracle consumes firstByte as an R16 offset; keep this
+        # compatibility quirk until the build script stops dividing by two.
+        submeshes.append({
+            "indexCount": len(used),
+            "firstVertex": first_vertex,
+            "vertexCount": used_count,
+            "firstByte": start * 2,
+            "baseVertex": 0,
+        })
+    return indices, submeshes
+
+
+def _bundle_geojson(data, source_mesh, skeleton, material_slot_count):
+    vertex_count = len(data.get("vertices") or [])
+    if not vertex_count:
+        raise ValueError("没有可导出的顶点")
+    normals = data.get("normals") or []
+    tangents = data.get("tangents") or []
+    uv0 = data.get("uv0") or []
+    colors = data.get("colors") or []
+    if not (len(normals) == len(tangents) == len(uv0) == len(colors) == vertex_count):
+        raise ValueError("网格顶点/法线/切线/UV/COLOR 数量不一致")
+
+    bind_poses = source_mesh.get("m_BindPose") or []
+    ordered, old_to_new, bones = _bundle_bone_order(skeleton)
+    if len(bind_poses) != len(ordered):
+        raise ValueError(
+            f"骨架骨骼数 {len(ordered)} 与 m_BindPose 数量 {len(bind_poses)} 不一致"
+        )
+    indices, submeshes = _bundle_submeshes(
+        data.get("faces") or [], data.get("materials") or [], vertex_count, material_slot_count
+    )
+    flat = lambda values: [float(axis) for item in values for axis in item]
+    color_values = flat(colors)
+    if color_values and max(color_values) > 1.0:
+        color_values = [value / 255.0 for value in color_values]
+    geo = {
+        "m_VertexCount": vertex_count,
+        "m_Vertices": flat(data["vertices"]),
+        "m_Normals": flat(normals),
+        "m_Tangents": flat(tangents),
+        "m_UV0": flat(uv0),
+        "m_Colors": color_values,
+        "m_Indices": indices,
+        "m_Skin": _bundle_skin(data.get("skin") or [], old_to_new, len(bind_poses)),
+        "m_BindPose": [bind_poses[old_index] for _node, old_index, _parent in ordered],
+        "m_SubMeshes": submeshes,
+        "m_Name": source_mesh.get("m_Name") or source_mesh.get("Name") or "Geo_Body",
+    }
+    if len(geo["m_Skin"]) != vertex_count:
+        raise ValueError("m_Skin 数量与 m_VertexCount 不一致")
+    return geo, bones
+
+
+def merge_material_groups(co_slots, target_submesh_count, materials):
+    """把作者网格的每-面/每-顶点材质槽索引，归并到目标 body 的材质方案。
+
+    目标 body 只有 1 段(bdy)或 2 段(bdy+bdyco)。归并规则：不透明槽 → 组 0(bdy)，
+    被标 NATIVE_CO 的槽 → 组 1(bdyco)。这样 madoka 那种 9 材质(已共用一张图集)
+    能塌到 1/2 段；未共用图集的 mod 材质数天然就是 1/2，直接通过。
+
+    co_slots: 被标 NATIVE_CO 的槽索引集合。
+    返回归并后的 materials(同长度，值 ∈ {0,1})。方案对不上时抛清晰错误。
+
+    ponytail: 只按 opaque/co 归并 + 校验，不做通用 UV atlas 烘焙——那是重活，
+    未共用图集的多材质 mod 应由作者自己收拢到 bdy(+bdyco)。
+    """
+    co_slots = {int(slot) for slot in co_slots}
+    target = max(1, int(target_submesh_count or 1))
+    group_of = lambda slot: 1 if int(slot) in co_slots else 0
+    used = {group_of(slot) for slot in materials} if materials else {0}
+    if target == 1 and 1 in used:
+        raise ValueError(
+            "目标 body 只有 bdy 一段，但你的网格含 co(NATIVE_CO)材质；"
+            "请去掉 co 材质，或选一个带 bdyco 的目标服装")
+    if max(used) >= target:
+        raise ValueError(
+            f"网格材质分组 {sorted(used)} 超出目标 body 的 {target} 段；"
+            "请把材质合并到 bdy" + ("(和 bdyco)" if target > 1 else ""))
+    return [group_of(slot) for slot in materials]
+
+
+def _bundle_root_bone(skeleton, bone_names):
+    """SMR rootBone 名。优先按 skeleton 的 rootBonePathId 反查（权威，来自真实
+    body 的 SkinnedMeshRenderer），回退到 weightedIndex==0 的骨，再回退 "Hips"。
+    必须是 prefab 里存在的骨（即 sidecar 的加权骨之一），否则运行时插件的
+    originalRootName==modRootName 校验会失败、graft 中止。
+    ponytail: 不猜根骨——rootBonePathId 是权威记录，只在它缺失/非加权时才回退。"""
+    nodes = skeleton.get("nodes") or []
+    candidates = []
+    root_pathid = skeleton.get("rootBonePathId")
+    if root_pathid is not None:
+        candidates += [n.get("name") for n in nodes if n.get("pathId") == root_pathid]
+    candidates += [n.get("name") for n in nodes if n.get("weightedIndex") == 0]
+    candidates.append("Hips")
+    for candidate in candidates:
+        if candidate and candidate in bone_names:
+            return candidate
+    # 加权骨里一个都不匹配：返回权威名而非静默 Hips，让不一致显性化。
+    return next((candidate for candidate in candidates if candidate), "Hips")
+
+
+def write_bundle_source(
+    output_root, package_id, source, component_id, name, author, data,
+    mesh_json, skeleton_json, textures, material_slot_count=1, version="0.1.0",
+):
+    """Write the Unity-independent source files consumed by the Phase 2 build."""
+    package_id = _sanitize_package_id(package_id)
+    source = str(source or "").strip()
+    if not source or Path(source).name != source:
+        raise ValueError("bundle source 的 source 必须是单个资源名")
+    bundle_dir = Path(output_root) / package_id / "bundle-src"
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    source_mesh = load_json(Path(mesh_json))
+    skeleton = load_json(Path(skeleton_json))
+    geo, bones = _bundle_geojson(data, source_mesh, skeleton, material_slot_count)
+
+    renderer_names = {"body": "Geo_Body", "hair": "Geo_Hair", "hairprop": "Geo_HairProp"}
+    renderer_name = renderer_names.get(component_id, "Geo_Body")
+    asset_root = f"Assets/Mods/{package_id}"
+    geo_name = f"{source}.geojson.txt"
+    bones_name = f"{package_id}_bones.json.txt"
+    prefab_name = f"{source}.prefab"
+    bundle_name = f"{package_id}.bundle"
+    _write_json(bundle_dir / geo_name, geo)
+    _write_json(bundle_dir / bones_name, {
+        "schemaVersion": 2,
+        "boneCount": len(bones),
+        "rootBone": _bundle_root_bone(skeleton, {bone["name"] for bone in bones}),
+        "bones": bones,
+    })
+
+    texture_entries = []
+    for item in textures:
+        filename = Path(item["filename"]).name
+        path = bundle_dir / filename
+        if not path.is_file():
+            raise FileNotFoundError(f"bundle 贴图不存在：{path}")
+        texture_entries.append({
+            "rendererName": item.get("rendererName", renderer_name),
+            "materialSlot": int(item["materialSlot"]),
+            "property": item["property"],
+            "asset": f"{asset_root}/{filename}",
+            "type": "Texture2D",
+        })
+
+    mod = {
+        "schemaVersion": 2,
+        "id": package_id,
+        "name": name or package_id,
+        "version": version,
+        "author": author or "",
+        "priority": 0,
+        "enabled": True,
+        "replacements": [{
+            "source": source,
+            "part": "body" if component_id != "hair" else "hair",
+            "priority": 0,
+            "bundle": bundle_name,
+            "asset": f"{asset_root}/{prefab_name}",
+            "skeleton": f"{asset_root}/{bones_name}",
+            "type": "GameObject",
+            "renderers": [{
+                "rendererId": component_id,
+                "targetRenderer": renderer_name,
+                "modRenderer": renderer_name,
+            }],
+            "replaceMaterials": False,
+            "textures": texture_entries,
+        }],
+    }
+    _write_json(bundle_dir / "mod.json", mod)
+    return bundle_dir
 
 
 def inverse_skin_config(profile, component_id):

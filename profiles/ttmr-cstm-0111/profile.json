@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "id": "frame-FrameAnalysis-2026-07-10-111541-body-06b1a61c",
+  "status": "complete-inverse-skin",
+  "target": {
+    "actorId": "ttmr",
+    "costumeId": "cstm-0111",
+    "bodyResource": "mdl_chr_ttmr-cstm-0111_body"
+  },
+  "capture": {
+    "directory": "D:\\Games\\gakumas\\FrameAnalysis-2026-07-10-111541",
+    "timestamp": "2026-07-10T11:15:41+08:00",
+    "note": "目录已删除,仅存元数据",
+    "stableSignatureCaptures": []
+  },
+  "layout": {
+    "topology": "trianglelist",
+    "indexFormat": "R16_UINT",
+    "positionNormalTangentStride": 40,
+    "colorUvStride": 12,
+    "inference": "reconstructed-from-exported-package"
+  },
+  "skinning": {
+    "drawInput": "CPU-skinned or runtime-skinned final vertex buffer",
+    "status": "inverse-skin operator built from matched library Mesh",
+    "inverseSkin": {
+      "sourceVertexCount": 16395,
+      "weightedBoneCount": 122,
+      "coefficientCount": 488,
+      "posedVertexStride": 40,
+      "inverseOperator": "Buffers/Body.InverseOperator.R32_FLOAT.buf",
+      "meshJson": "Reference/Geo_Body.json",
+      "skeletonJson": "Reference/Geo_Body.skeleton.json",
+      "boneNaming": "skeleton",
+      "unobservableBones": []
+    }
+  },
+  "components": [
+    {
+      "id": "body",
+      "confidence": "reconstructed",
+      "ibHash": "06b1a61c",
+      "vbHashes": {
+        "positionNormalTangent": "draw:000196:vb0",
+        "colorUv": "draw:000196:vb1"
+      },
+      "resourceFiles": {},
+      "vertices": 16395,
+      "indices": 75126,
+      "mainFirstIndex": 0,
+      "tailFirstIndices": [],
+      "materialSections": [
+        {
+          "id": "body.section0",
+          "role": "main",
+          "firstIndex": 0,
+          "indexCount": 75126,
+          "representativeDraw": 196,
+          "textureKeyPrefix": "body"
+        }
+      ],
+      "draws": [
+        196
+      ],
+      "mainDraw": 196,
+      "inverseSkin": {
+        "sourceVertexCount": 16395,
+        "weightedBoneCount": 122,
+        "coefficientCount": 488,
+        "posedVertexStride": 40,
+        "inverseOperator": "Buffers/Body.InverseOperator.R32_FLOAT.buf",
+        "meshJson": "Reference/Geo_Body.json",
+        "skeletonJson": "Reference/Geo_Body.skeleton.json",
+        "boneNaming": "skeleton",
+        "unobservableBones": []
+      }
+    }
+  ]
+}

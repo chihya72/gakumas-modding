@@ -1,4 +1,5 @@
 import json
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -183,6 +184,7 @@ def _create_mesh(context, name, data):
     if data.get("normals"):
         normal = mesh.attributes.new(name="GMI_NORMAL", type="FLOAT_VECTOR", domain="POINT")
         normal.data.foreach_set("vector", [v for item in data["normals"] for v in item])
+        mesh.polygons.foreach_set("use_smooth", [True] * len(mesh.polygons))
         if hasattr(mesh, "normals_split_custom_set_from_vertices"):
             mesh.normals_split_custom_set_from_vertices(data["normals"])
     obj = bpy.data.objects.new(name, mesh)
@@ -1118,6 +1120,142 @@ def _inverse_skin_export_data(
         "corrections": corrections, "unresolved": sorted(unresolved),
         "automatic_remap": automatic_remap, "truncated_weight": truncated_weight,
     }
+
+
+def _prepare_bundle_export_data(context, obj, scene):
+    component_id = _object_component_id(obj, scene)
+    if not obj.get("gmi_profile_weights"):
+        raise ValueError("导出 bundle 源要求先完成「传递配置档权重」")
+    _sync_object_mesh_data(context, obj)
+    profile_dir = bpy.path.abspath(scene.gmi_profile_dir)
+    resolved = _resolve_body_json_library(scene, component_id)
+    skeleton_path = Path(resolved.get("skeletonJson") or "")
+    if not skeleton_path.is_file():
+        raise ValueError("缺少带骨架的 Mesh JSON；请先完成配置档或重新导入带骨架资源")
+    bone_map = core.inverse_skin_bone_map(profile_dir, skeleton_path, component_id)
+    skeleton = core.load_json(skeleton_path)
+    source_bind = {
+        node["name"]: _bind_pose_matrix(node["bindPose"]).inverted()
+        for node in skeleton["nodes"] if node.get("weightedIndex") is not None
+    }
+    remap = {}
+    if scene.gmi_bone_remap_file:
+        remap_data = core.load_json(Path(bpy.path.abspath(scene.gmi_bone_remap_file)))
+        remap = remap_data.get("bones", remap_data)
+    data = _inverse_skin_export_data(
+        obj, bone_map, source_bind, remap, scene.gmi_unmapped_bone_fallback.strip(),
+        source_rig_weights=True,
+        outline_width_mode=scene.gmi_outline_width_mode,
+        vertex_color_mode=scene.gmi_vertex_color_mode,
+        color_per_slot=_material_slot_color_map(obj),
+    )
+    if component_id == "hair":
+        reference = _profile_weight_reference(context, "hair")
+        if reference.get("gmi_component_id") != "hair":
+            raise ValueError("场景中的带权重参考模型不是 hair,无法拷贝 hair 顶点色语义")
+        no_outline = set()
+        if scene.gmi_outline_width_mode == "RISK_ONLY":
+            no_outline = (
+                _vertex_group_indices(obj, "GMI_NO_OUTLINE")
+                | _vertex_group_indices(obj, "GMI_REVIEW_HIGH_RISK")
+            )
+        data["colors"], _ = _hair_export_colors(
+            reference, data, scene.gmi_hair_outline_tier,
+            scene.gmi_outline_width_mode, no_outline,
+        )
+    elif component_id == "hairprop":
+        no_outline = set()
+        if scene.gmi_outline_width_mode == "RISK_ONLY":
+            no_outline = (
+                _vertex_group_indices(obj, "GMI_NO_OUTLINE")
+                | _vertex_group_indices(obj, "GMI_REVIEW_HIGH_RISK")
+            )
+        data["colors"], _ = _hairprop_export_colors(
+            obj, data, scene.gmi_outline_width_mode, no_outline,
+        )
+    elif scene.gmi_vertex_color_mode == "BASECOLOR":
+        data["colors"], _ = _synthesize_export_native_colors(
+            profile_dir, component_id, data,
+            _scene_texture_path(scene, component_id, "base_color"),
+            _material_slot_color_map(obj),
+        )
+    elif scene.gmi_vertex_color_mode == "CONSTANT_BLACK":
+        data["colors"] = _black_outline_colors(data["colors"])
+    return component_id, resolved, data
+
+
+def _resolve_target_scheme(resolved):
+    """目标 body 的材质段数(1=bdy，2=bdy+bdyco)，用来把作者网格材质归并到位。"""
+    target = core.load_json(Path(resolved["meshJson"]))
+    return max(1, len(target.get("m_SubMeshes") or []))
+
+
+def _bundle_texture_sources(obj, scene, component_id, group_alpha=None):
+    main = {
+        "baseColor": _scene_texture_path(scene, component_id, "base_color"),
+        "packedMask": _scene_texture_path(scene, component_id, "packed_mask"),
+        "shadeColor": _scene_texture_path(scene, component_id, "shade_color"),
+    }
+    native = {
+        "baseColor": scene.gmi_opacity_texture_file,
+        "packedMask": scene.gmi_opacity_packed_mask_file,
+        "shadeColor": scene.gmi_opacity_shade_color_file,
+    }
+    properties = (("_BaseMap", "baseColor", "t0"), ("_DefMap", "packedMask", "t1"),
+                  ("_ShadeMap", "shadeColor", "t4"))
+    # group_alpha 给定时按【归并后的目标段】导出(每段一套贴图)，否则按原始材质槽。
+    if group_alpha is not None:
+        slot_alpha = {int(g): mode for g, mode in dict(group_alpha).items()}
+    else:
+        modes = _material_slot_alpha_modes(obj)
+        slot_alpha = {slot: modes.get(slot) for slot in range(max(1, len(obj.material_slots)))}
+    result = []
+    for slot in sorted(slot_alpha):
+        use_native = slot_alpha.get(slot) == "NATIVE_CO"
+        sources = native if use_native else main
+        for prop, semantic, suffix in properties:
+            source = sources[semantic]
+            if not source:
+                if semantic == "baseColor":
+                    raise ValueError(f"材质槽 {slot} 缺少 {suffix} 基础色贴图")
+                if not scene.gmi_neutral_material:
+                    raise ValueError(f"材质槽 {slot} 缺少 {suffix}，且未启用中性贴图")
+                source = _neutral_material_dds(semantic, "body" if use_native else component_id)
+            result.append({
+                "materialSlot": slot,
+                "property": prop,
+                "semantic": semantic,
+                "source": source,
+                "filename": f"{component_id}_slot{slot}_{suffix}.png",
+            })
+    return result
+
+
+def _export_bundle_png(source, destination):
+    source = Path(bpy.path.abspath(source)).resolve()
+    destination = Path(destination)
+    if not source.is_file():
+        raise FileNotFoundError(f"贴图不存在：{source}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if source.suffix.lower() == ".png":
+        shutil.copy2(source, destination)
+        return
+    try:
+        image = bpy.data.images.load(str(source), check_existing=False)
+    except RuntimeError as exc:
+        raise ValueError(f"无法读取贴图：{source}: {exc}") from exc
+    try:
+        try:
+            image.colorspace_settings.name = "Non-Color"
+        except Exception:
+            pass
+        image.filepath_raw = str(destination)
+        image.file_format = "PNG"
+        image.save()
+    finally:
+        bpy.data.images.remove(image)
+    if not destination.is_file():
+        raise IOError(f"PNG 导出失败：{destination}")
 
 
 def _create_armature(context, mesh_obj, data):
@@ -2102,6 +2240,55 @@ class GMI_OT_export_inverse_skin_mod(Operator):
             return {"CANCELLED"}
 
 
+class GMI_OT_export_bundle_source(Operator):
+    bl_idname = "gmi.export_bundle_source"
+    bl_label = "导出 bundle 源"
+    bl_description = "导出 geojson、骨骼 sidecar、PNG 和 mod.json，供 Unity/UnityPy 打包"
+
+    def execute(self, context):
+        obj = context.active_object
+        scene = context.scene
+        if not obj or obj.type != "MESH":
+            self.report({"ERROR"}, "请激活已传递配置档权重的作者网格")
+            return {"CANCELLED"}
+        try:
+            component_id, resolved, data = _prepare_bundle_export_data(
+                context, obj, scene
+            )
+            # body：把作者网格材质归并到目标 body 的 bdy(+bdyco)方案，并校验匹配。
+            group_alpha = None
+            material_slot_count = len(obj.material_slots)
+            if component_id == "body":
+                target_n = _resolve_target_scheme(resolved)
+                co_slots = set(_material_slot_alpha_modes(obj))
+                data["materials"] = core.merge_material_groups(
+                    co_slots, target_n, data.get("materials") or []
+                )
+                group_alpha = {group: ("NATIVE_CO" if group == 1 else None)
+                               for group in range(target_n)}
+                material_slot_count = target_n
+            output_root = bpy.path.abspath(scene.gmi_output_dir)
+            if not output_root:
+                raise ValueError("请先选择输出目录")
+            package_id = core._sanitize_package_id(scene.gmi_package_id)
+            bundle_dir = Path(output_root) / package_id / "bundle-src"
+            textures = _bundle_texture_sources(obj, scene, component_id, group_alpha)
+            for item in textures:
+                _export_bundle_png(item["source"], bundle_dir / item["filename"])
+            source = resolved.get("body") or Path(resolved["meshJson"]).parent.name
+            package = core.write_bundle_source(
+                output_root, package_id, source, component_id,
+                scene.gmi_package_name, scene.gmi_author, data,
+                resolved["meshJson"], resolved["skeletonJson"], textures,
+                material_slot_count=material_slot_count,
+            )
+            self.report({"INFO"}, f"已导出 bundle 源 {package}")
+            return {"FINISHED"}
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+
+
 def _activate_object(context, obj):
     bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
@@ -2573,6 +2760,7 @@ CLASSES = (
     GMI_OT_validate_mesh,
     GMI_OT_export_mesh_mod,
     GMI_OT_export_inverse_skin_mod,
+    GMI_OT_export_bundle_source,
     GMI_OT_export_validated_mod,
     GMI_OT_create_body_material_template,
     GMI_OT_bake_material_maps,
