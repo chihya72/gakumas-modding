@@ -1,4 +1,4 @@
-# GakumasMI Blender 插件 0.7.8
+# GakumasMI Blender 插件 0.8.0
 
 当前状态：开发预览版。材质槽位已改为**运行时靠全局 body 地标贴图自动判布局**
 （0.7.2，弃用 0.7.1 的逐 PS `slotVariants` 枚举），作者只出 base/mask/shade 三张贴图、
@@ -255,6 +255,37 @@ bind 空间，导出又会烘焙 `matrix_world @ co`，所以作者模型必须�
 
 `导出带权重 GPU 模组` 是当前最接近 WWMI/EFMI/GIMI 思路的出口：作者模型需要先被转成
 当前配置档兼容的骨骼权重，再由游戏内恢复的动画矩阵驱动。
+
+### 4B. 导出 AB bundle 源（原生蒙皮路线，0.8.0 新增）
+
+上面步骤 4 是 **3Dmigoto 逆蒙皮**路线：通用、免 Unity、装好即用，但要逆蒙皮、描边/透明
+靠补，且新增物理骨做不了。**AB bundle 路线**换一种拦截方式——把 mod 网格作为真正的 Unity
+资产交给 chinosk6 插件，让引擎原生蒙皮，于是描边/透明/贴图/物理**由引擎正确**，还能带新物理骨。
+代价是打包环节和换用 chinosk6 插件。两条路线的完整取舍见
+[`research/3dmigoto-vs-ab-route.md`](../research/3dmigoto-vs-ab-route.md)。
+
+**前置**（缺一不可）：
+
+- 当前对象已走完 ①准备配置档 → ②绑定模型 → ③准备材质，**且带配置档权重**
+  （`从配置档传递权重` 跑过；没有权重时「导出 bundle 源」按钮为灰、下方提示
+  「bundle 源要求已传递配置档权重」）；
+- 目标 body 的 **R32 模板 bundle**（工具作者一次性产，见下方路线图）；
+- 游戏侧装 **chinosk6 插件**（`gkms-localify-dmm`）替代 3Dmigoto，**一次性**。
+
+**作者流程**（Blender 前期与 3Dmigoto 路线完全相同，只换最后出口）：
+
+1. 面板「导出模组」区点 **`导出 bundle 源`**（在 `校验并导出模组` 下方）。产出一套 bundle
+   源：`Geo_*.json`（保 COLOR 描边）+ 骨骼 sidecar + PNG 贴图 + `mod.json`。
+2. 跑 **UnityPy 模板补丁**（**无需 Unity**）把源灌进 R32 模板：
+   `python tools/patch_unity_bundle.py <模板.bundle> <bundle源目录> -o <成品.bundle>`。
+3. 把成品 `.bundle` + `mod.json` 放进 chinosk6 插件的
+   `gakumas-local/local-files/mods/<id>/` 目录。
+4. 进游戏换装验证；插件日志 `mod-plugin.log` 有 `meshApplied` / `textureApplied` /
+   `matchedBones` / `droppedInfluences` 诊断行可对照排错。
+
+> 带新物理骨的服装（听诊器/裙摆/缎带摆动）也已跑通，靠导出侧补齐链尾 tip 骨与每骨摆动
+> 参数——这部分由 bundle 源与模板保证，作者无需手动干预。机制与完整分步路线图见
+> [`research/bundle-route-roadmap.md`](../research/bundle-route-roadmap.md)。
 
 ### 5. 材质模板
 
