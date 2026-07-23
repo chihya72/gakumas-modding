@@ -1,10 +1,10 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 7, 8),
+    "version": (0, 8, 0),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
-    "description": "学园偶像大师换装/换发 mod 制作：抓帧生成配置档 → 绑定作者模型 → 导出 3DMigoto 逆蒙皮模组",
+    "description": "学园偶像大师换装/换发 mod 制作：抓帧生成配置档 → 绑定作者模型 → 导出 3DMigoto 逆蒙皮模组，或导出 AB bundle 源（原生蒙皮/描边/物理）",
     "category": "Import-Export",
 }
 
