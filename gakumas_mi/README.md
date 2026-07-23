@@ -274,10 +274,13 @@ bind 空间，导出又会烘焙 `matrix_world @ co`，所以作者模型必须�
 
 **作者流程**（Blender 前期与 3Dmigoto 路线完全相同，只换最后出口）：
 
-1. 面板「导出模组」区点 **`导出 bundle 源`**（在 `校验并导出模组` 下方）。产出一套 bundle
-   源：`Geo_*.json`（保 COLOR 描边）+ 骨骼 sidecar + PNG 贴图 + `mod.json`。
-2. 跑 **UnityPy 模板补丁**（**无需 Unity**）把源灌进 R32 模板：
-   `python tools/patch_unity_bundle.py <模板.bundle> <bundle源目录> -o <成品.bundle>`。
+1. 在「导出模组」区填 **`R32 模板 bundle`**（目标 body 的模板）和 **`外部 Python`**
+   （装了 UnityPy/Pillow 的 Python，默认走 PATH 上的 `python`；不在 PATH 就填绝对路径——
+   **注意不能是 Blender 自带的 Python，它没有 UnityPy**）。
+2. 点 **`导出并打包 bundle（一键）`**：插件先导出 bundle 源，再自动调外部 Python 跑模板
+   补丁，直接产出成品 `.bundle`（写到 `<输出目录>/<id>/<id>.bundle`）。**无需 Unity、无需手敲命令行。**
+   - 只想要中间产物时，点 `导出 bundle 源`（不打包），再自行跑
+     `python tools/patch_unity_bundle.py --template <模板.bundle> --mod-root <bundle源目录> --output <成品.bundle>`。
 3. 把成品 `.bundle` + `mod.json` 放进 chinosk6 插件的
    `gakumas-local/local-files/mods/<id>/` 目录。
 4. 进游戏换装验证；插件日志 `mod-plugin.log` 有 `meshApplied` / `textureApplied` /

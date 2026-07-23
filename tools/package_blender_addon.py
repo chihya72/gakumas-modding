@@ -106,6 +106,11 @@ def package(output: Path | None = None, include_body_lib: bool = False) -> Path:
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for path in _iter_files(ADDON_DIR):
             _add(path, Path("gakumas_mi") / path.relative_to(ADDON_DIR))
+        # vendor 模板补丁脚本进 addon：一键打包时插件 subprocess 调它（跑在作者的外部
+        # Python 上，不是 Blender 自带 Python）。单一 git 源在 tools/，此处只做打包拷贝。
+        patch_script = ROOT / "tools" / "patch_unity_bundle.py"
+        if patch_script.is_file():
+            _add(patch_script, Path("gakumas_mi") / "patch_unity_bundle.py")
         if PROFILE_DIR.is_dir():
             for path in _iter_files(PROFILE_DIR):
                 _add(path, Path("gakumas_mi") / "profiles" / path.relative_to(PROFILE_DIR))

@@ -1,10 +1,44 @@
 import json
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
 import bpy
 from bpy.types import Operator
+
+
+def _resolve_patch_script():
+    """定位 patch_unity_bundle.py：装好的插件里打包脚本把它 vendor 进了 addon 目录；
+    开发仓 checkout 里它只在 ../tools。找不到就报错，别静默。"""
+    here = Path(__file__).resolve().parent
+    for candidate in (here / "patch_unity_bundle.py",
+                      here.parent / "tools" / "patch_unity_bundle.py"):
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError("找不到 patch_unity_bundle.py（addon 内或 ../tools 均无）")
+
+
+def _run_bundle_patch(scene, mod_root, output_bundle):
+    """用外部 Python（装了 UnityPy）跑模板补丁，把 bundle 源灌进 R32 模板。"""
+    template = bpy.path.abspath(scene.gmi_bundle_template)
+    if not template or not Path(template).is_file():
+        raise ValueError("请先选择有效的 R32 模板 bundle")
+    python_exe = (scene.gmi_bundle_python or "python").strip()
+    script = _resolve_patch_script()
+    cmd = [python_exe, str(script),
+           "--template", template,
+           "--mod-root", str(mod_root),
+           "--output", str(output_bundle)]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+    except FileNotFoundError:
+        raise RuntimeError(f"找不到 Python 可执行文件：{python_exe}（在「外部 Python」里填绝对路径）")
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-8:]
+        raise RuntimeError("模板补丁失败（外部 Python 是否装了 UnityPy/Pillow？）：\n"
+                           + "\n".join(tail))
+    return output_bundle
 
 
 def _scene_component_id(scene):
@@ -2245,6 +2279,8 @@ class GMI_OT_export_bundle_source(Operator):
     bl_label = "导出 bundle 源"
     bl_description = "导出 geojson、骨骼 sidecar、PNG 和 mod.json，供 Unity/UnityPy 打包"
 
+    also_patch: bpy.props.BoolProperty(default=False, options={"HIDDEN"})
+
     def execute(self, context):
         obj = context.active_object
         scene = context.scene
@@ -2282,7 +2318,12 @@ class GMI_OT_export_bundle_source(Operator):
                 resolved["meshJson"], resolved["skeletonJson"], textures,
                 material_slot_count=material_slot_count,
             )
-            self.report({"INFO"}, f"已导出 bundle 源 {package}")
+            if not self.also_patch:
+                self.report({"INFO"}, f"已导出 bundle 源 {package}")
+                return {"FINISHED"}
+            output_bundle = Path(output_root) / package_id / f"{package_id}.bundle"
+            _run_bundle_patch(scene, bundle_dir, output_bundle)
+            self.report({"INFO"}, f"已导出并打包 bundle {output_bundle}")
             return {"FINISHED"}
         except Exception as exc:
             self.report({"ERROR"}, str(exc))

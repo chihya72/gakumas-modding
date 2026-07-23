@@ -85,6 +85,16 @@ def register():
         name="输出目录", subtype="DIR_PATH",
         description="导出的 mod 包写到这里；把整个包文件夹放进游戏 Mods 目录即可安装",
     )
+    bpy.types.Scene.gmi_bundle_template = StringProperty(
+        name="R32 模板 bundle", subtype="FILE_PATH",
+        description="AB 路线一键打包用：目标 body 的 R32 模板 .bundle（工具作者一次性产）。"
+                    "填了「导出并打包 bundle」才可用；留空则只导出 bundle 源",
+    )
+    bpy.types.Scene.gmi_bundle_python = StringProperty(
+        name="外部 Python", default="python",
+        description="装了 UnityPy/Pillow 的 Python 可执行文件（不是 Blender 自带的）。"
+                    "默认走 PATH 上的 python；不在 PATH 或名字不同时填绝对路径",
+    )
     bpy.types.Scene.gmi_component_id = EnumProperty(
         name="制作目标",
         description="选身体或发型即可，发饰不是独立目标：发型和配套发饰是两个网格对象，"
@@ -290,7 +300,7 @@ def unregister():
     for name in (
         "gmi_profile_dir", "gmi_capture_dir", "gmi_extract_output_dir",
         "gmi_body_json_library_dir", "gmi_body_resource",
-        "gmi_extract_draw", "gmi_output_dir", "gmi_component_id",
+        "gmi_extract_draw", "gmi_output_dir", "gmi_bundle_template", "gmi_bundle_python", "gmi_component_id",
         "gmi_source_mesh_json", "gmi_skeleton_json", "gmi_bone_remap_file",
         "gmi_unmapped_bone_fallback",
         "gmi_transfer_risk_distance",

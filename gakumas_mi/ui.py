@@ -248,11 +248,22 @@ def draw_export_step(layout, scene, context):
     row.enabled = ready
     row.operator("gmi.export_validated_mod", text="校验并导出模组", icon="EXPORT")
     export.label(text="导出后把包文件夹放进游戏 Mods 目录，进游戏换装验证")
+    has_weights = ready and bool(obj and obj.get("gmi_profile_weights"))
     bundle_row = export.row()
-    bundle_row.enabled = ready and bool(obj and obj.get("gmi_profile_weights"))
+    bundle_row.enabled = has_weights
     bundle_row.operator("gmi.export_bundle_source", text="导出 bundle 源", icon="PACKAGE")
-    if ready and not (obj and obj.get("gmi_profile_weights")):
+    if ready and not has_weights:
         export.label(text="bundle 源要求已传递配置档权重", icon="INFO")
+    if has_weights:
+        export.prop(scene, "gmi_bundle_template")
+        export.prop(scene, "gmi_bundle_python")
+        patch_row = export.row()
+        patch_row.enabled = bool(scene.gmi_bundle_template)
+        op = patch_row.operator("gmi.export_bundle_source",
+                                text="导出并打包 bundle（一键，需外部 Python）", icon="PACKAGE")
+        op.also_patch = True
+        if not scene.gmi_bundle_template:
+            export.label(text="一键打包需先选 R32 模板 bundle", icon="INFO")
 
     header, advanced = layout.panel("GMI_export_advanced", default_closed=True)
     header.label(text="高级 / 外部模型骨骼 / 分步导出", icon="PREFERENCES")
