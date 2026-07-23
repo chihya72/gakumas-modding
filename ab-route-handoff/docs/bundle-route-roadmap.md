@@ -141,9 +141,10 @@ Unity.exe -batchmode -quit -projectPath <工程> -executeMethod BuildGakumasModB
 
 ## Phase 4 — 成型：新增物理骨骼
 
-> **2026-07-16 最终更新:第 4 节最小验证已执行。加载关通过,集成关失败,当前停止 P4。
-> 下面 4a/4b 保留作未来重启条件,不再是当前开发计划。完整证据见
-> [`physics-bones-findings.md`](physics-bones-findings.md) §4。**
+> **✅ 2026-07-17 翻案跑通（覆盖本节旧结论）**：1 层墙真因不是集成入口失败，而是导出侧两处
+> 数据缺口——链尾 tip 骨（走 `extraSwingBones` 段）+ 每骨摆动参数（从源 bundle typetree 读出）。
+> 补齐后 `UpdateChainInfo` 自己就建对层数，翅膀/裙摆/缎带/听诊器实机真摆。权威记录见
+> [`physics-bones-findings.md`](physics-bones-findings.md) §9。**以下 4a/4b 为翻案前记录，仅存证。**
 
 **做什么**：支持**加新骨 + 物理**的服装（护士服听诊器/裙摆）。拆两个独立子问题。
 

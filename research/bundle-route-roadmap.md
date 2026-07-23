@@ -1,7 +1,8 @@
 # bundle 路线图(3Dmigoto 流程 → chinosk6 bundle mod)
 
-> **完整分步路线图(4 Phase,每步带 file:line + 完成判据)在 IP 仓库**:
-> `D:\GIT\IP\06-ab-route-handoff\docs\bundle-route-roadmap.md`
+> **完整分步路线图(4 Phase,每步带 file:line + 完成判据)已随交接包入本仓**:
+> [`../ab-route-handoff/docs/bundle-route-roadmap.md`](../ab-route-handoff/docs/bundle-route-roadmap.md)
+> (IP 仓 `06-ab-route-handoff/docs/` 为同源上游)。
 >
 > 本文件是 gakumas-modding 侧的入口摘要——路线跨两个仓库(GakumasMI 在本仓,打包/插件/模板在 IP handoff 仓),在这里留个指针免得找不到。
 
