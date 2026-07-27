@@ -106,5 +106,6 @@ RC1 结论，也不要求当前开发线继续重导旧 Mod。
 以及 `damping/stiffness/spring/mass/useWindGlobalForce` 参数完整性。它只对可疑结构发 warning，
 不因有意的单侧装饰直接判包失败。
 
-本轮 fuyuko 的 13/13 对称结果只证明导出结构完整；若游戏内仍出现单侧不动，后续应查 runtime
-注册/驱动物理行为，不要回头修改骨骼映射表。
+本轮 fuyuko 的 13/13 对称结果与此前 runtime 三连修复、`Chain tips attached: 10/10` 和 RC1
+游戏结果共同确认：之前的“左动右不动/飘带不联动”问题已经关闭。未来只有在新 bundle/buildId
+再次出现新现象时，才需要重新查 runtime；当前不应回头修改骨骼映射表或重导 fuyuko。

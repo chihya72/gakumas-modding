@@ -415,10 +415,10 @@ fuyuko 的失败性质不是"某步没自动",而是**坏数据静默通过导�
 3. **`Unmapped weighted bones` 校验拦空组** ✅：只把真实带正权重的顶点组加入 unresolved 校验，零权重空组不再阻塞导出。
 4. **mesh-only skeleton 的 `bone_<hash>` 退化 ✅**：资源目录只有 `Geo_Body.json` 时，未命中的服装专属 hash 曾退回 `bone_<hash>`，44 根错误骨全部挂到 `Hips`，导致上半身/裙摆/蝴蝶结扭曲。现在模板修复工具按目标 profile 补真实名称，模板构建和 bundle patch 都拒绝未解析占位名。这里修的是**错误占位骨归零**；合法装饰骨仍会让运行时 `createdBones>0`。
 5. **SCSP 手臂主体骨被猜到服装骨 ✅**：`*_rot/Elbow/Clavicle` 等源骨不能交给装饰骨最近点匹配；SCSP/IP/QualiArts 预设现覆盖躯干、四肢、手指和脚趾，且装饰映射不得覆盖身体 preset。重导后手部实机动作已正常。
-6. **源飘带被目标摆动骨吞并 ⚠️**：导出和运行时建链已修，明确的源悬挂链会保留父子关系并生成 `newBones/extraSwingBones`。最新实机日志为 `Chain tips attached: 10/10`、`createdBones=26`、`swingPrepared=36`，并成功建立 3/4/5 层链；装饰物理归属和最终摆动观感仍是 B 级待验收。
+6. **源飘带被目标摆动骨吞并 ✅**：导出和运行时建链已修，明确的源悬挂链会保留父子关系并生成 `newBones/extraSwingBones`。最新实机日志为 `Chain tips attached: 10/10`、`createdBones=26`、`swingPrepared=36`，并成功建立 3/4/5 层链；当前 RC1 fuyuko sidecar 的摇物骨为 `26 / 13 左 / 13 右`，左右结构对称，历史上的“左动右不动/整根飘带不联动”已关闭。
 7. **Unity 6 加载新增骨 bundle 崩溃 ✅**：AABB 数量不一致曾被修复，但不是最终根因。真正根因是 UnityPy 向 bundle 合成 GameObject/Transform；现已删除合成路径，缺失骨槽回退 root，由运行时按 sidecar 建骨。fuyuko 已能加载、graft、替换网格和贴图。
 
-当前 Python 全套测试为 `24 passed`；0.9.0 插件代码已安装且文件与工作树一致，但安装后的真 Blender 面板操作和最新 UI→导出→实机闭环尚未完成。`atbm-0140` 与 fuyuko 日志已通过结构、权重和多层物理链构建检查，持续摆动的视觉效果仍需人工确认。两个工作树均有大量未提交变更，尤其插件仓库不是只有 `ModRuntime.cpp`：当前还包含目录迁移及大量删除，接手时必须先整理提交边界。
+当前 Python 全套测试为 `26 passed`；0.9.0 插件已完成真 Blender 面板和 UI→导出→实机闭环。`atbm-0140` 与 fuyuko 日志已通过结构、权重和多层物理链构建检查；fuyuko 左右摆动问题已由 runtime 三连修复并在 RC1 实机样本中关闭。两个工作树均有未上游的提交边界，插件仓库由作者自行处理，不属于本主仓库后续开发。
 
 ---
 
@@ -668,12 +668,12 @@ Mod 实机测试也已完成并归档。**当前唯一外部动作是由作者�
   2. **误把游戏裙摆链当自家链复用致截断+乱摆**：`existingHostChains` 收了 pelvisGo(Hips) 上**所有** ActorSwingChain，但游戏自己的裙摆链也挂在 Hips 上 → 被当成"我们建的链"复用，7 个 depth-3 bow 根塞进游戏 5 层裙摆链 → `UpdateChainInfo` 按最短成员截断成 3 层，既砍了游戏裙摆下摆、又让 bow 被裙摆解算器带乱。**修**：加全局 `g_createdHostChains` 只追踪自建链，`existingHostChains` 只从中筛选，绝不碰游戏链。修后 `chain[len=3]` 变 `created=1`、`registered=3`，**左侧蝴蝶结正常、游戏裙摆恢复完整**。
   3. **复用链漏注册**：swingChains 注册被 `if(createdChain)` 门控，复用链若不在 swingChains 里永不被驱动。**修**：改成扫描去重后，任何不在 swingChains 的 host 都注册。
 
-- **剩余物理问题（导出侧分类，2026-07-24 晚未完）**：运行时已各司其职，剩下的是**导出侧装饰骨挂到哪根目标骨**的分类问题，需改导出+重导：
-  - **花边 `Lace_R` 乱摆**：`Lace_R_A0` 父骨 = `RightLeg`（大腿），因 `is_source_chain` 把 lace 归为 `new_source_chain` 保留了源模型的腿部父链 → 花边挂腿上独立摆。用户要它**跟裙摆**。修向：lace 应"蹭"最近**裙摆**骨（排除腿部 `_S`），而非保留源腿父。
-  - **右 bow/右裙摆弱/不摆、左右不对称**：源模型左右 bow 骨 rest 姿态/命名不对称（`SStreamer_L` vs `Streamer_R`、左右 bow x 位置疑似同号），可能需回 Blender 改源骨对称。
-  - **提醒**：重新导出目前产出的 bundle 与手术版**逐字节相同**，改物理必须先改导出代码（`build_accessory_physics_remap` / sidecar 组装）再重导，不能只重导。
+- **历史物理问题（2026-07-24，已关闭）**：以下是修复前的现象和定位，不能作为当前 RC1 的待办。运行时三连修复了参数缺失、误复用游戏裙摆链、复用链漏注册；导出侧也修复了 `Spine*_Bow`/`Streamer`/`SStreamer`/`Lace` 的链保留与归属。
+  - **花边 `Lace_R` 乱摆**：修复前因父链落到 `RightLeg` 而独立摆；当前 RC1 已按裙摆归属处理。
+  - **右 bow/右裙摆弱/不摆、左右不对称**：修复前是 runtime 链复用/注册和导出链归属共同造成；当前 fuyuko 已有 `Chain tips attached: 10/10`、`createdBones=26`、`swingPrepared=36`，sidecar 结构 `13/13` 对称，且已完成游戏测试。
+  - **历史提醒**：当时必须改导出代码并重导；这项工作已经完成，不能再把它写成当前需要重导的任务。
 
-当前边界：**AB 新骨换装加载/蒙皮/建骨/多数摇物链实机贯通**；左蝴蝶结、游戏裙摆已正常。
+当前边界：**AB 新骨换装加载/蒙皮/建骨/摇物链实机贯通**；fuyuko 左右 bow/飘带问题已关闭，左蝴蝶结和游戏裙摆已正常。后续若出现新异常，必须以新 bundle/buildId 的日志重新定位，不能回退到这条已关闭的历史问题。
 
 - **❌ 已作废：SCSP 异骨架动态变形「改 bindpose」修法（提出 2026-07-25，同日实测证伪，别再走）**
 
