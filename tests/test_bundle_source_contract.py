@@ -91,6 +91,8 @@ def test_bundle_source_contract():
         sidecar = json.loads((output / "test.mod_bones.json.txt").read_text(encoding="utf-8"))
         assert sidecar["rootBone"] == "Hips"
         assert sidecar["schemaVersion"] == 4
+        assert sidecar["runtimeProtocol"] == core.AB_RUNTIME_PROTOCOL
+        assert sidecar["buildId"] == manifest["buildId"]
         assert sidecar["newBones"][0]["parentName"] == "Hips"
         assert sidecar["extraSwingBones"][0]["parentName"] == "Bow_A"
 
@@ -345,16 +347,31 @@ def test_accessory_physics_remap():
             {"name": "CenterRibbon_S", "position": [0.1, 0.0, 0.01]},
         ],
         ["Skirt_1", "Bow_L", "Bow_R", "Far_Ribbon"],
-        parent_by_name={"Far_Ribbon": "Spine"},
+        parent_by_name={"Bow_L": "Spine", "Bow_R": "Spine", "Far_Ribbon": "Spine"},
         body_remap={"Spine": "Spine"},
         group_by_name={"Bow_L": "bow", "Bow_R": "bow"},
     )
-    assert result["bones"] == {
-        "Skirt_1": "LeftSkirt1_S", "Bow_L": "CenterRibbon_S", "Bow_R": "CenterRibbon_S",
-    }
-    assert result["strategies"]["Skirt_1"] == "segment_nearest"
-    assert result["strategies"]["Bow_L"] == "group_centroid"
+    assert result["bones"] == {}
+    assert result["rigidParent"]["Skirt_1"] == "Hips"
+    assert result["rigidParent"]["Bow_L"] == "Spine"
+    assert result["rigidParent"]["Bow_R"] == "Spine"
+    assert result["strategies"]["Bow_L"] == "source_parent"
     assert result["rigidParent"]["Far_Ribbon"] == "Spine"
+
+
+def test_accessory_bust_name_rule_beats_source_parent():
+    result = core.build_accessory_physics_remap(
+        [{"name": "胸上2", "position": [0.0, 0.0, 0.0]}],
+        [
+            {"name": "Bust1_S", "position": [0.0, 0.0, 0.0]},
+            {"name": "Bust2_S", "position": [1.0, 0.0, 0.0]},
+        ],
+        ["胸上2"],
+        parent_by_name={"胸上2": "Spine"},
+        body_remap={"Spine": "Spine"},
+    )
+    assert result["bones"] == {"胸上2": "Bust1_S"}
+    assert result["strategies"]["胸上2"] == "name_bust"
 
 
 def test_source_hanging_chain_is_not_centroid_remapped():

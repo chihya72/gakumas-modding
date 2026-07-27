@@ -2239,12 +2239,12 @@ class GMI_bone_map_item(bpy.types.PropertyGroup):
     mass: bpy.props.FloatProperty()             # 该骨的权重占比 %
     strategy: bpy.props.EnumProperty(
         name="装饰物理",
-        description="只对没填目标骨的装饰骨有效。自动=按位置猜（猜错了在这里改）；"
+        description="只对没填目标骨的装饰骨有效。自动=跟源父骨（胸/Bust 按 Bust*_S）；"
                     "刚性=跟最近的已映射身体父骨，不摆，最安全；"
                     "自建摇物=新建骨+自己的摆动链（飘带/蝴蝶结）；"
                     "跟裙摆=蹭最近的裙摆摇物骨（裙边花边）",
         items=[
-            ("auto", "自动", "按位置匹配最近的摇物骨（默认，猜错时改这里）"),
+            ("auto", "自动", "跟源父骨；胸/Bust 名称按 Bust*_S，异常件用覆盖策略"),
             ("rigid", "刚性跟父骨", "无物理，跟最近的已映射身体父骨——不确定时选它"),
             ("integrate", "自建摇物链", "新建骨 + 自己的 ActorSwing 链（自由悬垂的飘带/蝴蝶结）"),
             ("follow_skirt", "跟裙摆", "蹭最近的裙摆摇物骨（裙边花边），无视距离"),

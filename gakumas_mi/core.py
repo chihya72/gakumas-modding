@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
 import struct
 import textwrap
 from pathlib import Path
+
+AB_RUNTIME_PROTOCOL = 1
+AB_CODE_MARKER = "ab-export-20260727"
 
 
 def load_json(path: Path):
@@ -1621,9 +1625,8 @@ def write_bundle_source(
     source_report = data.get("source_rig_report", {})
     sidecar = {
         "schemaVersion": 4 if source_report.get("newBones") else 2,
-        # Bump this whenever export behaviour changes — lets a loaded-old-module vs
-        # new-code mismatch be spotted straight from the exported bundle.
-        "gmiCodeMarker": "physics-3tier-20260725",
+        "runtimeProtocol": AB_RUNTIME_PROTOCOL,
+        "gmiCodeMarker": AB_CODE_MARKER,
         "boneCount": len(bones),
         "rootBone": _bundle_root_bone(skeleton, {bone["name"] for bone in bones}),
         "bones": bones,
@@ -1647,8 +1650,6 @@ def write_bundle_source(
             swing = swing_by_name.get(bone.get("name"))
             if swing and "swing" not in bone:
                 bone["swing"] = dict(swing)
-    _write_json(bundle_dir / bones_name, sidecar)
-
     texture_entries = []
     for item in textures:
         filename = Path(item["filename"]).name
@@ -1663,8 +1664,26 @@ def write_bundle_source(
             "type": "Texture2D",
         })
 
+    build_id_hash = hashlib.sha256()
+    build_id_hash.update(package_id.encode("utf-8"))
+    build_id_hash.update(str(version).encode("utf-8"))
+    for value in (geo, sidecar, texture_entries):
+        build_id_hash.update(json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8"))
+        build_id_hash.update(b"\0")
+    for item in sorted(texture_entries, key=lambda entry: entry["asset"]):
+        path = bundle_dir / Path(item["asset"]).name
+        build_id_hash.update(path.name.encode("utf-8"))
+        build_id_hash.update(hashlib.sha256(path.read_bytes()).digest())
+    build_id = build_id_hash.hexdigest()[:16]
+    sidecar["buildId"] = build_id
+    _write_json(bundle_dir / bones_name, sidecar)
+
     mod = {
         "schemaVersion": 2,
+        "runtimeProtocol": AB_RUNTIME_PROTOCOL,
+        "buildId": build_id,
         "id": package_id,
         "name": name or package_id,
         "version": version,
@@ -2576,17 +2595,18 @@ def build_accessory_physics_remap(
     """Classify each Track B accessory into a physics strategy, then resolve targets.
 
     Per bone/group the strategy is chosen by precedence — **author override >
-    built-in semantic name rule > position fallback** — so a wrong auto-guess is
+    built-in semantic/name rule > source-parent fallback** — so a wrong auto-guess is
     always correctable without touching code (the general escape hatch). Strategies:
 
       - ``integrate``      新骨 + 自己的 ActorSwing 链（自由悬垂：飘带/蝴蝶结）
       - ``follow_skirt``   蹭最近**裙摆**摇物骨，无视距离（裙摆镶边：花边）
       - ``follow:<bone>``  蹭指定目标骨
-      - ``follow_nearest`` / 默认  蹭最近摇物骨（太远则退刚性父骨）
-      - ``rigid``          无物理，跟最近的已映射身体父骨
+      - ``follow_nearest`` / ``follow:<bone>``  蹭指定摇物骨（仅 override）
+      - ``rigid``          无物理，跟源父骨映射到的游戏骨
 
     ``overrides`` = ``{骨名或前缀: 策略}``（作者显式，最高优先；前缀取最长匹配）。
-    不传 overrides 时行为等价旧版（源链→integrate、lace→follow_skirt、其余位置匹配）。
+    默认不再用位置猜测：源链→integrate、lace→follow_skirt、胸/Bust→对应 Bust*_S，
+    其余装饰→源父骨；位置匹配只能通过 ``follow_nearest`` override 显式启用。
     """
     source = _named_positions(source_bones)
     target = _named_positions(target_bones)
@@ -2649,6 +2669,10 @@ def build_accessory_physics_remap(
             return "follow_skirt"
         return None
 
+    def bust_target(position):
+        candidates = [name for name in swing_names if "bust" in name.lower()]
+        return nearest(position, candidates)[0] if candidates else None
+
     def directive_for(names):
         for name in names:  # author override wins outright
             directive = override_for(name)
@@ -2678,16 +2702,50 @@ def build_accessory_physics_remap(
             for name in names:
                 strategies[name] = "new_source_chain"
             continue
-        if directive == "rigid":
-            for name in names:
-                rigid[name] = rigid_parent(name)
-                strategies[name] = "rigid_parent"
-            continue
         if directive and directive.startswith("follow:"):
             target_bone = directive.split(":", 1)[1]
             for name in names:
                 mapping[name] = target_bone
                 strategies[name] = "override_follow"
+            continue
+
+        if directive == "follow_nearest":
+            position = tuple(
+                sum(source[name][axis] for name in names) / len(names)
+                for axis in range(3)
+            )
+            candidate, distance_sq = nearest(position)
+            if candidate is not None and distance_sq <= max_distance_sq:
+                for name in names:
+                    mapping[name] = candidate
+                    strategies[name] = "override_nearest"
+                continue
+            directive = "rigid"
+
+        if directive == "rigid":
+            for name in names:
+                rigid[name] = rigid_parent(name)
+                strategies[name] = "rigid_parent"
+            continue
+
+        if directive is None and any(
+                any(token in name.lower() for token in ("胸", "bust", "chest"))
+                for name in names):
+            position = tuple(
+                sum(source[name][axis] for name in names) / len(names)
+                for axis in range(3)
+            )
+            candidate = bust_target(position)
+            if candidate is not None:
+                for name in names:
+                    mapping[name] = candidate
+                    strategies[name] = "name_bust"
+                continue
+
+        if directive is None:
+            for name in names:
+                rigid[name] = rigid_parent(name)
+                strategies[name] = "source_parent"
             continue
 
         follow_skirt = directive == "follow_skirt"
