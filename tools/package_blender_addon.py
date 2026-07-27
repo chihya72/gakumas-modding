@@ -104,13 +104,25 @@ def package(output: Path | None = None, include_body_lib: bool = False) -> Path:
         total_bytes += path.stat().st_size
 
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
-        for path in _iter_files(ADDON_DIR):
+        addon_files = list(_iter_files(ADDON_DIR))
+        for path in addon_files:
             _add(path, Path("gakumas_mi") / path.relative_to(ADDON_DIR))
+        # Required runtime data may be locally generated/untracked; it still
+        # must ship with the add-on or Blender falls back to the user add-on
+        # directory and raises FileNotFoundError.
+        for name in ("bone_remap_presets.json",):
+            path = ADDON_DIR / name
+            if path.is_file() and path not in addon_files:
+                _add(path, Path("gakumas_mi") / name)
         # vendor 模板补丁脚本进 addon：一键打包时插件 subprocess 调它（跑在作者的外部
         # Python 上，不是 Blender 自带 Python）。单一 git 源在 tools/，此处只做打包拷贝。
         patch_script = ROOT / "tools" / "patch_unity_bundle.py"
         if patch_script.is_file():
             _add(patch_script, Path("gakumas_mi") / "patch_unity_bundle.py")
+        # 同理 vendor 绑定体检（导出前跑 AB 蒙皮姿势模拟）；它在 Blender 内被 import 执行。
+        sanity_script = ROOT / "tools" / "simulate_ab_skinning.py"
+        if sanity_script.is_file():
+            _add(sanity_script, Path("gakumas_mi") / "simulate_ab_skinning.py")
         if PROFILE_DIR.is_dir():
             for path in _iter_files(PROFILE_DIR):
                 _add(path, Path("gakumas_mi") / "profiles" / path.relative_to(PROFILE_DIR))

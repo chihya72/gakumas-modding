@@ -1,10 +1,10 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 8, 0),
+    "version": (0, 9, 0),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
-    "description": "学园偶像大师换装/换发 mod 制作：抓帧生成配置档 → 绑定作者模型 → 导出 3DMigoto 逆蒙皮模组，或导出 AB bundle 源（原生蒙皮/描边/物理）",
+    "description": "学园偶像大师换装/换发 mod 制作（AB bundle 路线）：抓帧生成配置档 → 骨名映射到游戏骨架 → 导出并打包 AB bundle（原生蒙皮/描边/物理）",
     "category": "Import-Export",
 }
 
@@ -98,10 +98,10 @@ def register():
     bpy.types.Scene.gmi_component_id = EnumProperty(
         name="制作目标",
         description="选身体或发型即可，发饰不是独立目标：发型和配套发饰是两个网格对象，"
-                    "在步骤②分别绑定，导出时按对象标记自动分包/合并",
+                    "导出时按对象标记自动分包/合并",
         items=[
             ("body", "身体（body）",
-             "替换 Geo_Body 整个身体网格；透明/镂空部件在步骤③把对应材质槽设为「原生co」"),
+             "替换 Geo_Body 整个身体网格；透明/镂空部件在步骤②把对应材质槽设为「原生co」"),
             ("hair", "发型（hair）",
              "替换 Geo_Hair；配套发饰 Geo_HairProp 可选制作——只做发型则保留原发饰，"
              "发型+发饰一起做则导出时自动合并为一个完整包"),
@@ -121,25 +121,47 @@ def register():
         description="可选 JSON 映射表 {作者骨名: 配置档骨名}。"
                     "作者模型带配置档没有的辅助骨/物理骨时，把这些骨的权重并到指定主骨",
     )
+    bpy.types.Scene.gmi_physics_override_file = StringProperty(
+        name="装饰物理覆盖", subtype="FILE_PATH",
+        description="可选 JSON {装饰骨名或前缀: 策略}，覆盖自动分类。"
+                    "策略：integrate=自己的摇物物理(飘带/蝴蝶结)、follow_skirt=蹭最近裙摆(花边)、"
+                    "follow:<目标骨>=蹭指定骨、rigid=无物理跟父骨。"
+                    "自动分类猜错时用它兜底，前缀取最长匹配(如 Lace 覆盖 Lace_R_*)",
+    )
+    bpy.types.Scene.gmi_bone_map = bpy.props.CollectionProperty(
+        type=operators.GMI_bone_map_item, name="骨骼映射表",
+        description="作者直接指定「哪根源骨对应哪根游戏骨」。填了的行优先级最高，"
+                    "留空的交给预设/自动判断。预设认识的骨架（MMD/Mixamo/Rigify/SCSP）"
+                    "预填后一行都不用碰；认不出来的骨架靠这里点选，不再受命名规范限制",
+    )
+    bpy.types.Scene.gmi_bone_map_index = IntProperty(default=0)
+    bpy.types.Scene.gmi_bone_targets = bpy.props.CollectionProperty(
+        type=operators.GMI_bone_name, name="目标骨名",
+        description="目标骨架的骨名列表，供映射表的下拉搜索使用（由「扫描源骨骼」填充）",
+    )
+    bpy.types.Scene.gmi_source_rig = EnumProperty(
+        name="源骨架类型",
+        items=[
+            ("auto", "自动识别", "逐张预设表试算命中数、取最高的那张（推荐）"),
+            ("scsp", "SCSP/IP/QualiArts", "覆盖 QualiArts 身体骨、_1 后缀和 *_rot/Elbow/Clavicle 变体"),
+            ("mmd-standard", "MMD 标准", "套用日文 MMD 标准骨名预设"),
+            ("mixamo", "Mixamo", "套用 mixamorig: 骨名预设"),
+            ("rigify", "Rigify", "套用 DEF- 骨名预设"),
+            ("vrm", "VRM / VRoid", "套用 J_Bip_* 骨名预设（J_Sec_* 走装饰骨）"),
+            ("biped", "3ds Max Biped", "套用 Bip001 * 骨名预设（游戏拆包常见）"),
+            ("auto-rig-pro", "Auto-Rig Pro", "套用 *_stretch.l / spine_0N.x 骨名预设"),
+            ("unity-humanoid", "英文 Humanoid",
+             "套用 UpperArm/LowerLeg/Thigh/Calf 这类英文同义词，补直接匹配漏掉的关节"),
+            ("custom", "自定义", "只使用直接匹配、后缀清理和手工 JSON"),
+        ],
+        default="auto",
+        description="用于自动生成身体骨对照；装饰骨会单独列为待处理 Track B",
+    )
     bpy.types.Scene.gmi_unmapped_bone_fallback = StringProperty(
         name="未映射骨骼兜底", default="",
         description="可选配置档骨名，一般填 Hips。MMD 等外部模型常有顶点权重残留在控制骨/物理骨上，"
                     "导出报「顶点没有可导出的配置档兼容权重」时启用：未映射的权重归到该骨。"
                     "留空=严格校验，遇到未知骨直接报错；受影响顶点很多时应回去修权重而不是靠兜底",
-    )
-    bpy.types.Scene.gmi_transfer_risk_distance = FloatProperty(
-        name="风险距离", default=0.02, min=0.0001, unit="LENGTH",
-        description="传权时距参考模型表面超过该距离的顶点会记入 GMI_REVIEW_HIGH_RISK 顶点组。"
-                    "宽袖、裙摆、飘带等远离身体的部件超出属正常现象，传权后人工复核这些顶点即可",
-    )
-    bpy.types.Scene.gmi_texture_key = StringProperty(
-        name="贴图键", default="body.baseColor",
-        description="要替换的配置档贴图槽位，格式 <组件>.<语义>，"
-                    "如 body.baseColor、hair.packedMask、body.shadeColor",
-    )
-    bpy.types.Scene.gmi_texture_file = StringProperty(
-        name="DDS 文件", subtype="FILE_PATH",
-        description="替换用贴图。t0/t4 是 sRGB，t1 是线性；PNG 会自动转 DDS",
     )
     bpy.types.Scene.gmi_base_color_file = StringProperty(
         name="基础色 t0", subtype="FILE_PATH",
@@ -290,10 +312,6 @@ def register():
         name="作者", default="作者",
         description="显示在 Mod 管理器里的作者名",
     )
-    bpy.types.Scene.gmi_cover_image = StringProperty(
-        name="预览图", subtype="FILE_PATH",
-        description="mod 封面（png/jpg/webp），导出必填；过大会自动缩到 ≤1024px、上限 2MB",
-    )
 
 
 def unregister():
@@ -302,9 +320,9 @@ def unregister():
         "gmi_body_json_library_dir", "gmi_body_resource",
         "gmi_extract_draw", "gmi_output_dir", "gmi_bundle_template", "gmi_bundle_python", "gmi_component_id",
         "gmi_source_mesh_json", "gmi_skeleton_json", "gmi_bone_remap_file",
+        "gmi_source_rig", "gmi_bone_map", "gmi_bone_map_index", "gmi_bone_targets",
         "gmi_unmapped_bone_fallback",
-        "gmi_transfer_risk_distance",
-        "gmi_texture_key", "gmi_texture_file", "gmi_package_id",
+        "gmi_package_id",
         "gmi_base_color_file", "gmi_hair_use_base_alpha", "gmi_packed_mask_file", "gmi_shade_color_file",
         "gmi_hairprop_base_color_file", "gmi_hairprop_packed_mask_file", "gmi_hairprop_shade_color_file",
         "gmi_t1_r_file", "gmi_t1_g_file", "gmi_t1_b_file", "gmi_t1_a_file",
@@ -312,8 +330,7 @@ def unregister():
         "gmi_neutral_material", "gmi_outline_width_mode", "gmi_vertex_color_mode",
         "gmi_hair_outline_tier",
         "gmi_form_shading", "gmi_form_strength",
-        "gmi_package_name", "gmi_author", "gmi_cover_image",
-    ):
+        "gmi_package_name", "gmi_author", ):
         if hasattr(bpy.types.Scene, name):
             delattr(bpy.types.Scene, name)
     if hasattr(bpy.types.Material, "gmi_material_class"):

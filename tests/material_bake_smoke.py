@@ -96,3 +96,13 @@ assert t1n[0, 0].tolist() == [67, 32, 0, 0], t1n[0, 0].tolist()
 assert t4n[0, 0, 3] == 0
 
 print("material_bake_smoke OK")
+
+# 描边色 nibble：中暗底色不能掉通道(绿边/青边)，要么全黑要么三通道都有底
+for base in (0.10, 0.15, 0.20, 0.30, 0.40, 0.55):
+    nib = core.outline_nibbles_from_base(base, base, base)
+    assert nib == (0, 0, 0) or min(nib) >= 1, f"底色 {base} 掉通道: {nib}"
+assert core.outline_nibbles_from_base(0.0, 0.0, 0.0) == (0, 0, 0)
+# 实测锚点：中等亮度三通道都≈1(中性暗灰)；高亮度 R 明显抬起、偏暖
+assert core.outline_nibbles_from_base(0.50, 0.50, 0.50) == (1, 1, 1)
+assert core.outline_nibbles_from_base(0.99, 0.95, 0.90) == (5, 1, 1)
+print("outline_nibbles OK")

@@ -36,7 +36,18 @@ class FakeLayout:
 
     def operator(self, name, **_kwargs):
         self.operators.append(name)
+        # 真 layout 返回算子属性对象，面板会往上写 op.xxx = ...
+        return type("FakeOperatorProps", (), {})()
+
+    def prop_search(self, data, name, _src, _coll, **_kwargs):
+        assert hasattr(data, name), name
+        self.properties.append(name)
+
+    def template_list(self, *_args, **_kwargs):
         return None
+
+    def column(self, **_kwargs):
+        return self
 
 
 gakumas_mi.register()
@@ -59,19 +70,23 @@ try:
     scene.gmi_extract_output_dir = str(ROOT / ".local" / "test-output" / "blender-ui-smoke")
     scene.gmi_body_resource = "mdl_chr_test-hair-0001_hair"
 
-    # 工作流四步 = 四个常驻子面板,全部挂在 GMI_PT_main 下
-    for panel_cls in (ui.GMI_PT_step_profile, ui.GMI_PT_step_binding,
+    # 工作流三步 = 三个常驻子面板,全部挂在 GMI_PT_main 下（AB 路线没有传权那一步）
+    for panel_cls in (ui.GMI_PT_step_profile,
                       ui.GMI_PT_step_texture, ui.GMI_PT_step_export):
         assert panel_cls.bl_parent_id == "GMI_PT_main", panel_cls
         assert panel_cls.is_registered, panel_cls
 
     hair_layout = FakeLayout()
     ui.draw_profile_step(hair_layout, scene)
-    ui.draw_binding_step(hair_layout, scene)
     ui.draw_texture_step(hair_layout, scene, bpy.context)
     ui.draw_export_step(hair_layout, scene, bpy.context)
-    assert "gmi.bind_hairprop_rigid" in hair_layout.operators
-    assert "gmi.transfer_hairprop_weights" in hair_layout.operators
+    # 3Dmigoto 的传权/导出入口必须一个都不剩
+    for dead in ("transfer_profile_weights", "transfer_hairprop", "bind_hairprop_rigid",
+                 "select_high_risk", "validate_mesh", "export_mesh_mod",
+                 "export_inverse_skin_mod", "export_validated_mod", "export_texture_mod"):
+        assert not any(dead in op for op in hair_layout.operators), dead
+    assert "gmi.export_bundle_source" in hair_layout.operators
+    assert "gmi.build_bone_map" in hair_layout.operators
     assert "gmi_hairprop_base_color_file" in hair_layout.properties
     assert "gmi_hair_use_base_alpha" in hair_layout.properties
     assert "gmi_opacity_texture_file" not in hair_layout.properties

@@ -6,6 +6,14 @@
 >
 > 本文件是 gakumas-modding 侧的入口摘要——路线跨两个仓库(GakumasMI 在本仓,打包/插件/模板在 IP handoff 仓),在这里留个指针免得找不到。
 
+## 状态（2026-07-27）
+
+**本路线已从"3Dmigoto 之外的第二条路"变成本分支的唯一路线。** 插件里 3DMigoto 的传权与导出
+已整体移除，UI 从四步收敛为 `① 准备配置档 → ② 准备材质 → ③ 导出 AB bundle`。因此下文
+2026-07-24 收口条目里「gated 于 `gmi_profile_weights`」的说法已过时：bundle 导出直接消费作者
+模型自带的顶点组权重，不存在传权这一步。骨名对照见
+[universal-mod-automation-plan.md](universal-mod-automation-plan.md) 的 2026-07-27 进度。
+
 ## 进度（2026-07-15）
 Phase 1、2A、2B 均已实现并验证通过。
 - **P1**（`export_bundle_source` 算子）+ **2A**（headless Unity build）：Blender 4.2.7 跑通算子（`tests/blender_smoke.py`，须 `--factory-startup`）、Unity 6000.0.67f1 batchmode 产出合法 bundle。修复了 `core.py` `write_bundle_source` 的 `rootBone` 硬编码（改 `_bundle_root_bone` 按 `rootBonePathId` 权威推导），`tests/test_bundle_source_contract.py` 2 passed。
@@ -49,6 +57,7 @@ initializeData 并行表错位抛越界。继续必须前移到 initializeData �
 Blender 前期流程**不变** → 新按钮「导出 bundle 源」→ 跑 UnityPy 补丁脚本（**无 Unity**）→ 装 chinosk6 插件替代 3Dmigoto（一次性）。
 
 ## 相关
+- **通用化开发计划**：[universal-mod-automation-plan.md](universal-mod-automation-plan.md)——把 AB 导出做成「导入源→导入学马→贴图→选bundle→导出」5 步、少懂骨的通用流程（含算法规格/边界/待修 bug/分阶段落地，规格来源=fuyuko 实机调试）。
 - **路线选型对比**：[3dmigoto-vs-ab-route.md](3dmigoto-vs-ab-route.md)——两条换装路线（3Dmigoto 逆蒙皮 vs AB bundle 原生）拦截点差异与各自代价。
 - 本仓：[research/current-status-and-roadmap.md](current-status-and-roadmap.md)、[research/inverse-skin-matrix-recovery.md](inverse-skin-matrix-recovery.md)
 - 弃用：il2cpp-proxy 探针（`experiments/pc-il2cpp-proxy`）已决定不产品化，只把「原生蒙皮 + 复用 bindpose + 带 COLOR」结论并入本路线。

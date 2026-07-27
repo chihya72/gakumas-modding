@@ -113,6 +113,18 @@ def bones_from_mesh(mesh: dict, sidecar: dict | None, names: dict[int, str]) -> 
     }
 
 
+def validate_template_bone_names(bones: dict, asset_id: str) -> None:
+    placeholders = [
+        item.get("name") for item in bones.get("bones") or []
+        if re.fullmatch(r"bone_-?\d+", str(item.get("name") or ""), re.IGNORECASE)
+    ]
+    if placeholders:
+        raise ValueError(
+            f"{asset_id}: 模板骨架缺真实 Transform 名称，仍有 {len(placeholders)} 个 bone_* 占位骨；"
+            "请先导出该目标的 skeleton sidecar/profile，再生成 R32 模板"
+        )
+
+
 def phase1_geo(mesh: dict) -> dict:
     count = int(mesh.get("m_VertexCount") or 0)
     if count <= 0:
@@ -134,6 +146,7 @@ def phase1_geo(mesh: dict) -> dict:
         "m_Indices": mesh["m_Indices"],
         "m_Skin": mesh["m_Skin"],
         "m_BindPose": mesh["m_BindPose"],
+        "m_BoneNameHashes": mesh.get("m_BoneNameHashes") or [],
         "m_SubMeshes": mesh["m_SubMeshes"],
         "m_Name": mesh.get("m_Name") or "Mesh",
     }
@@ -217,7 +230,9 @@ def stage_item(kind: str, asset_id: str, source_dir: Path, package_dir: Path) ->
     primary_geo_file = package_dir / f"{primary_geo_name}.geojson.txt"
     primary_bones_file = package_dir / f"{primary_geo_name}_bones.json.txt"
     write_json(primary_geo_file, phase1_geo(mesh))
-    write_json(primary_bones_file, bones_from_mesh(mesh, primary_skeleton, templates))
+    primary_bones = bones_from_mesh(mesh, primary_skeleton, templates)
+    validate_template_bone_names(primary_bones, asset_id)
+    write_json(primary_bones_file, primary_bones)
 
     renderer_specs = [{"renderer": "Geo_Body" if kind == "body" else "Geo_Hair", "source": primary_geo_name, "mesh": mesh}]
     if kind == "hair":
@@ -230,7 +245,9 @@ def stage_item(kind: str, asset_id: str, source_dir: Path, package_dir: Path) ->
             prop_geo_file = package_dir / f"{prop_source}.geojson.txt"
             prop_bones_file = package_dir / f"{prop_source}_bones.json.txt"
             write_json(prop_geo_file, phase1_geo(prop_mesh))
-            write_json(prop_bones_file, bones_from_mesh(prop_mesh, prop_skeleton, templates))
+            prop_bones = bones_from_mesh(prop_mesh, prop_skeleton, templates)
+            validate_template_bone_names(prop_bones, prop_source)
+            write_json(prop_bones_file, prop_bones)
             renderer_specs.append({"renderer": "Geo_HairProp", "source": prop_source, "mesh": prop_mesh})
 
     asset_root = f"Assets/Mods/p3_templates/{asset_id}"

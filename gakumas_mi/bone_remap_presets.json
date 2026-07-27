@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "presets": {
+    "mmd-standard": {
+      "bones": {
+        "センター": "Hips", "下半身": "Hips", "腰": "Hips",
+        "上半身": "Spine", "上半身2": "Spine1", "上半身3": "Spine2",
+        "首": "Neck", "頭": "Head",
+        "左肩": "LeftShoulder", "左腕": "LeftArm", "左ひじ": "LeftForeArm", "左手首": "LeftHand",
+        "右肩": "RightShoulder", "右腕": "RightArm", "右ひじ": "RightForeArm", "右手首": "RightHand",
+        "左足": "LeftUpLeg", "左ひざ": "LeftLeg", "左足首": "LeftFoot", "左つま先": "LeftToeBase",
+        "右足": "RightUpLeg", "右ひざ": "RightLeg", "右足首": "RightFoot", "右つま先": "RightToeBase",
+        "左腕捩": "LeftArm", "右腕捩": "RightArm",
+        "左腕捩1": "LeftArm", "左腕捩2": "LeftArm", "左腕捩3": "LeftArm",
+        "右腕捩1": "RightArm", "右腕捩2": "RightArm", "右腕捩3": "RightArm",
+        "左手捩": "LeftForeArm", "左手捩1": "LeftForeArm", "左手捩2": "LeftForeArm", "左手捩3": "LeftForeArm",
+        "右手捩": "RightForeArm", "右手捩1": "RightForeArm", "右手捩2": "RightForeArm", "右手捩3": "RightForeArm",
+        "左足D": "LeftUpLeg", "左ひざD": "LeftLeg", "左足首D": "LeftFoot", "左足先EX": "LeftToeBase",
+        "右足D": "RightUpLeg", "右ひざD": "RightLeg", "右足首D": "RightFoot", "右足先EX": "RightToeBase",
+        "左親指０": "LeftHandThumb1", "左親指１": "LeftHandThumb2", "左親指２": "LeftHandThumb3",
+        "左人指１": "LeftHandIndex1", "左人指２": "LeftHandIndex2", "左人指３": "LeftHandIndex3",
+        "左中指１": "LeftHandMiddle1", "左中指２": "LeftHandMiddle2", "左中指３": "LeftHandMiddle3",
+        "左薬指１": "LeftHandRing1", "左薬指２": "LeftHandRing2", "左薬指３": "LeftHandRing3",
+        "左小指１": "LeftHandPinky1", "左小指２": "LeftHandPinky2", "左小指３": "LeftHandPinky3",
+        "右親指０": "RightHandThumb1", "右親指１": "RightHandThumb2", "右親指２": "RightHandThumb3",
+        "右人指１": "RightHandIndex1", "右人指２": "RightHandIndex2", "右人指３": "RightHandIndex3",
+        "右中指１": "RightHandMiddle1", "右中指２": "RightHandMiddle2", "右中指３": "RightHandMiddle3",
+        "右薬指１": "RightHandRing1", "右薬指２": "RightHandRing2", "右薬指３": "RightHandRing3",
+        "右小指１": "RightHandPinky1", "右小指２": "RightHandPinky2", "右小指３": "RightHandPinky3"
+      },
+      "accessoryPrefixes": ["髪", "スカート", "リボン", "ネクタイ", "胸", "飾"]
+    },
+    "mixamo": {
+      "bones": {
+        "mixamorig:Hips": "Hips", "mixamorig:Spine": "Spine", "mixamorig:Spine1": "Spine1", "mixamorig:Spine2": "Spine2",
+        "mixamorig:Neck": "Neck", "mixamorig:Head": "Head",
+        "mixamorig:LeftShoulder": "LeftShoulder", "mixamorig:LeftArm": "LeftArm", "mixamorig:LeftForeArm": "LeftForeArm", "mixamorig:LeftHand": "LeftHand",
+        "mixamorig:RightShoulder": "RightShoulder", "mixamorig:RightArm": "RightArm", "mixamorig:RightForeArm": "RightForeArm", "mixamorig:RightHand": "RightHand",
+        "mixamorig:LeftUpLeg": "LeftUpLeg", "mixamorig:LeftLeg": "LeftLeg", "mixamorig:LeftFoot": "LeftFoot", "mixamorig:LeftToeBase": "LeftToeBase",
+        "mixamorig:RightUpLeg": "RightUpLeg", "mixamorig:RightLeg": "RightLeg", "mixamorig:RightFoot": "RightFoot", "mixamorig:RightToeBase": "RightToeBase",
+        "mixamorig:LeftHandThumb1": "LeftHandThumb1", "mixamorig:LeftHandThumb2": "LeftHandThumb2", "mixamorig:LeftHandThumb3": "LeftHandThumb3",
+        "mixamorig:LeftHandIndex1": "LeftHandIndex1", "mixamorig:LeftHandIndex2": "LeftHandIndex2", "mixamorig:LeftHandIndex3": "LeftHandIndex3",
+        "mixamorig:LeftHandMiddle1": "LeftHandMiddle1", "mixamorig:LeftHandMiddle2": "LeftHandMiddle2", "mixamorig:LeftHandMiddle3": "LeftHandMiddle3",
+        "mixamorig:LeftHandRing1": "LeftHandRing1", "mixamorig:LeftHandRing2": "LeftHandRing2", "mixamorig:LeftHandRing3": "LeftHandRing3",
+        "mixamorig:LeftHandPinky1": "LeftHandPinky1", "mixamorig:LeftHandPinky2": "LeftHandPinky2", "mixamorig:LeftHandPinky3": "LeftHandPinky3",
+        "mixamorig:RightHandThumb1": "RightHandThumb1", "mixamorig:RightHandThumb2": "RightHandThumb2", "mixamorig:RightHandThumb3": "RightHandThumb3",
+        "mixamorig:RightHandIndex1": "RightHandIndex1", "mixamorig:RightHandIndex2": "RightHandIndex2", "mixamorig:RightHandIndex3": "RightHandIndex3",
+        "mixamorig:RightHandMiddle1": "RightHandMiddle1", "mixamorig:RightHandMiddle2": "RightHandMiddle2", "mixamorig:RightHandMiddle3": "RightHandMiddle3",
+        "mixamorig:RightHandRing1": "RightHandRing1", "mixamorig:RightHandRing2": "RightHandRing2", "mixamorig:RightHandRing3": "RightHandRing3",
+        "mixamorig:RightHandPinky1": "RightHandPinky1", "mixamorig:RightHandPinky2": "RightHandPinky2", "mixamorig:RightHandPinky3": "RightHandPinky3"
+      },
+      "accessoryPrefixes": ["hair", "skirt", "cloth", "ribbon", "bow", "dress", "tie"]
+    },
+    "rigify": {
+      "bones": {
+        "DEF-pelvis": "Hips", "DEF-spine": "Spine", "DEF-spine.001": "Spine1", "DEF-spine.002": "Spine2", "DEF-spine.003": "Neck", "DEF-head": "Head",
+        "DEF-shoulder.L": "LeftShoulder", "DEF-upper_arm.L": "LeftArm", "DEF-forearm.L": "LeftForeArm", "DEF-hand.L": "LeftHand",
+        "DEF-shoulder.R": "RightShoulder", "DEF-upper_arm.R": "RightArm", "DEF-forearm.R": "RightForeArm", "DEF-hand.R": "RightHand",
+        "DEF-thigh.L": "LeftUpLeg", "DEF-shin.L": "LeftLeg", "DEF-foot.L": "LeftFoot", "DEF-toe.L": "LeftToeBase",
+        "DEF-thigh.R": "RightUpLeg", "DEF-shin.R": "RightLeg", "DEF-foot.R": "RightFoot", "DEF-toe.R": "RightToeBase",
+        "DEF-thumb.01.L": "LeftHandThumb1", "DEF-thumb.02.L": "LeftHandThumb2", "DEF-thumb.03.L": "LeftHandThumb3",
+        "DEF-f_index.01.L": "LeftHandIndex1", "DEF-f_index.02.L": "LeftHandIndex2", "DEF-f_index.03.L": "LeftHandIndex3",
+        "DEF-f_middle.01.L": "LeftHandMiddle1", "DEF-f_middle.02.L": "LeftHandMiddle2", "DEF-f_middle.03.L": "LeftHandMiddle3",
+        "DEF-f_ring.01.L": "LeftHandRing1", "DEF-f_ring.02.L": "LeftHandRing2", "DEF-f_ring.03.L": "LeftHandRing3",
+        "DEF-f_pinky.01.L": "LeftHandPinky1", "DEF-f_pinky.02.L": "LeftHandPinky2", "DEF-f_pinky.03.L": "LeftHandPinky3",
+        "DEF-thumb.01.R": "RightHandThumb1", "DEF-thumb.02.R": "RightHandThumb2", "DEF-thumb.03.R": "RightHandThumb3",
+        "DEF-f_index.01.R": "RightHandIndex1", "DEF-f_index.02.R": "RightHandIndex2", "DEF-f_index.03.R": "RightHandIndex3",
+        "DEF-f_middle.01.R": "RightHandMiddle1", "DEF-f_middle.02.R": "RightHandMiddle2", "DEF-f_middle.03.R": "RightHandMiddle3",
+        "DEF-f_ring.01.R": "RightHandRing1", "DEF-f_ring.02.R": "RightHandRing2", "DEF-f_ring.03.R": "RightHandRing3",
+        "DEF-f_pinky.01.R": "RightHandPinky1", "DEF-f_pinky.02.R": "RightHandPinky2", "DEF-f_pinky.03.R": "RightHandPinky3"
+      },
+      "accessoryPrefixes": ["hair", "skirt", "cloth", "ribbon", "bow", "dress", "tie"]
+    },
+    "vrm": {
+      "bones": {
+        "J_Bip_C_Hips": "Hips", "J_Bip_C_Spine": "Spine", "J_Bip_C_Chest": "Spine1",
+        "J_Bip_C_UpperChest": "Spine2", "J_Bip_C_Neck": "Neck", "J_Bip_C_Head": "Head",
+        "J_Bip_L_Shoulder": "LeftShoulder", "J_Bip_L_UpperArm": "LeftArm",
+        "J_Bip_L_LowerArm": "LeftForeArm", "J_Bip_L_Hand": "LeftHand",
+        "J_Bip_L_UpperLeg": "LeftUpLeg", "J_Bip_L_LowerLeg": "LeftLeg",
+        "J_Bip_L_Foot": "LeftFoot", "J_Bip_L_ToeBase": "LeftToeBase",
+        "J_Bip_R_Shoulder": "RightShoulder", "J_Bip_R_UpperArm": "RightArm",
+        "J_Bip_R_LowerArm": "RightForeArm", "J_Bip_R_Hand": "RightHand",
+        "J_Bip_R_UpperLeg": "RightUpLeg", "J_Bip_R_LowerLeg": "RightLeg",
+        "J_Bip_R_Foot": "RightFoot", "J_Bip_R_ToeBase": "RightToeBase",
+        "J_Bip_L_Thumb1": "LeftHandThumb1", "J_Bip_L_Thumb2": "LeftHandThumb2", "J_Bip_L_Thumb3": "LeftHandThumb3",
+        "J_Bip_L_Index1": "LeftHandIndex1", "J_Bip_L_Index2": "LeftHandIndex2", "J_Bip_L_Index3": "LeftHandIndex3",
+        "J_Bip_L_Middle1": "LeftHandMiddle1", "J_Bip_L_Middle2": "LeftHandMiddle2", "J_Bip_L_Middle3": "LeftHandMiddle3",
+        "J_Bip_L_Ring1": "LeftHandRing1", "J_Bip_L_Ring2": "LeftHandRing2", "J_Bip_L_Ring3": "LeftHandRing3",
+        "J_Bip_L_Little1": "LeftHandPinky1", "J_Bip_L_Little2": "LeftHandPinky2", "J_Bip_L_Little3": "LeftHandPinky3",
+        "J_Bip_R_Thumb1": "RightHandThumb1", "J_Bip_R_Thumb2": "RightHandThumb2", "J_Bip_R_Thumb3": "RightHandThumb3",
+        "J_Bip_R_Index1": "RightHandIndex1", "J_Bip_R_Index2": "RightHandIndex2", "J_Bip_R_Index3": "RightHandIndex3",
+        "J_Bip_R_Middle1": "RightHandMiddle1", "J_Bip_R_Middle2": "RightHandMiddle2", "J_Bip_R_Middle3": "RightHandMiddle3",
+        "J_Bip_R_Ring1": "RightHandRing1", "J_Bip_R_Ring2": "RightHandRing2", "J_Bip_R_Ring3": "RightHandRing3",
+        "J_Bip_R_Little1": "RightHandPinky1", "J_Bip_R_Little2": "RightHandPinky2", "J_Bip_R_Little3": "RightHandPinky3"
+      },
+      "accessoryPrefixes": ["j_sec", "j_opt", "hair", "skirt", "cloth", "ribbon", "bow", "dress", "tie"]
+    },
+    "biped": {
+      "bones": {
+        "Bip001 Pelvis": "Hips", "Bip001 Spine": "Spine", "Bip001 Spine1": "Spine1",
+        "Bip001 Spine2": "Spine2", "Bip001 Neck": "Neck", "Bip001 Head": "Head",
+        "Bip001 L Clavicle": "LeftShoulder", "Bip001 L UpperArm": "LeftArm",
+        "Bip001 L Forearm": "LeftForeArm", "Bip001 L Hand": "LeftHand",
+        "Bip001 L Thigh": "LeftUpLeg", "Bip001 L Calf": "LeftLeg",
+        "Bip001 L Foot": "LeftFoot", "Bip001 L Toe0": "LeftToeBase",
+        "Bip001 R Clavicle": "RightShoulder", "Bip001 R UpperArm": "RightArm",
+        "Bip001 R Forearm": "RightForeArm", "Bip001 R Hand": "RightHand",
+        "Bip001 R Thigh": "RightUpLeg", "Bip001 R Calf": "RightLeg",
+        "Bip001 R Foot": "RightFoot", "Bip001 R Toe0": "RightToeBase",
+        "Bip001 L Finger0": "LeftHandThumb1", "Bip001 L Finger01": "LeftHandThumb2", "Bip001 L Finger02": "LeftHandThumb3",
+        "Bip001 L Finger1": "LeftHandIndex1", "Bip001 L Finger11": "LeftHandIndex2", "Bip001 L Finger12": "LeftHandIndex3",
+        "Bip001 L Finger2": "LeftHandMiddle1", "Bip001 L Finger21": "LeftHandMiddle2", "Bip001 L Finger22": "LeftHandMiddle3",
+        "Bip001 L Finger3": "LeftHandRing1", "Bip001 L Finger31": "LeftHandRing2", "Bip001 L Finger32": "LeftHandRing3",
+        "Bip001 L Finger4": "LeftHandPinky1", "Bip001 L Finger41": "LeftHandPinky2", "Bip001 L Finger42": "LeftHandPinky3",
+        "Bip001 R Finger0": "RightHandThumb1", "Bip001 R Finger01": "RightHandThumb2", "Bip001 R Finger02": "RightHandThumb3",
+        "Bip001 R Finger1": "RightHandIndex1", "Bip001 R Finger11": "RightHandIndex2", "Bip001 R Finger12": "RightHandIndex3",
+        "Bip001 R Finger2": "RightHandMiddle1", "Bip001 R Finger21": "RightHandMiddle2", "Bip001 R Finger22": "RightHandMiddle3",
+        "Bip001 R Finger3": "RightHandRing1", "Bip001 R Finger31": "RightHandRing2", "Bip001 R Finger32": "RightHandRing3",
+        "Bip001 R Finger4": "RightHandPinky1", "Bip001 R Finger41": "RightHandPinky2", "Bip001 R Finger42": "RightHandPinky3"
+      },
+      "accessoryPrefixes": ["hair", "skirt", "cloth", "ribbon", "bow", "dress", "tie", "acce"]
+    },
+    "auto-rig-pro": {
+      "bones": {
+        "root.x": "Hips", "c_root.x": "Hips",
+        "spine_01.x": "Spine", "spine_02.x": "Spine1", "spine_03.x": "Spine2",
+        "neck.x": "Neck", "head.x": "Head",
+        "shoulder.l": "LeftShoulder", "arm_stretch.l": "LeftArm",
+        "forearm_stretch.l": "LeftForeArm", "hand.l": "LeftHand",
+        "thigh_stretch.l": "LeftUpLeg", "leg_stretch.l": "LeftLeg",
+        "foot.l": "LeftFoot", "toes_01.l": "LeftToeBase",
+        "shoulder.r": "RightShoulder", "arm_stretch.r": "RightArm",
+        "forearm_stretch.r": "RightForeArm", "hand.r": "RightHand",
+        "thigh_stretch.r": "RightUpLeg", "leg_stretch.r": "RightLeg",
+        "foot.r": "RightFoot", "toes_01.r": "RightToeBase",
+        "thumb1.l": "LeftHandThumb1", "thumb2.l": "LeftHandThumb2", "thumb3.l": "LeftHandThumb3",
+        "index1.l": "LeftHandIndex1", "index2.l": "LeftHandIndex2", "index3.l": "LeftHandIndex3",
+        "middle1.l": "LeftHandMiddle1", "middle2.l": "LeftHandMiddle2", "middle3.l": "LeftHandMiddle3",
+        "ring1.l": "LeftHandRing1", "ring2.l": "LeftHandRing2", "ring3.l": "LeftHandRing3",
+        "pinky1.l": "LeftHandPinky1", "pinky2.l": "LeftHandPinky2", "pinky3.l": "LeftHandPinky3",
+        "thumb1.r": "RightHandThumb1", "thumb2.r": "RightHandThumb2", "thumb3.r": "RightHandThumb3",
+        "index1.r": "RightHandIndex1", "index2.r": "RightHandIndex2", "index3.r": "RightHandIndex3",
+        "middle1.r": "RightHandMiddle1", "middle2.r": "RightHandMiddle2", "middle3.r": "RightHandMiddle3",
+        "ring1.r": "RightHandRing1", "ring2.r": "RightHandRing2", "ring3.r": "RightHandRing3",
+        "pinky1.r": "RightHandPinky1", "pinky2.r": "RightHandPinky2", "pinky3.r": "RightHandPinky3"
+      },
+      "accessoryPrefixes": ["hair", "skirt", "cloth", "ribbon", "bow", "dress", "tie"]
+    },
+    "unity-humanoid": {
+      "bones": {
+        "Pelvis": "Hips", "Chest": "Spine1", "UpperChest": "Spine2",
+        "LeftUpperArm": "LeftArm", "LeftLowerArm": "LeftForeArm",
+        "LeftUpperLeg": "LeftUpLeg", "LeftLowerLeg": "LeftLeg", "LeftToes": "LeftToeBase",
+        "RightUpperArm": "RightArm", "RightLowerArm": "RightForeArm",
+        "RightUpperLeg": "RightUpLeg", "RightLowerLeg": "RightLeg", "RightToes": "RightToeBase",
+        "LeftThigh": "LeftUpLeg", "LeftCalf": "LeftLeg", "LeftClavicle": "LeftShoulder",
+        "RightThigh": "RightUpLeg", "RightCalf": "RightLeg", "RightClavicle": "RightShoulder",
+        "LeftForearm": "LeftForeArm", "RightForearm": "RightForeArm",
+        "LeftAnkle": "LeftFoot", "RightAnkle": "RightFoot",
+        "LeftKnee": "LeftLeg", "RightKnee": "RightLeg",
+        "LeftElbow": "LeftForeArm", "RightElbow": "RightForeArm",
+        "LeftWrist": "LeftHand", "RightWrist": "RightHand"
+      },
+      "accessoryPrefixes": ["hair", "skirt", "cloth", "ribbon", "bow", "dress", "tie", "acce"]
+    },
+    "scsp": {
+      "bones": {
+        "LeftShoulder_rot": "LeftShoulder",
+        "LeftArm_rot": "LeftArm", "LeftArm1_rot": "LeftArm", "LeftArm2_rot": "LeftArm", "LeftArm3_rot": "LeftArm",
+        "LeftElbow": "LeftForeArm", "LeftForeArm_rot": "LeftForeArm", "LeftForeArm1_rot": "LeftForeArm",
+        "RightShoulder_rot": "RightShoulder",
+        "RightArm_rot": "RightArm", "RightArm1_rot": "RightArm", "RightArm2_rot": "RightArm", "RightArm3_rot": "RightArm",
+        "RightElbow": "RightForeArm", "RightForeArm_rot": "RightForeArm", "RightForeArm1_rot": "RightForeArm",
+        "LeftClavicle": "LeftShoulder", "RightClavicle": "RightShoulder",
+        "LeftRing": "LeftHand", "RightRing": "RightHand",
+        "LeftHandThumb4": "LeftHandThumb3", "LeftHandIndex4": "LeftHandIndex3",
+        "LeftHandMiddle4": "LeftHandMiddle3", "LeftHandRing4": "LeftHandRing3", "LeftHandPinky4": "LeftHandPinky3",
+        "RightHandThumb4": "RightHandThumb3", "RightHandIndex4": "RightHandIndex3",
+        "RightHandMiddle4": "RightHandMiddle3", "RightHandRing4": "RightHandRing3", "RightHandPinky4": "RightHandPinky3"
+      },
+      "accessoryPrefixes": ["hair", "skirt", "cloth", "ribbon", "bow", "dress", "tie", "OPAI", "acce"]
+    }
+  }
+}

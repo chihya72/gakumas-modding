@@ -4,6 +4,100 @@
 发布包用 `python tools/package_blender_addon.py` 生成（代码版不含 Body JSON 资源库；
 加 `--with-body-lib` 可一并打包）。本地包不提交到公开仓库。
 
+> ⚠ **下面两条「未发布」的验证程度不一样，别当成都实机验证过了。**
+>
+> **实机验证过（2026-07-26，星仪·大国主 PMX → `fktn-othr-0002`，进游戏确认）**：
+> `.L/.R` 折叠、MMD D 骨、`手捩→ForeArm`（肘部撕裂修复）、t1/t4 纯黑修复。
+>
+> **只过了离线测试，没进游戏、也没有人在真 Blender 面板里点过**：骨骼映射表单、承重关节闸门、
+> 装饰骨策略列、逐张表打分选表、`mmd_edge_scale`/`mmd_vertex_order` 自动忽略、
+> 移除 3DMigoto 与 UI 收三步、肤色校正脚本。这些有 `pytest` / Blender headless /
+> 真模型 geojson 数值分析背书，但**新包没被安装使用过**。
+>
+> **纯按公开命名规范写的，连对应模型都没拿到过**：VRM/VRoid、3ds Max Biped、Auto-Rig Pro、
+> 英文 Humanoid 四张预设表。表里名字若拼错，表现是那几行不预填、要手动选（有闸门兜着不会
+> 静默出废品），但不能宣称"支持"。
+
+## 未发布 — 移除 3DMigoto 路线，插件只做 AB bundle
+
+本分支（`research/ab-route-swing-physics`）彻底放弃 3DMigoto 逆蒙皮路线，不再是"两条路线并存、
+按开关切换"，而是**整体删除**。理由：AB 路线保留作者模型自带权重，而 3DMigoto 路线必须传权，
+两者摆在同一套编号流程里会让 AB 作者顺着编号点下去、用猜的权重盖掉手刷的权重（0.9.0 实战中
+就发生了）。留一个用不到的路线等于把坑留在原地。
+
+- **UI 从四步变三步**：`① 准备配置档 → ② 准备材质 → ③ 导出 AB bundle`。原「② 绑定模型」
+  面板整体删除（上一版加的「输出路线」下拉一并删掉——不需要在两条路线之间选了）。
+- **删除的算子**（11 个）：`transfer_profile_weights` / `transfer_profile_weights_smart` /
+  `transfer_hairprop_weights` / `transfer_hairprop_weights_smart` / `bind_hairprop_rigid` /
+  `select_high_risk_vertices` / `validate_mesh` / `export_mesh_mod` /
+  `export_inverse_skin_mod` / `export_validated_mod` / `export_texture_mod`。
+- **删除的模块与函数**：`gakumas_mi/weight_transfer.py` 整个文件；`core` 的
+  `write_inverse_skin_package` / `merge_inverse_skin_packages` / `write_texture_package`
+  及随之成为孤儿的 16 个内部函数（mod.ini 生成、landmark 绑定块、cover 处理、
+  `validate_index_mesh` 等）。
+- **删除的属性**：`gmi_cover_image`（预览图只有 3DMigoto 包需要）、`gmi_transfer_risk_distance`、
+  `gmi_texture_key` / `gmi_texture_file`、`gmi_output_route`。
+- **删除的测试与脚本**：`tests/mod_ini_contract.py`、`tests/weight_transfer_smart.py`、
+  `tools/reweight_hski_fbx_mod.py`，CI 里对应两行也去掉；`tests/blender_smoke.py` 收敛成
+  只跑 bundle 闭环，`tests/blender_ui_smoke.py` 改成**反向断言** UI 里一个 3DMigoto 入口都不剩。
+- 代码净减约 1100 行。3DMigoto 仍是**抓帧工具**（做配置档必须用它抓帧），这个依赖保留。
+
+## 未发布 — 骨映射表单 + 承重关节闸门
+
+> 版本号待定（新增 UI + 行为闸门），发布时按两条产品线独立编号的规则确定。
+> 本条目覆盖 2026-07-26 一轮 MMD→AB 实战（星仪·大国主 PMX → `fktn-othr-0002`）暴露的问题。
+
+**预设从 4 家扩到 8 家，选表改成打分**
+
+- `auto` 不再靠几个探针名嗅探单一家族，改成**逐张预设表试算命中数、取最高**（嗅探只用来
+  打平手）。此前探针没命中就整张表空转——我自己写测试时就中招了。副作用是以后支持一种新
+  命名规范＝**纯加一张表**，不用再加嗅探分支。
+- 新增 **VRM/VRoid**（`J_Bip_*`，`J_Sec_*` 归装饰骨）、**3ds Max Biped**（`Bip001 *`，
+  游戏拆包最常见）、**Auto-Rig Pro**（`*_stretch.l` / `spine_0N.x`）、**英文 Humanoid
+  同义词**（`UpperArm`/`LowerLeg`/`Thigh`/`Calf`/`Forearm`/`Clavicle`…）四张表。
+- 八个家族的身体骨现在全部 100% 零手工映射，且都不触发承重关节闸门（`pytest` 断言守住）。
+  修复前实测：VRM 0%、Biped 0%、ARP 0%、英文手搭 54%。
+
+**覆盖率：从"赌命名规范"改成"按构造 100%"**
+
+- 新增**骨骼映射表**（步骤④）：作者直接指定「哪根源骨对应哪根游戏骨」，行内下拉可打字
+  搜索目标骨。预设退化成**预填**——MMD/Mixamo/Rigify/SCSP 扫描后一行都不用碰；
+  VRM(`J_Bip_*`)、3ds Max Biped(`Bip001 *`)、Auto-Rig Pro 等没有预设的骨架靠点选，
+  实测约 21 行覆盖全身。数据出口沿用已有的 explicit 通路，后端零改动。
+- 同一张表第二列是**装饰骨物理策略**（自动/刚性跟父骨/自建摇物链/跟裙摆），替代手写
+  `physics-override.json`；实测与手写 JSON 结果逐条一致。骨映射与装饰物理存在同一份
+  JSON 的 `bones` / `physics` 两个键里。
+- **硬闸门**：14 个承重关节（Hips/Spine/左右 Arm-ForeArm-Hand-UpLeg-Leg-Foot）任一没拿到
+  权重就拒绝导出并点名。此前源骨名认不出来时是**导出成功、进游戏才废**（实测整只手 100%
+  被钉在 `Spine1`、上臂挂在袖子摇物骨上，全程零警告）。判据只看游戏侧，与源命名无关；
+  与目标骨架取交集，所以发型/发饰导出永不触发（实测交集为 0）。
+
+**MMD 源模型：预设此前对 mmd_tools 导入的模型全程空转**
+
+- `腕.R` 折回 `右腕` 再查表。mmd_tools 是 PMX→Blender 的事实标准导入器，它一律输出
+  `.L/.R` 后缀，而表里写的是 `左腕/右腕`——修复前 87 个加权组只有 5 个映射成功（23% 权重），
+  手臂、腿、手指全部落到装饰骨位置匹配上。**这条影响所有 MMD 模型，不止某一个。**
+- 补齐 MMD 半标准骨：`足D/ひざD/足首D/足先EX`（占身体权重 24.6%，腿全刷在这上面）、
+  `腕捩1-3`、`手捩1-3`、`腰`。
+- `手捩*` 改指 `ForeArm`（原为 `Hand`）。捻骨只继承手腕转动的一部分，映射到 `Hand` 会让
+  肘后 4cm 起整条小臂吃满手掌旋转 → **肘部拉伸扭曲**；改后 `Hand` 的接管点回到 |x|0.48，
+  与游戏原版同位置。
+- `mmd_edge_scale` / `mmd_vertex_order` 自动忽略。它们不是骨（每顶点权重 1.0），此前会让
+  导出报错，而按提示填兜底骨 `Hips` 会把整个模型塌成刚体。
+
+**文档**
+
+- README 删掉「蒙皮转权」「导出模组」两整节，章节重编号为 ①②③ + 骨骼映射表；
+  原本教 AB 作者去传权的说明（§3 全节、§4B 的「必须带配置档权重」前置）随之消失。
+  传权会**用猜的权重盖掉手刷的权重**（实测某模型传权后手指区 p99 2.99 → 6.96）。
+
+**t1/t4 导出成纯黑（影响此前所有 AB mod）**
+
+- `_export_bundle_png` 在写完像素之后才设 `colorspace_settings.name`，赋值会重建图像缓冲、
+  丢掉已写入的像素（**赋同一个值也丢**，`image.update()` 拦不住），存盘得到纯黑。t0 是 PNG
+  走 `copy2` 所以幸免，t1/t4 从烘焙的 DDS 转 PNG 必中 → 游戏里 ShadeColor 全黑、整身发暗。
+  改为写像素之前设 colorspace，之后不再触碰。实测导出 PNG 与烘焙 DDS 逐像素相同。
+
 ## 0.7.8 — Hair Coverage Alpha 默认修正与步骤③贴图指南
 
 - Hair `t0.A` 默认改为保留作者 Alpha，修复刘海眉毛/眼睛无法透出的问题；仍可关闭选项将 PNG

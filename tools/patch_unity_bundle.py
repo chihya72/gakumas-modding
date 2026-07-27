@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import struct
 from pathlib import Path
 
@@ -172,7 +173,14 @@ def _aabb(points):
     }
 
 
-def _patch_mesh(mesh_object, geo: dict):
+def _identity_bind_pose():
+    return {
+        f"e{row}{column}": 1.0 if row == column else 0.0
+        for row in range(4) for column in range(4)
+    }
+
+
+def _patch_mesh(mesh_object, geo: dict, allow_bindpose_growth=False):
     tree = mesh_object.read_typetree()
     vertices = _values(geo, "m_Vertices", 3, int(geo["m_VertexCount"]))
     tree["m_VertexData"]["m_VertexCount"] = int(geo["m_VertexCount"])
@@ -210,9 +218,24 @@ def _patch_mesh(mesh_object, geo: dict):
     for pose in geo.get("m_BindPose") or []:
         bindposes.append({f"e{row}{column}": float(pose[f"M{column}{row}"])
                           for row in range(4) for column in range(4)})
-    if len(bindposes) != len(tree.get("m_BindPose") or []):
+    template_bindposes = tree.get("m_BindPose") or []
+    if len(bindposes) > len(template_bindposes) and allow_bindpose_growth:
+        template_bindposes.extend(
+            _identity_bind_pose() for _ in range(len(bindposes) - len(template_bindposes))
+        )
+    if len(bindposes) != len(template_bindposes):
         raise ValueError("bindpose count changed; use a matching body template")
     tree["m_BindPose"] = bindposes
+    bone_aabbs = tree.get("m_BonesAABB")
+    if isinstance(bone_aabbs, list):
+        if len(bindposes) > len(bone_aabbs) and allow_bindpose_growth:
+            bone_aabbs.extend({
+                "m_Min": {axis: float("inf") for axis in "xyz"},
+                "m_Max": {axis: float("-inf") for axis in "xyz"},
+            } for _ in range(len(bindposes) - len(bone_aabbs)))
+        if len(bone_aabbs) != len(bindposes):
+            raise ValueError("bone AABB count changed; use a matching body template")
+        tree["m_BonesAABB"] = bone_aabbs
     mesh_object.save_typetree(tree)
 
 
@@ -224,6 +247,109 @@ def _bone_name(objs, pptr):
     return game_object.read_typetree().get("m_Name") if game_object else None
 
 
+def _read_tree(obj):
+    tree = vars(obj).get("_gmi_typetree")
+    return tree if tree is not None else obj.read_typetree()
+
+
+def _template_renderer(env, renderer_name=""):
+    objects = {obj.path_id: obj for obj in env.objects}
+    renderers = [obj for obj in objects.values()
+                 if obj.type.name == "SkinnedMeshRenderer"]
+    target = None
+    for renderer in renderers:
+        game_object = objects.get(
+            renderer.read_typetree().get("m_GameObject", {}).get("m_PathID")
+        )
+        if game_object and game_object.read_typetree().get("m_Name") == renderer_name:
+            target = renderer
+            break
+    if target is None and len(renderers) == 1:
+        target = renderers[0]
+    if target is None:
+        raise ValueError(f"template SkinnedMeshRenderer not found for renderer '{renderer_name}'")
+    return objects, target
+
+
+def _template_bone_hash_map(env, renderer_name="", fallback_hashes=None):
+    """Map Mesh m_BoneNameHashes to the target SMR Transform names.
+
+    Mesh-only source libraries may synthesize ``bone_<hash>`` names when their
+    costume-specific skeleton sidecar is absent. The R32 template still has
+    the authoritative hash order and Transform names.
+    """
+    objects, renderer = _template_renderer(env, renderer_name)
+    renderer_tree = _read_tree(renderer)
+    mesh = objects.get(renderer_tree.get("m_Mesh", {}).get("m_PathID"))
+    if mesh is None or mesh.type.name != "Mesh":
+        return {}
+    hashes = list(_read_tree(mesh).get("m_BoneNameHashes") or [])
+    pptrs = list(renderer_tree.get("m_Bones") or [])
+    if not hashes:
+        hashes = list(fallback_hashes or [])
+    if len(hashes) != len(pptrs):
+        return {}
+    result = {}
+    for bone_hash, pptr in zip(hashes, pptrs):
+        name = _bone_name(objects, pptr)
+        if name is not None:
+            result.setdefault(int(bone_hash), name)
+    return result
+
+
+_HASH_BONE_NAME = re.compile(r"^bone_(-?\d+)$", re.IGNORECASE)
+
+
+def _resolve_hash_bone_names(sidecar, hash_to_name):
+    """Replace synthetic bone_<hash> names with template Transform names."""
+    if not hash_to_name:
+        return 0
+    bones = list(sidecar.get("bones") or [])
+    rename = {}
+    existing = {str(item.get("name")) for item in bones if item.get("name")}
+    for item in bones:
+        old_name = str(item.get("name") or "")
+        match = _HASH_BONE_NAME.fullmatch(old_name)
+        if not match:
+            continue
+        new_name = hash_to_name.get(int(match.group(1)))
+        if not new_name or new_name == old_name:
+            continue
+        if new_name in existing and new_name not in rename:
+            raise ValueError(
+                f"template hash bone rename collides: {old_name} -> {new_name}"
+            )
+        rename[old_name] = str(new_name)
+    if not rename:
+        return 0
+
+    def rename_item(item):
+        for key in ("name", "parentName"):
+            if item.get(key) in rename:
+                item[key] = rename[item[key]]
+
+    for item in bones:
+        rename_item(item)
+    for key in ("newBones", "extraSwingBones"):
+        for item in sidecar.get(key) or []:
+            rename_item(item)
+    if sidecar.get("rootBone") in rename:
+        sidecar["rootBone"] = rename[sidecar["rootBone"]]
+    report = sidecar.get("sourceRigRemap")
+    if isinstance(report, dict) and isinstance(report.get("bones"), dict):
+        for key, value in list(report["bones"].items()):
+            if value in rename:
+                report["bones"][key] = rename[value]
+    return len(rename)
+
+
+def _placeholder_names(sidecar):
+    return [
+        str(item.get("name")) for item in sidecar.get("bones") or []
+        if _HASH_BONE_NAME.fullmatch(str(item.get("name") or ""))
+    ]
+
+
 def _reorder_smr_bones(env, renderer_name, bone_names, root_name):
     """把模板 prefab 的 SkinnedMeshRenderer.m_Bones 按 sidecar 骨序重排。
 
@@ -231,34 +357,28 @@ def _reorder_smr_bones(env, renderer_name, bone_names, root_name):
     (父在子前，插件强制)。两者同骨不同序 → 插件无损嫁接逐位比名字会失配、跳过换网格。
     骨 Transform 都在 prefab 里，这里只按名字做一次置换，让 prefab 骨序 == sidecar ==
     mesh boneWeights，三者对齐。"""
-    objs = {o.path_id: o for o in env.objects}
-    renderers = [o for o in env.objects if o.type.name == "SkinnedMeshRenderer"]
-    target = None
-    for smr in renderers:
-        go = objs.get(smr.read_typetree().get("m_GameObject", {}).get("m_PathID"))
-        if go and go.read_typetree().get("m_Name") == renderer_name:
-            target = smr
-            break
-    if target is None and len(renderers) == 1:
-        target = renderers[0]
-    if target is None:
-        raise ValueError(f"template SkinnedMeshRenderer not found for renderer '{renderer_name}'")
+    objs, target = _template_renderer(env, renderer_name)
 
-    tree = target.read_typetree()
+    tree = _read_tree(target)
     by_name = {}
     for pptr in tree.get("m_Bones") or []:
         name = _bone_name(objs, pptr)
         if name and name not in by_name:
             by_name[name] = pptr
-    missing = [name for name in bone_names if name not in by_name]
-    if missing:
-        raise ValueError(
-            f"template prefab 缺骨 {missing[:3]}（共 {len(missing)}）；"
-            "含新增骨的 mod 需要带这些骨的模板")
-    tree["m_Bones"] = [by_name[name] for name in bone_names]
+    # New/decoration bones (in sidecar, absent from the base body template) do NOT get
+    # embedded as synthesized Transforms — Unity 6 native LoadAsset crashes on UnityPy-
+    # added objects. The runtime graft (ModRuntime BuildHybridBoneArray) builds the real
+    # skeleton from the sidecar JSON by name/order and creates the missing bones live, so
+    # the carrier SMR only needs a valid pptr per slot. Point missing slots at the root
+    # bone; the graft overwrites the whole bone array anyway.
+    fallback = by_name.get(root_name) or next(iter(by_name.values()), None)
+    if fallback is None:
+        raise ValueError("template prefab 没有可用骨 Transform，无法构建 m_Bones")
+    tree["m_Bones"] = [by_name.get(name, fallback) for name in bone_names]
     if root_name and root_name in by_name:
         tree["m_RootBone"] = by_name[root_name]
     target.save_typetree(tree)
+    target._gmi_typetree = tree
 
 
 def _object_by_container(env):
@@ -356,9 +476,27 @@ def patch_bundle(template: Path, mod_root: Path, output: Path) -> None:
                                  or getattr(obj.read(), "m_Name", "") in mesh_names)), None)
         if mesh_object is None:
             raise ValueError(f"template Mesh not found: {sorted(name for name in mesh_names if name)}")
-        _patch_mesh(mesh_object, geo)
-        sidecar = _json(item["bones"])
         renderer_name = rule.get("modRenderer") or rule.get("targetRenderer") or item["source"]
+        sidecar = _json(item["bones"])
+        hash_to_name = _template_bone_hash_map(
+            env, renderer_name, geo.get("m_BoneNameHashes")
+        )
+        bad_template_names = [name for name in hash_to_name.values()
+                              if _HASH_BONE_NAME.fullmatch(str(name))]
+        if bad_template_names:
+            raise ValueError(
+                f"template {renderer_name!r} 含 {len(bad_template_names)} 个 bone_* 占位骨；"
+                "请使用带真实游戏骨名的 R32 模板"
+            )
+        resolved = _resolve_hash_bone_names(sidecar, hash_to_name)
+        placeholders = _placeholder_names(sidecar)
+        if placeholders and resolved == 0:
+            raise ValueError(
+                f"template {renderer_name!r} 仍含 bone_* 占位骨（如 {placeholders[0]}）；"
+                "请使用带真实游戏骨名的 R32 模板"
+            )
+        item["_sidecar"] = sidecar
+        _patch_mesh(mesh_object, geo, allow_bindpose_growth=True)
         _reorder_smr_bones(env, renderer_name,
                            [bone["name"] for bone in sidecar.get("bones") or []],
                            sidecar.get("rootBone", ""))
@@ -367,7 +505,10 @@ def patch_bundle(template: Path, mod_root: Path, output: Path) -> None:
     input_text = {_asset(new_root + "/mod.json"): manifest_path.read_text(encoding="utf-8")}
     for item in renderer_inputs:
         input_text[_asset(new_root + "/" + item["geo"].name)] = item["geo"].read_text(encoding="utf-8")
-        input_text[_asset(item["skeleton"])] = item["bones"].read_text(encoding="utf-8")
+        sidecar = item.get("_sidecar") or _json(item["bones"])
+        input_text[_asset(item["skeleton"])] = json.dumps(
+            sidecar, ensure_ascii=False, indent=2
+        )
     for old_path, obj in entries:
         target_path = mapping.get(old_path)
         if obj.type.name == "TextAsset" and target_path in input_text:

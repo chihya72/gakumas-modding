@@ -1,4 +1,4 @@
-"""Blender 内的最小逆蒙皮导出闭环，不依赖游戏抓帧或 gitignored 资产。"""
+"""Blender 内的最小 AB bundle 导出闭环，不依赖游戏抓帧或 gitignored 资产。"""
 
 import json
 import sys
@@ -83,15 +83,14 @@ def _create_mesh():
     bpy.context.collection.objects.link(obj)
     group = obj.vertex_groups.new(name="Bone")
     group.add([0, 1, 2], 1.0, "REPLACE")
-    obj["gmi_profile_weights"] = True
     obj["gmi_component_id"] = "body"
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
     return obj
 
 
-def _create_cover(path):
-    image = bpy.data.images.new("cover", 2, 2, alpha=True)
+def _create_png(path):
+    image = bpy.data.images.new("png", 2, 2, alpha=True)
     image.generated_color = (0.2, 0.4, 0.8, 1.0)
     image.filepath_raw = str(path)
     image.file_format = "PNG"
@@ -101,44 +100,36 @@ def _create_cover(path):
 with tempfile.TemporaryDirectory(prefix="gmi-blender-e2e-") as tmp:
     tmp = Path(tmp)
     profile = _write_profile(tmp)
-    cover = tmp / "cover.png"
-    _create_cover(cover)
     base = tmp / "base.png"
-    packed = tmp / "packed.png"
     shade = tmp / "shade.png"
-    _create_cover(base)
-    _create_cover(packed)
-    _create_cover(shade)
+    _create_png(base)
+    _create_png(shade)
+    packed = tmp / "packed.dds"
+    gakumas_mi.core.write_rgba8_dds(
+        packed, 2, 2,
+        bytes((10, 20, 30, 255, 40, 50, 60, 255,
+               70, 80, 90, 255, 100, 110, 120, 255)),
+        srgb=False,
+    )
 
     gakumas_mi.register()
     try:
-        _create_mesh()
+        obj = _create_mesh()
         scene = bpy.context.scene
         scene.gmi_profile_dir = str(profile)
         scene.gmi_output_dir = str(tmp / "out")
         scene.gmi_package_id = "test.blender.e2e"
         scene.gmi_package_name = "Blender E2E"
         scene.gmi_author = "GakumasMI"
-        scene.gmi_cover_image = str(cover)
         scene.gmi_neutral_material = False
         scene.gmi_outline_width_mode = "DISABLE_ALL"
         scene.gmi_vertex_color_mode = "CONSTANT_BLACK"
-
-        assert bpy.ops.gmi.export_inverse_skin_mod() == {"FINISHED"}
-        package = tmp / "out" / "test.blender.e2e"
-        for relative in (
-            "mod.ini", "manifest.json", "export-report.json",
-            "Buffers/Body.BindSkin.R32_UINT.buf",
-            "Buffers/Body.IB.R16_UINT.buf",
-            "Shaders/SkinCustomCS.hlsl",
-        ):
-            assert (package / relative).is_file(), relative
-        manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
-        assert manifest["targets"] == ["mdl_chr_test-cstm-0000_body"], manifest
-        assert "hash = 4d5dfe7b" in (package / "mod.ini").read_text(encoding="utf-8")
         scene.gmi_base_color_file = str(base)
         scene.gmi_packed_mask_file = str(packed)
         scene.gmi_shade_color_file = str(shade)
+
+        package = tmp / "out" / "test.blender.e2e"
+        # bundle 导出直接消费源模型自带顶点组，不存在传权这一步。
         assert bpy.ops.gmi.export_bundle_source() == {"FINISHED"}
         bundle_src = package / "bundle-src"
         for relative in (

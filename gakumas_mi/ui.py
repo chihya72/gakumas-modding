@@ -40,7 +40,7 @@ def draw_profile_step(layout, scene):
     row = reference.row()
     row.scale_y = 1.3
     row.operator("gmi.import_weighted_reference", text="导入参考模型与骨架", icon="ARMATURE_DATA")
-    reference.label(text="参考模型是传权和描边的数据来源，导出前别删", icon="ERROR")
+    reference.label(text="参考模型是发型描边取色和绑定体检的数据来源，导出前别删", icon="ERROR")
 
     header, advanced = layout.panel("GMI_extract_advanced", default_closed=True)
     header.label(text="高级 / 分步 / 排错", icon="PREFERENCES")
@@ -52,43 +52,6 @@ def draw_profile_step(layout, scene):
         advanced.operator("gmi.update_profile_from_frame_dump", text="换新抓帧校验并更新配置档", icon="FILE_REFRESH")
         advanced.operator("gmi.import_profile_object", text="导入配置档全部对象（排错）", icon="OUTLINER_OB_ARMATURE")
         advanced.operator("gmi.import_reference", text="只导入抓帧参考模型（无权重）", icon="IMPORT")
-
-
-def draw_binding_step(layout, scene):
-    box = layout.box()
-    box.label(text="把权重从参考模型转到作者模型", icon="MOD_ARMATURE")
-    box.label(text="前提：作者模型已对齐参考模型（T-pose、同比例）")
-    box.label(text="操作：3D 视图里只激活作者网格，再点按钮", icon="RESTRICT_SELECT_OFF")
-
-    if _is_hair_package(scene):
-        box.prop(scene, "gmi_transfer_risk_distance")
-        row = box.row()
-        row.scale_y = 1.5
-        row.operator("gmi.transfer_profile_weights", text="绑定发型：传递权重", icon="MOD_DATA_TRANSFER")
-        prop = layout.box()
-        prop.label(text="配套发饰（可选，需要独立的发饰网格对象）", icon="BONE_DATA")
-        prop.label(text="不做发饰=保留游戏原发饰；做发饰按软硬二选一：")
-        row = prop.row()
-        row.scale_y = 1.3
-        row.operator("gmi.bind_hairprop_rigid", text="硬质发饰：刚体绑定到 Head_Hair", icon="CONSTRAINT_BONE")
-        prop.operator("gmi.transfer_hairprop_weights", text="软质发饰：传递权重（可摆动）", icon="MOD_DATA_TRANSFER")
-        prop.operator("gmi.transfer_hairprop_weights_smart", text="实验：智能传递发饰权重", icon="MOD_DATA_TRANSFER")
-        prop.label(text="刚体会清掉已有权重，两个按钮别连着点", icon="ERROR")
-    else:
-        box.prop(scene, "gmi_transfer_risk_distance")
-        row = box.row()
-        row.scale_y = 1.5
-        row.operator("gmi.transfer_profile_weights", text="绑定身体：传递权重", icon="MOD_DATA_TRANSFER")
-
-        header, advanced = layout.panel("GMI_body_smart_transfer", default_closed=True)
-        header.label(text="实验：薄缝 / 多层模型智能传权", icon="EXPERIMENTAL")
-        if advanced:
-            advanced.operator("gmi.transfer_profile_weights_smart", text="实验：智能传递权重", icon="MOD_DATA_TRANSFER")
-    review = layout.box()
-    review.label(text="传权后复核", icon="RESTRICT_SELECT_OFF")
-    review.operator("gmi.select_high_risk_vertices", text="选中高风险顶点", icon="RESTRICT_SELECT_OFF")
-    review.label(text="离身体远的顶点权重是猜的：袖口/裙摆重点看")
-    review.label(text="问题顶点用 Weight Paint 修，或导出时关它们的描边")
 
 
 def draw_texture_step(layout, scene, context):
@@ -170,14 +133,6 @@ def draw_texture_step(layout, scene, context):
         advanced.prop(scene, "gmi_t1_a_file", text=a_label)
         advanced.label(text="填四张=整图合成；只填部分=生成后覆盖对应通道")
 
-    header, texture = layout.panel("GMI_single_texture_export", default_closed=True)
-    header.label(text="替代流程：不换网格，只替换一张贴图", icon="TEXTURE")
-    if texture:
-        texture.prop(scene, "gmi_texture_key")
-        texture.prop(scene, "gmi_texture_file")
-        texture.label(text="贴图键示例：body.baseColor / hair.baseColor")
-        texture.operator("gmi.export_texture_mod", text="导出单贴图替换 mod", icon="TEXTURE")
-
 
 def draw_export_step(layout, scene, context):
     package = layout.box()
@@ -186,7 +141,6 @@ def draw_export_step(layout, scene, context):
     package.prop(scene, "gmi_package_id")
     package.prop(scene, "gmi_package_name")
     package.prop(scene, "gmi_author")
-    package.prop(scene, "gmi_cover_image", text="预览图（必填）")
 
     mesh = layout.box()
     mesh.label(text="描边设置", icon="GREASEPENCIL")
@@ -200,8 +154,8 @@ def draw_export_step(layout, scene, context):
     mesh.prop(scene, "gmi_outline_width_mode")
 
     export = layout.box()
-    export.label(text="校验并导出", icon="EXPORT")
-    # 漏填 t0 不会报错,而是 mod.ini 静默不生成 ps-t0 → 游戏内颜色错乱,这里必须显式提醒
+    export.label(text="导出 AB bundle", icon="EXPORT")
+    # 漏填 t0 不会报错,颜色会直接沿用游戏原贴图 → 错乱,这里必须显式提醒
     if not scene.gmi_base_color_file:
         export.label(text="未填基础色 t0：游戏会沿用原贴图，颜色错乱", icon="ERROR")
     obj = context.active_object
@@ -209,52 +163,22 @@ def draw_export_step(layout, scene, context):
     accepted = {scene.gmi_component_id}
     if _is_hair_package(scene):
         accepted.add("hairprop")
-    ready = False
-    if obj and obj.type == "MESH" and component in accepted:
-        ready = bool(obj.get("gmi_profile_weights") or obj.get("gmi_source_vertex_count"))
-        if obj.get("gmi_rigid_head_follow"):
-            export.label(text="已识别：Head_Hair 刚体发饰", icon="CHECKMARK")
-        elif obj.get("gmi_profile_weights"):
-            export.label(text="已识别：已传权的作者网格", icon="CHECKMARK")
-        else:
-            export.label(text="已识别：原拓扑参考网格", icon="CHECKMARK")
+    has_bundle_weights = bool(
+        obj and obj.type == "MESH" and component in accepted and obj.vertex_groups
+    )
+    if has_bundle_weights:
+        export.label(text=f"已识别：{len(obj.vertex_groups)} 个顶点组的作者网格",
+                     icon="CHECKMARK")
     else:
         target_name = "发型" if _is_hair_package(scene) else "身体"
-        export.label(text=f"请先激活已在②绑定过的{target_name}作者网格", icon="ERROR")
-    if _is_hair_package(scene):
-        hair_objects = [
-            obj for obj in context.scene.objects
-            if obj.type == "MESH" and obj.get("gmi_profile_weights")
-            and obj.get("gmi_component_id") == "hair"
-        ]
-        prop_objects = [
-            obj for obj in context.scene.objects
-            if obj.type == "MESH" and obj.get("gmi_profile_weights")
-            and obj.get("gmi_component_id") == "hairprop"
-        ]
-        ready = ready and len(hair_objects) == 1 and len(prop_objects) <= 1
-        if prop_objects and not scene.gmi_hairprop_base_color_file:
-            export.label(text="发饰已绑定但未填发饰 t0，发饰颜色会错乱", icon="ERROR")
-        if ready:
-            export.label(
-                text=("将导出完整包：发型 + 发饰" if prop_objects
-                      else "将只替换发型，保留游戏原发饰"),
-                icon="CHECKMARK",
-            )
-        else:
-            export.label(text="需要恰好 1 个已绑定发型网格、至多 1 个发饰网格", icon="INFO")
-    row = export.row()
-    row.scale_y = 1.6
-    row.enabled = ready
-    row.operator("gmi.export_validated_mod", text="校验并导出模组", icon="EXPORT")
-    export.label(text="导出后把包文件夹放进游戏 Mods 目录，进游戏换装验证")
-    has_weights = ready and bool(obj and obj.get("gmi_profile_weights"))
+        export.label(text=f"请先激活带顶点组权重的{target_name}作者网格", icon="ERROR")
     bundle_row = export.row()
-    bundle_row.enabled = has_weights
+    bundle_row.scale_y = 1.6
+    bundle_row.enabled = has_bundle_weights
     bundle_row.operator("gmi.export_bundle_source", text="导出 bundle 源", icon="PACKAGE")
-    if ready and not has_weights:
-        export.label(text="bundle 源要求已传递配置档权重", icon="INFO")
-    if has_weights:
+    if not has_bundle_weights:
+        export.label(text="bundle 源需要作者模型顶点组权重", icon="INFO")
+    if has_bundle_weights:
         export.prop(scene, "gmi_bundle_template")
         export.prop(scene, "gmi_bundle_python")
         patch_row = export.row()
@@ -265,16 +189,36 @@ def draw_export_step(layout, scene, context):
         if not scene.gmi_bundle_template:
             export.label(text="一键打包需先选 R32 模板 bundle", icon="INFO")
 
+    header, bones = layout.panel("GMI_export_bonemap", default_closed=True)
+    header.label(text="骨骼映射表（源骨 → 游戏骨）", icon="GROUP_BONE")
+    if bones:
+        bones.label(text="预设认识的骨架预填后无需改动；导出报「承重关节没拿到权重」时用这里",
+                    icon="INFO")
+        bones.label(text="左列=目标游戏骨（身体骨填这个）；右列=装饰物理策略（飘带/花边选这个）")
+        row = bones.row(align=True)
+        op = row.operator("gmi.build_bone_map", text="扫描源骨骼", icon="VIEWZOOM")
+        op.only_unmapped = True
+        op = row.operator("gmi.build_bone_map", text="列出全部", icon="OUTLINER")
+        op.only_unmapped = False
+        row.operator("gmi.clear_bone_map", text="", icon="X")
+        if scene.gmi_bone_map:
+            bones.template_list("GMI_UL_bone_map", "", scene, "gmi_bone_map",
+                                scene, "gmi_bone_map_index", rows=8)
+            pending = [item.source for item in scene.gmi_bone_map if not item.target.strip()]
+            if pending:
+                bones.label(text=f"还有 {len(pending)} 个骨没指定目标（留空=交给自动判断）",
+                            icon="ERROR")
+            row = bones.row(align=True)
+            row.operator("gmi.save_bone_map", text="存为 JSON", icon="FILE_TICK")
+            row.operator("gmi.load_bone_map", text="从 JSON 读入", icon="IMPORT")
+
     header, advanced = layout.panel("GMI_export_advanced", default_closed=True)
-    header.label(text="高级 / 外部模型骨骼 / 分步导出", icon="PREFERENCES")
+    header.label(text="高级 / 外部模型骨骼", icon="PREFERENCES")
     if advanced:
-        # MMD 等外部模型常有顶点残留在控制/物理骨上,导出报"没有可导出的配置档兼容权重"
-        # 时在这里填兜底骨(一般填 Hips)或提供骨骼映射 JSON
+        advanced.prop(scene, "gmi_source_rig")
         advanced.prop(scene, "gmi_bone_remap_file")
-        advanced.prop(scene, "gmi_unmapped_bone_fallback")
-        advanced.label(text="导出报「顶点没有兼容权重」→ 兜底骨填 Hips", icon="INFO")
-        advanced.operator("gmi.validate_mesh", text="仅校验，不导出", icon="CHECKMARK")
-        advanced.operator("gmi.export_inverse_skin_mod", text="跳过校验直接导出（不推荐）", icon="ARMATURE_DATA")
+        advanced.prop(scene, "gmi_physics_override_file")
+        advanced.label(text="这两个 JSON 与上面的骨骼映射表等价，表里填过的优先", icon="INFO")
 
 
 class GMI_PT_main(Panel):
@@ -285,7 +229,8 @@ class GMI_PT_main(Panel):
     bl_category = "GakumasMI"
 
     def draw_header(self, context):
-        self.layout.label(text="v0.7.8")
+        from . import bl_info
+        self.layout.label(text="v%d.%d.%d" % bl_info["version"])
 
     def draw(self, context):
         scene = context.scene
@@ -320,17 +265,8 @@ class GMI_PT_step_profile(_GMIStepPanel):
         draw_profile_step(layout, context.scene)
 
 
-class GMI_PT_step_binding(_GMIStepPanel):
-    bl_label = "② 绑定模型"
-    bl_idname = "GMI_PT_step_binding"
-    bl_options = {"DEFAULT_CLOSED"}
-
-    def draw_step(self, layout, context):
-        draw_binding_step(layout, context.scene)
-
-
 class GMI_PT_step_texture(_GMIStepPanel):
-    bl_label = "③ 准备材质"
+    bl_label = "② 准备材质"
     bl_idname = "GMI_PT_step_texture"
     bl_options = {"DEFAULT_CLOSED"}
 
@@ -339,7 +275,7 @@ class GMI_PT_step_texture(_GMIStepPanel):
 
 
 class GMI_PT_step_export(_GMIStepPanel):
-    bl_label = "④ 导出模组"
+    bl_label = "③ 导出 AB bundle"
     bl_idname = "GMI_PT_step_export"
     bl_options = {"DEFAULT_CLOSED"}
 
@@ -347,10 +283,32 @@ class GMI_PT_step_export(_GMIStepPanel):
         draw_export_step(layout, context.scene, context)
 
 
+class GMI_UL_bone_map(bpy.types.UIList):
+    """一行 = 一根带权重的源骨。左边源骨名 + 权重占比，右边下拉搜索选游戏骨。"""
+
+    def draw_item(self, context, layout, data, item, icon, active_data, active_prop, index):
+        row = layout.row(align=True)
+        filled = bool(item.target.strip())
+        info = row.row(align=True)
+        info.scale_x = 0.55
+        info.label(text=item.source,
+                   icon="CHECKMARK" if filled else ("DOT" if item.strategy != "auto"
+                                                    else "ERROR"))
+        mass = info.row()
+        mass.scale_x = 0.35
+        mass.label(text=f"{item.mass:.2f}%")
+        row.prop_search(item, "target", context.scene, "gmi_bone_targets",
+                        text="", icon="BONE_DATA")
+        # 填了目标骨就是确定映射,装饰物理策略对它没意义,不画
+        strategy = row.row(align=True)
+        strategy.enabled = not filled
+        strategy.prop(item, "strategy", text="")
+
+
 CLASSES = (
+    GMI_UL_bone_map,
     GMI_PT_main,
     GMI_PT_step_profile,
-    GMI_PT_step_binding,
     GMI_PT_step_texture,
     GMI_PT_step_export,
 )

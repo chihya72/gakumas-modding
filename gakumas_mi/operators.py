@@ -19,6 +19,65 @@ def _resolve_patch_script():
     raise FileNotFoundError("找不到 patch_unity_bundle.py（addon 内或 ../tools 均无）")
 
 
+# mmd_tools 导入会带这两个记账用顶点组,它们不是骨:权重是每顶点 1.0,
+# 当成骨会导出报错;若按提示填兜底骨 Hips,整个模型会塌成刚体。直接忽略。
+NON_BONE_GROUPS = frozenset({"mmd_edge_scale", "mmd_vertex_order"})
+
+def _is_bone_group(name):
+    return bool(name) and not name.startswith("GMI_") and name not in NON_BONE_GROUPS
+
+
+def _weighted_group_mass(obj):
+    """每个骨顶点组的权重占比(%),按占比降序返回。"""
+    mass, total = {}, 0.0
+    names = {group.index: group.name for group in obj.vertex_groups}
+    for vertex in obj.data.vertices:
+        for item in vertex.groups:
+            name = names.get(item.group)
+            if item.weight <= 0.0 or not _is_bone_group(name):
+                continue
+            mass[name] = mass.get(name, 0.0) + item.weight
+            total += item.weight
+    scale = 100.0 / total if total else 0.0
+    return sorted(((name, value * scale) for name, value in mass.items()),
+                  key=lambda pair: -pair[1])
+
+
+def _bind_sanity_report(obj, remap):
+    """跑 AB 蒙皮姿势模拟，返回 (失败区, 未测区, 明细) —— 拿不到就返回 None 跳过。
+
+    静止永远看着对（rest 时 `游戏骨·bindpose` = 恒等），所以坏绑定/错权重只有骨头转起来才暴露；
+    dress_2219 就是这样一路混到游戏里才炸手指。这里在导出前按游戏骨架摆一次手指，用场景里的
+    GMI 参考体（游戏原生身体+原生权重）当已知正确基线做比值。结构性绝对阈值已实测不可用
+    （捻骨/`_1` 双链干扰），所以只用这个功能性判据，细节见
+    ai-model-workspace/external-model-conversion-workflow.md §2 步骤 6。
+    """
+    here = Path(__file__).resolve().parent
+    for candidate in (here / "simulate_ab_skinning.py",
+                      here.parent / "tools" / "simulate_ab_skinning.py"):
+        if candidate.is_file():
+            break
+    else:
+        return None
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("gmi_ab_sim", candidate)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        _mod, reference, game = module.find_objects()
+    except SystemExit:
+        return None  # 场景里没有参考体，作者没走带权重参考流程，不拦
+    report = module.measure(obj, reference, game, remap)
+    failed, unmeasured = [], []
+    for region in ("fingers", "forearm"):
+        ratio = report.get(region, {}).get("ratio")
+        if ratio is None:
+            unmeasured.append(region)
+        elif ratio > module.FAIL_RATIO:
+            failed.append(f"{region} {ratio:.2f}x")
+    return failed, unmeasured, report
+
+
 def _run_bundle_patch(scene, mod_root, output_bundle):
     """用外部 Python（装了 UnityPy）跑模板补丁，把 bundle 源灌进 R32 模板。"""
     template = bpy.path.abspath(scene.gmi_bundle_template)
@@ -35,9 +94,12 @@ def _run_bundle_patch(scene, mod_root, output_bundle):
     except FileNotFoundError:
         raise RuntimeError(f"找不到 Python 可执行文件：{python_exe}（在「外部 Python」里填绝对路径）")
     if proc.returncode != 0:
-        tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-8:]
+        output = "\n".join(
+            stream.strip() for stream in (proc.stdout or "", proc.stderr or "") if stream.strip()
+        )
+        tail = output.splitlines()[-12:] if output else ["外部 Python 没有输出；请检查 Python 路径和启动权限"]
         raise RuntimeError("模板补丁失败（外部 Python 是否装了 UnityPy/Pillow？）：\n"
-                           + "\n".join(tail))
+                           + f"returncode={proc.returncode}\n" + "\n".join(tail))
     return output_bundle
 
 
@@ -92,30 +154,6 @@ def _png_to_dds(image_path, srgb=True, alpha_override=None):
         bpy.data.images.remove(image)
 
 
-def _prepare_cover_image(path, max_dim=1024):
-    """预览图过大时用 Blender 缩到 ≤max_dim 边长并存临时 PNG；否则原样返回。"""
-    try:
-        image = bpy.data.images.load(path, check_existing=False)
-    except RuntimeError as exc:
-        raise ValueError(f"无法读取预览图：{exc}")
-    try:
-        width, height = int(image.size[0]), int(image.size[1])
-        if width <= 0 or height <= 0:
-            raise ValueError(f"预览图尺寸无效：{path}")
-        if max(width, height) <= max_dim:
-            return path
-        scale = max_dim / max(width, height)
-        image.scale(max(1, int(width * scale)), max(1, int(height * scale)))
-        handle = tempfile.NamedTemporaryFile(delete=False, suffix=".png", prefix="gmi_cover_")
-        handle.close()
-        image.filepath_raw = handle.name
-        image.file_format = "PNG"
-        image.save()
-        return handle.name
-    finally:
-        bpy.data.images.remove(image)
-
-
 def _neutral_material_dds(semantic, component_id="body"):
     """生成临时的中性 t1/t4 DDS，盖掉游戏原版遮罩/阴影对新贴图的干扰。"""
     if semantic == "packedMask":
@@ -130,7 +168,7 @@ from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
 from mathutils.kdtree import KDTree
 
-from . import core, weight_transfer
+from . import core
 
 
 # COLOR.b low nibble drives outline extrusion width. 0xFF keeps the neutral
@@ -447,77 +485,174 @@ def _profile_weight_reference(context, component_id=None):
     return references[0]
 
 
-def _world_bounds(obj):
-    """Return world-space AABB (min, max), center and diagonal length for an object."""
-    corners = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
-    lo = Vector((min(c.x for c in corners), min(c.y for c in corners), min(c.z for c in corners)))
-    hi = Vector((max(c.x for c in corners), max(c.y for c in corners), max(c.z for c in corners)))
-    return lo, hi, (lo + hi) * 0.5, (hi - lo).length
+def _source_bone_parents(obj):
+    armature = next(
+        (modifier.object for modifier in obj.modifiers
+         if modifier.type == "ARMATURE" and modifier.object), None
+    )
+    if not armature:
+        return {}
+    return {
+        bone.name: bone.parent.name if bone.parent else None
+        for bone in armature.data.bones
+    }
 
 
-def _check_transfer_alignment(target, reference):
-    """Guard the one-click weight transfer against a misaligned author mesh.
+def _source_bone_positions(obj):
+    armature = next(
+        (modifier.object for modifier in obj.modifiers
+         if modifier.type == "ARMATURE" and modifier.object), None
+    )
+    if not armature:
+        return {}
+    return {
+        bone.name: core._to_unity(armature.matrix_world @ bone.head_local)
+        for bone in armature.data.bones
+    }
 
-    The inverse-skin operator and the per-frame recovered matrices live in the
-    reference body's bind space. If the author mesh does not overlap the reference
-    at a comparable size, both the nearest-surface weights and the exported bind
-    positions (export bakes ``matrix_world @ co``) will be wrong. So a clear hard
-    error here is far better than silently producing a broken Mod.
 
-    Returns a list of soft warnings; raises ValueError on a hard misalignment.
-    """
-    ref_lo, ref_hi, ref_center, ref_diag = _world_bounds(reference)
-    tgt_lo, tgt_hi, tgt_center, tgt_diag = _world_bounds(target)
-    if ref_diag <= 1e-6 or tgt_diag <= 1e-6:
-        raise ValueError("参考身体或作者模型的包围盒为空，无法判断对齐情况")
+def _matrix_json(matrix):
+    return {
+        f"M{row}{column}": float(matrix[row][column])
+        for row in range(4) for column in range(4)
+    }
 
-    # 1. Size: HSKI body and the author body should be roughly the same scale.
-    ratio = tgt_diag / ref_diag
-    if ratio < 0.5 or ratio > 2.0:
-        raise ValueError(
-            f"作者模型尺寸与参考身体相差过大（比例 {ratio:.2f}，应在 0.5~2.0 之间）。"
-            "请把模型缩放到与参考身体接近，并按 Ctrl+A 应用缩放后再传权。"
+
+def _source_bone_sidecar_records(obj):
+    armature = next(
+        (modifier.object for modifier in obj.modifiers
+         if modifier.type == "ARMATURE" and modifier.object), None
+    )
+    if not armature:
+        return []
+    conversion = Matrix((
+        (1, 0, 0, 0), (0, 0, 1, 0), (0, -1, 0, 0), (0, 0, 0, 1),
+    ))
+    inverse_conversion = conversion.inverted()
+    result = []
+    for bone in armature.data.bones:
+        parent_matrix = bone.parent.matrix_local if bone.parent else Matrix.Identity(4)
+        local = parent_matrix.inverted() @ bone.matrix_local
+        unity = conversion @ local @ inverse_conversion
+        bone_world = armature.matrix_world @ bone.matrix_local
+        bind_pose = conversion @ bone_world.inverted() @ obj.matrix_world @ inverse_conversion
+        result.append({
+            "name": bone.name,
+            "localPosition": list(unity.translation),
+            "localRotation": list(unity.to_quaternion()),
+            "localScale": list(unity.to_scale()),
+            "length": float(bone.length),
+            "bindPose": _matrix_json(bind_pose),
+        })
+    return result
+
+
+def _target_bone_positions(skeleton):
+    positions = {}
+    for node in skeleton.get("nodes", []):
+        bind_pose = node.get("bindPose")
+        if node.get("name") and bind_pose:
+            positions[node["name"]] = tuple(_bind_pose_matrix(bind_pose).inverted().translation)
+    return positions
+
+
+def _extend_bundle_skeleton(skeleton, bone_map, source_bind, sidecar_report):
+    extra = sidecar_report.get("newBones") or []
+    if not extra:
+        return [], []
+    nodes = skeleton.setdefault("nodes", [])
+    node_by_name = {str(node.get("name")): index for index, node in enumerate(nodes)}
+    next_index = max((int(index) for index in bone_map.values()), default=-1) + 1
+    added_nodes, added_bind_poses = [], []
+    for item in extra:
+        name = str(item.get("name") or "")
+        bind_pose = item.get("bindPose")
+        if not name or bind_pose is None or name in bone_map:
+            continue
+        parent_name = str(item.get("parentName") or "Hips")
+        parent_index = node_by_name.get(parent_name, node_by_name.get("Hips", -1))
+        node = {
+            "name": name,
+            "parent": parent_index,
+            "weightedIndex": next_index,
+            "bindPose": bind_pose,
+            "localPosition": item.get("localPosition") or [0.0, 0.0, 0.0],
+            "localRotation": item.get("localRotation") or [0.0, 0.0, 0.0, 1.0],
+            "localScale": item.get("localScale") or [1.0, 1.0, 1.0],
+        }
+        nodes.append(node)
+        node_by_name[name] = len(nodes) - 1
+        bone_map[name] = next_index
+        source_bind[name] = _bind_pose_matrix(bind_pose).inverted()
+        added_nodes.append(node)
+        added_bind_poses.append(bind_pose)
+        next_index += 1
+    return added_nodes, added_bind_poses
+
+
+def _form_bone_map(scene):
+    """骨骼映射表单里作者填过的行。空目标=不干预,交给自动判断。"""
+    return {item.source: item.target.strip()
+            for item in getattr(scene, "gmi_bone_map", ())
+            if item.source and item.target.strip()}
+
+
+def _form_physics_overrides(scene):
+    """表单里选过装饰物理策略的行(填了目标骨的行不算,那已经是确定映射)。"""
+    return {item.source: item.strategy
+            for item in getattr(scene, "gmi_bone_map", ())
+            if item.source and item.strategy != "auto" and not item.target.strip()}
+
+
+def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
+    explicit = {}
+    if scene.gmi_bone_remap_file:
+        remap_data = core.load_json(Path(bpy.path.abspath(scene.gmi_bone_remap_file)))
+        explicit = dict(remap_data.get("bones", remap_data))
+    # 面板表单比外部 JSON 更"手边",冲突时以表单为准
+    explicit.update(_form_bone_map(scene))
+    source_names = [
+        group.name for group in obj.vertex_groups if _is_bone_group(group.name)
+    ]
+    report = core.build_bone_remap(
+        source_names,
+        bone_map,
+        parent_by_name=_source_bone_parents(obj),
+        preset_name=getattr(scene, "gmi_source_rig", "auto"),
+    )
+    remap = dict(report["bones"])
+    remap.update(explicit)
+    if skeleton is not None:
+        physics_overrides = {}
+        if getattr(scene, "gmi_physics_override_file", ""):
+            override_data = core.load_json(
+                Path(bpy.path.abspath(scene.gmi_physics_override_file)))
+            physics_overrides = dict(override_data.get("physics", override_data))
+        # 同上:面板表单比外部 JSON 更"手边",冲突时以表单为准
+        physics_overrides.update(_form_physics_overrides(scene))
+        physics_report = core.build_accessory_physics_remap(
+            [{"name": name, "position": position}
+             for name, position in _source_bone_positions(obj).items()],
+            [{"name": name, "position": position}
+             for name, position in _target_bone_positions(skeleton).items()
+             if name in bone_map],
+            report["accessoryBones"],
+            parent_by_name=_source_bone_parents(obj),
+            body_remap=remap,
+            overrides=physics_overrides,
         )
-
-    # 2. Position: centers must be close and the bounding boxes must overlap.
-    center_offset = (tgt_center - ref_center).length
-    if center_offset > 0.5 * ref_diag:
-        raise ValueError(
-            f"作者模型与参考身体未对齐（中心偏移 {center_offset:.3f} m，"
-            f"参考身体对角线 {ref_diag:.3f} m）。请把模型移动到与参考身体重合后再传权。"
+        remap = core.merge_accessory_bone_remap(
+            remap, physics_report["bones"], physics_report["rigidParent"]
         )
-    if any(tgt_hi[i] < ref_lo[i] or tgt_lo[i] > ref_hi[i] for i in range(3)):
-        raise ValueError("作者模型的包围盒与参考身体没有重叠，请先对齐后再传权。")
-
-    # 3. Soft warning: unapplied transform is the most common cause of the above.
-    warnings = []
-    _, rotation, scale = target.matrix_basis.decompose()
-    if any(abs(component - 1.0) > 1e-3 for component in scale) or rotation.angle > 1e-3:
-        warnings.append(
-            "作者模型存在未应用的缩放/旋转，建议先按 Ctrl+A 应用变换，避免法线翻转和尺寸误差"
+        report["newBones"] = core.build_source_extra_bones(
+            _source_bone_sidecar_records(obj), physics_report["newBones"],
+            parent_by_name=_source_bone_parents(obj), body_remap=remap,
         )
-    return warnings
-
-
-def _select_vertex_group(context, obj, group_name):
-    group = obj.vertex_groups.get(group_name)
-    if not group:
-        raise ValueError(f"找不到顶点组：{group_name}")
-    group_index = group.index
-    if context.mode != "OBJECT":
-        bpy.ops.object.mode_set(mode="OBJECT")
-    for selected in context.selected_objects:
-        selected.select_set(False)
-    obj.select_set(True)
-    context.view_layer.objects.active = obj
-    selected_count = 0
-    for vertex in obj.data.vertices:
-        selected = any(item.group == group_index and item.weight > 0.0 for item in vertex.groups)
-        vertex.select = selected
-        selected_count += 1 if selected else 0
-    bpy.ops.object.mode_set(mode="EDIT")
-    bpy.ops.mesh.select_mode(type="VERT")
-    return selected_count
+        report["physicsInheritance"] = physics_report
+    report["explicitBones"] = explicit
+    report["bones"] = remap
+    report["unmapped"] = [name for name in source_names if name not in remap]
+    return remap, report
 
 
 def _semantic_bone_names(group_names):
@@ -750,26 +885,13 @@ def _synthesize_export_native_colors(profile_dir, component_id, data, target_bas
     #   R高4位 ≈ 4.08×baseR, R低4位 ≈ 1.03×baseG, G高4位 ≈ 0.63×baseB
     # 描边 VS 解出 o1≈基础色,×全局常量 → 衣服自身颜色的暗化描边(贴合衣服、不死黑)。
     # ramp行(g低4位)/宽度(b)/光照(a) 仍按材质预设(防色块、对称)。
-    def _nib(value):
-        return max(0, min(15, int(round(value))))
-
-    # 原版描边色逐通道曲线(实测自两套服装 0628outfit + saki):描边色 = 基础色经一条
-    # 「暗化 + 越亮越暖」曲线 —— R 随基础R 明显上升(亮处达 ~4/15),G/B 偏低(~1-2/15)。
-    # 效果:暗/中性面→暗灰线;亮/白面→暗线偏暖;肤色→棕。整体偏暗,不是高饱和红。
-    # 曲线改陡(实测锚点 saki:灰0.55→R nibble~1、米0.99→~5):R 用 5.0×base^2.7 → 灰面保持
-    # 暗(~1/15,和原版灰衣一致、对比足)、亮/米面才提到 ~5/15(暖)。G/B 保持低平(原版亦如此)。
+    # 曲线与暗部塌绿的处理都在 core.outline_nibbles_from_base。
     OUTLINE_GAIN = 1.0   # 整体微调:实机整体偏弱调>1,偏强调<1
-    materials = data.get("materials", [])
-    color_per_slot = color_per_slot or {}
     colors = []
-    encoded = 0
     for index in range(len(tgt_uv)):
-        br = min(1.0, max(0.0, float(tgt_rgb[index][0])))
-        bg = min(1.0, max(0.0, float(tgt_rgb[index][1])))
-        bb = min(1.0, max(0.0, float(tgt_rgb[index][2])))
-        r_high = _nib(OUTLINE_GAIN * 5.0 * br ** 2.7)
-        r_low = _nib(OUTLINE_GAIN * 1.50 * bg ** 0.41)
-        g_high = _nib(OUTLINE_GAIN * 1.50 * bb ** 0.86)
+        r_high, r_low, g_high = core.outline_nibbles_from_base(
+            tgt_rgb[index][0], tgt_rgb[index][1], tgt_rgb[index][2], OUTLINE_GAIN
+        )
         # 保留 gather 已写好的 ramp行(g低)/宽度(b,已按「描边宽度」处理)/光照(a);只改描边色 R/G高位
         existing = data["colors"][index] if index < len(data["colors"]) else (0.0, 0.0, 1.0, 0.0)
         g8 = core._safe_unorm8(existing[1])
@@ -958,6 +1080,12 @@ def _inverse_skin_export_data(
     if fallback_bone and fallback_bone not in bone_map:
         raise ValueError(f"兜底骨骼不在配置档中：{fallback_bone}")
     group_names = {group.index: group.name for group in obj.vertex_groups}
+    weighted_group_indices = {
+        item.group
+        for vertex in mesh.vertices
+        for item in vertex.groups
+        if item.weight > 0.0
+    }
     armature_obj = next(
         (modifier.object for modifier in obj.modifiers
          if modifier.type == "ARMATURE" and modifier.object), None
@@ -987,11 +1115,12 @@ def _inverse_skin_export_data(
     corrections = [identity_correction] if source_rig_weights else []
     unresolved = set()
     for group_index, group_name in group_names.items():
-        if group_name.startswith("GMI_"):
+        if not _is_bone_group(group_name):
             continue
         mapped_name = remap.get(group_name, automatic_remap.get(group_name, group_name))
         if mapped_name not in bone_map:
-            unresolved.add(group_name)
+            if group_index in weighted_group_indices:
+                unresolved.add(group_name)
             if not fallback_bone:
                 continue
             mapped_name = fallback_bone
@@ -1158,8 +1287,6 @@ def _inverse_skin_export_data(
 
 def _prepare_bundle_export_data(context, obj, scene):
     component_id = _object_component_id(obj, scene)
-    if not obj.get("gmi_profile_weights"):
-        raise ValueError("导出 bundle 源要求先完成「传递配置档权重」")
     _sync_object_mesh_data(context, obj)
     profile_dir = bpy.path.abspath(scene.gmi_profile_dir)
     resolved = _resolve_body_json_library(scene, component_id)
@@ -1172,10 +1299,16 @@ def _prepare_bundle_export_data(context, obj, scene):
         node["name"]: _bind_pose_matrix(node["bindPose"]).inverted()
         for node in skeleton["nodes"] if node.get("weightedIndex") is not None
     }
-    remap = {}
-    if scene.gmi_bone_remap_file:
-        remap_data = core.load_json(Path(bpy.path.abspath(scene.gmi_bone_remap_file)))
-        remap = remap_data.get("bones", remap_data)
+    remap, remap_report = _resolve_source_bone_remap(obj, bone_map, scene, skeleton)
+    # 硬闸门:承重关节零权重就别导了。这类错误静止完全看不出、进游戏才炸,
+    # 而位置匹配永远能返回一个骨名,所以不拦就是静默出废品。
+    coverage_error = core.critical_coverage_error(
+        [name for name, _mass in _weighted_group_mass(obj)], remap, bone_map)
+    if coverage_error:
+        raise ValueError(coverage_error)
+    extra_nodes, extra_bind_poses = _extend_bundle_skeleton(
+        skeleton, bone_map, source_bind, remap_report.get("newBones") or {}
+    )
     data = _inverse_skin_export_data(
         obj, bone_map, source_bind, remap, scene.gmi_unmapped_bone_fallback.strip(),
         source_rig_weights=True,
@@ -1183,6 +1316,13 @@ def _prepare_bundle_export_data(context, obj, scene):
         vertex_color_mode=scene.gmi_vertex_color_mode,
         color_per_slot=_material_slot_color_map(obj),
     )
+    data["bundle_extra_skeleton_nodes"] = extra_nodes
+    data["bundle_extra_bind_poses"] = extra_bind_poses
+    data["source_rig_report"] = remap_report
+    sanity = _bind_sanity_report(obj, remap)
+    if sanity:
+        failed, unmeasured, report = sanity
+        data["bind_sanity"] = {"failed": failed, "unmeasured": unmeasured, "detail": report}
     if component_id == "hair":
         reference = _profile_weight_reference(context, "hair")
         if reference.get("gmi_component_id") != "hair":
@@ -1274,15 +1414,30 @@ def _export_bundle_png(source, destination):
     if source.suffix.lower() == ".png":
         shutil.copy2(source, destination)
         return
-    try:
-        image = bpy.data.images.load(str(source), check_existing=False)
-    except RuntimeError as exc:
-        raise ValueError(f"无法读取贴图：{source}: {exc}") from exc
-    try:
+    def non_color(image):
+        # 必须在写像素之前设。给 colorspace_settings.name 赋值会重建图像缓冲、丢掉
+        # 已写入的像素——赋同一个值也一样——存盘就是纯黑。t0 走 copy2 所以看不出来,
+        # t1/t4 从烘焙的 DDS 转 PNG 就会整张黑 → 游戏里 ShadeColor=黑,整身发暗。
         try:
             image.colorspace_settings.name = "Non-Color"
         except Exception:
             pass
+        return image
+
+    try:
+        if source.suffix.lower() == ".dds":
+            width, height, rgba = core.read_rgba8_dds(source)
+            image = non_color(bpy.data.images.new(
+                source.stem, width=width, height=height, alpha=True
+            ))
+            pixels = [channel / 255.0 for row in range(height - 1, -1, -1)
+                      for channel in rgba[row * width * 4:(row + 1) * width * 4]]
+            image.pixels.foreach_set(pixels)
+        else:
+            image = non_color(bpy.data.images.load(str(source), check_existing=False))
+    except RuntimeError as exc:
+        raise ValueError(f"无法读取贴图：{source}: {exc}") from exc
+    try:
         image.filepath_raw = str(destination)
         image.file_format = "PNG"
         image.save()
@@ -1642,7 +1797,7 @@ def _import_weighted_reference_component(context, component_id):
 class GMI_OT_import_weighted_reference(Operator):
     bl_idname = "gmi.import_weighted_reference"
     bl_label = "导入参考模型与骨架"
-    bl_description = "导入被替换网格的带权重参考与骨架。它是步骤②传权和发型描边拷贝的数据源，导出前别删；制作目标为发型时同时导入发型和发饰两个参考"
+    bl_description = "导入被替换网格的带权重参考与骨架。它是发型描边取色和导出前绑定体检的数据源，导出前别删；制作目标为发型时同时导入发型和发饰两个参考"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -1668,612 +1823,6 @@ class GMI_OT_import_weighted_reference(Operator):
             return {"CANCELLED"}
 
 
-class GMI_OT_transfer_profile_weights(Operator):
-    bl_idname = "gmi.transfer_profile_weights"
-    bl_label = "传递权重 + 颜色"
-    bl_description = "把参考模型的骨骼权重按最近面插值传到激活的作者网格，并写入描边所需的顶点 COLOR 占位；完成后该网格被标记为可导出"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context):
-        try:
-            reference = _profile_weight_reference(context)
-        except Exception as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-        # 优先用"激活对象";若它不是网格(或正好是参考模型本身),退用"唯一选中的非参考网格"。
-        target = context.active_object
-        if not (target and target.type == "MESH") or target is reference:
-            candidates = [obj for obj in context.selected_objects
-                          if obj.type == "MESH" and obj is not reference]
-            if len(candidates) == 1:
-                target = candidates[0]
-                context.view_layer.objects.active = target
-            elif len(candidates) > 1:
-                self.report({"ERROR"}, "选中了多个网格，请只激活作者模型那一个")
-                return {"CANCELLED"}
-            else:
-                self.report({"ERROR"}, "请把作者模型网格设为激活对象（在 3D 视图里点一下模型本体，别选参考模型）")
-                return {"CANCELLED"}
-        try:
-            alignment_warnings = _check_transfer_alignment(target, reference)
-            old_names = {group.index: group.name for group in target.vertex_groups}
-            old_dominant = []
-            for vertex in target.data.vertices:
-                values = [
-                    (float(item.weight), old_names[item.group])
-                    for item in vertex.groups if item.weight > 0.0 and item.group in old_names
-                ]
-                old_dominant.append(max(values)[1] if values else "")
-
-            for modifier in list(target.modifiers):
-                if modifier.type == "ARMATURE":
-                    target.modifiers.remove(modifier)
-            target.vertex_groups.clear()
-            for group in reference.vertex_groups:
-                target.vertex_groups.new(name=group.name)
-            transfer = target.modifiers.new(name="GMI_传递配置档权重", type="DATA_TRANSFER")
-            transfer.object = reference
-            transfer.use_vert_data = True
-            transfer.data_types_verts = {"VGROUP_WEIGHTS"}
-            transfer.vert_mapping = "POLYINTERP_NEAREST"
-            transfer.layers_vgroup_select_src = "ALL"
-            transfer.layers_vgroup_select_dst = "NAME"
-            transfer.mix_mode = "REPLACE"
-            transfer.mix_factor = 1.0
-            context.view_layer.objects.active = target
-            target.select_set(True)
-            reference.select_set(False)
-            result = bpy.ops.object.modifier_apply(modifier=transfer.name)
-            if "FINISHED" not in result:
-                raise RuntimeError(f"权重传递修改器执行失败：{result}")
-
-            corrected = {}
-            zero, truncated = _normalize_profile_weights(target, maximum=4)
-            # 转权时写中性衣物 COLOR 占位;真正的描边色在导出时按基础色生成
-            # (勾选「描边色取自基础色」→ _synthesize_export_native_colors 覆盖)。
-            color_transferred = _set_constant_color_attribute(target)
-            context.view_layer.objects.active = target
-            risk = _write_weight_risk_attributes(
-                target, reference, context.scene.gmi_transfer_risk_distance, old_dominant
-            )
-            target["gmi_profile_weights"] = True
-            target["gmi_profile_id"] = reference.get("gmi_profile_id", "")
-            target["gmi_profile_dir"] = reference.get("gmi_profile_dir", "")
-            target["gmi_component_id"] = reference.get("gmi_component_id", "body")
-            report = {
-                "method": "POLYINTERP_NEAREST",
-                "source": reference.name,
-                "target": target.name,
-                "vertices": len(target.data.vertices),
-                "zeroWeightVertices": zero,
-                "truncatedWeightTotal": truncated,
-                "semanticCorrections": corrected,
-                "alignmentWarnings": alignment_warnings,
-                "colorTransferred": color_transferred,
-                **risk,
-            }
-            target["gmi_weight_report"] = json.dumps(report, separators=(",", ":"))
-            if zero:
-                raise ValueError(f"仍有 {len(zero)} 个顶点没有权重")
-            messages = [
-                f"已传递配置档权重 + COLOR 占位(描边色在导出时按基础色生成)；"
-                f"需复核 {risk['reviewVertices']} 个顶点，"
-                f"p95 {risk['p95Distance']:.4f} m，最大 {risk['maxDistance']:.4f} m"
-            ]
-            messages.extend(alignment_warnings)
-            level = {"WARNING"} if (risk["reviewVertices"] or alignment_warnings) else {"INFO"}
-            self.report(level, "；".join(messages))
-            return {"FINISHED"}
-        except Exception as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-
-
-class GMI_OT_bind_hairprop_rigid(Operator):
-    bl_idname = "gmi.bind_hairprop_rigid"
-    bl_label = "发饰刚体绑定到 Head_Hair"
-    bl_description = "清除激活网格的已有权重，把全部顶点 100% 绑到 Head_Hair 并标记为发饰：只随头部整体运动，不摆动不形变，适合发夹/眼镜等硬质饰品"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context):
-        if context.scene.gmi_component_id != "hair":
-            self.report({"ERROR"}, "请先把「制作目标」切换为发型——发饰属于发型 mod 的一部分")
-            return {"CANCELLED"}
-        try:
-            reference = _profile_weight_reference(context, "hairprop")
-            armature = next(
-                (modifier.object for modifier in reference.modifiers
-                 if modifier.type == "ARMATURE" and modifier.object
-                 and modifier.object.data.bones.get("Head_Hair")),
-                None,
-            )
-            if armature is None:
-                raise ValueError("参考骨架没有 Head_Hair 骨骼，请重新导入 hairprop 参考模型")
-
-            target = context.active_object
-            if not (target and target.type == "MESH") or target is reference:
-                candidates = [
-                    obj for obj in context.selected_objects
-                    if obj.type == "MESH" and obj is not reference
-                    and not obj.get("gmi_weighted_reference") and not obj.get("gmi_reference_only")
-                ]
-                if len(candidates) == 1:
-                    target = candidates[0]
-                    context.view_layer.objects.active = target
-                elif len(candidates) > 1:
-                    raise ValueError("选中了多个作者网格，请只激活发饰模型")
-                else:
-                    raise ValueError("请激活要绑定的发饰作者网格")
-            if target.get("gmi_weighted_reference") or target.get("gmi_reference_only"):
-                raise ValueError("不能把配置档参考模型作为作者发饰绑定")
-
-            world = target.matrix_world.copy()
-            target.parent = None
-            target.matrix_world = world
-            for modifier in list(target.modifiers):
-                if modifier.type == "ARMATURE":
-                    target.modifiers.remove(modifier)
-            target.vertex_groups.clear()
-            group = target.vertex_groups.new(name="Head_Hair")
-            group.add(range(len(target.data.vertices)), 1.0, "REPLACE")
-            modifier = target.modifiers.new(name="GMI 发饰刚体跟随头部", type="ARMATURE")
-            modifier.object = armature
-
-            target["gmi_profile_weights"] = True
-            target["gmi_profile_id"] = reference.get("gmi_profile_id", "")
-            target["gmi_profile_dir"] = reference.get("gmi_profile_dir", "")
-            target["gmi_component_id"] = "hairprop"
-            target["gmi_rigid_head_follow"] = True
-            target["gmi_weight_report"] = json.dumps({
-                "method": "RIGID_HEAD_HAIR",
-                "bone": "Head_Hair",
-                "vertices": len(target.data.vertices),
-                "influencesPerVertex": 1,
-            }, ensure_ascii=False, separators=(",", ":"))
-            self.report({"INFO"}, f"已绑定 {len(target.data.vertices)} 个顶点 → Head_Hair；仅刚体跟随头部")
-            return {"FINISHED"}
-        except Exception as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-
-
-class GMI_OT_transfer_profile_weights_smart(Operator):
-    bl_idname = "gmi.transfer_profile_weights_smart"
-    bl_label = "实验：智能传递权重 + 颜色"
-    bl_description = "实验性：法线闸门 + Laplacian 补洞替代最近面插值，减少薄缝/多层衣物跨面串权重；常规传权效果不好时再试"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context):
-        try:
-            reference = _profile_weight_reference(context)
-        except Exception as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-        target = context.active_object
-        if not (target and target.type == "MESH") or target is reference:
-            candidates = [
-                obj for obj in context.selected_objects
-                if obj.type == "MESH" and obj is not reference
-            ]
-            if len(candidates) == 1:
-                target = candidates[0]
-                context.view_layer.objects.active = target
-            elif len(candidates) > 1:
-                self.report({"ERROR"}, "选中了多个网格，请只激活作者模型那一个")
-                return {"CANCELLED"}
-            else:
-                self.report({"ERROR"}, "请把作者模型网格设为激活对象（在 3D 视图里点一下模型本体，别选参考模型）")
-                return {"CANCELLED"}
-        try:
-            import numpy as np
-
-            _sync_object_mesh_data(context, reference)
-            _sync_object_mesh_data(context, target)
-            alignment_warnings = _check_transfer_alignment(target, reference)
-            old_names = {group.index: group.name for group in target.vertex_groups}
-            old_dominant = []
-            for vertex in target.data.vertices:
-                values = [
-                    (float(item.weight), old_names[item.group])
-                    for item in vertex.groups if item.weight > 0.0 and item.group in old_names
-                ]
-                old_dominant.append(max(values)[1] if values else "")
-
-            for modifier in list(target.modifiers):
-                if modifier.type == "ARMATURE":
-                    target.modifiers.remove(modifier)
-
-            source_pos, source_nrm = _object_vertex_arrays(reference)
-            target_pos, target_nrm = _object_vertex_arrays(target)
-            target_faces = np.asarray(_mesh_triangles(target.data), dtype=np.int64)
-            if target_faces.size == 0:
-                raise ValueError("作者模型没有可用于 inpaint 的三角面")
-            groups, source_weights = _source_weight_matrix(reference)
-            result = weight_transfer.smart_weight_transfer(
-                target_pos, target_nrm, target_faces,
-                source_pos, source_nrm, source_weights,
-                max_distance=context.scene.gmi_transfer_risk_distance,
-                normal_cos_threshold=0.0,
-                inpaint_iterations=256,
-                max_influences=4,
-            )
-
-            target.vertex_groups.clear()
-            _write_weight_matrix(target, groups, result["weights"])
-            zero, truncated = _normalize_profile_weights(target, maximum=4)
-            color_transferred = _set_constant_color_attribute(target)
-            context.view_layer.objects.active = target
-            risk = _write_weight_risk_attributes(
-                target, reference, context.scene.gmi_transfer_risk_distance, old_dominant
-            )
-            target["gmi_profile_weights"] = True
-            target["gmi_profile_id"] = reference.get("gmi_profile_id", "")
-            target["gmi_profile_dir"] = reference.get("gmi_profile_dir", "")
-            target["gmi_component_id"] = reference.get("gmi_component_id", "body")
-            smart_stats = result["stats"]
-            report = {
-                "method": "SMART_NORMAL_GATE_LAPLACIAN_INPAINT",
-                "source": reference.name,
-                "target": target.name,
-                "vertices": len(target.data.vertices),
-                "zeroWeightVertices": zero,
-                "truncatedWeightTotal": truncated,
-                "alignmentWarnings": alignment_warnings,
-                "colorTransferred": color_transferred,
-                "smartTransfer": smart_stats,
-                **risk,
-            }
-            target["gmi_weight_report"] = json.dumps(report, separators=(",", ":"))
-            if zero:
-                raise ValueError(f"仍有 {len(zero)} 个顶点没有权重")
-            messages = [
-                f"实验智能传权完成；置信 {smart_stats['confidentVertices']}/"
-                f"{smart_stats['vertices']}，inpaint {smart_stats['inpaintedVertices']}，"
-                f"法线改写 {smart_stats['normalRedirected']}；",
-                f"需复核 {risk['reviewVertices']} 个顶点，"
-                f"p95 {risk['p95Distance']:.4f} m，最大 {risk['maxDistance']:.4f} m",
-            ]
-            messages.extend(alignment_warnings)
-            level = {"WARNING"} if (risk["reviewVertices"] or alignment_warnings) else {"INFO"}
-            self.report(level, "；".join(messages))
-            return {"FINISHED"}
-        except Exception as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-
-
-class GMI_OT_transfer_hairprop_weights(Operator):
-    bl_idname = "gmi.transfer_hairprop_weights"
-    bl_label = "传递发饰权重"
-    bl_description = "把激活网格标记为发饰，再从发饰参考传递权重；适合丝带、长坠饰等需要摆动/形变的软质发饰"
-
-    def execute(self, context):
-        target = context.active_object
-        if not target or target.type != "MESH":
-            self.report({"ERROR"}, "请在 3D 视图激活发饰作者网格——发饰必须是独立于发型的网格对象")
-            return {"CANCELLED"}
-        target["gmi_component_id"] = "hairprop"
-        return GMI_OT_transfer_profile_weights.execute(self, context)
-
-
-class GMI_OT_transfer_hairprop_weights_smart(Operator):
-    bl_idname = "gmi.transfer_hairprop_weights_smart"
-    bl_label = "实验：智能传递发饰权重"
-    bl_description = "把激活网格标记为发饰，再用实验性智能传权（法线闸门 + Laplacian 补洞）从发饰参考传递权重"
-
-    def execute(self, context):
-        target = context.active_object
-        if not target or target.type != "MESH":
-            self.report({"ERROR"}, "请在 3D 视图激活发饰作者网格——发饰必须是独立于发型的网格对象")
-            return {"CANCELLED"}
-        target["gmi_component_id"] = "hairprop"
-        return GMI_OT_transfer_profile_weights_smart.execute(self, context)
-
-
-class GMI_OT_select_high_risk_vertices(Operator):
-    bl_idname = "gmi.select_high_risk_vertices"
-    bl_label = "选中高风险顶点"
-    bl_description = "选中传权时距参考表面超过风险距离的顶点（GMI_REVIEW_HIGH_RISK 顶点组），切 Weight Paint 逐个复核；袖口、裙摆、飘带是重灾区"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context):
-        obj = context.active_object
-        if not obj or obj.type != "MESH":
-            self.report({"ERROR"}, "请选择已经传权的作者模型")
-            return {"CANCELLED"}
-        try:
-            count = _select_vertex_group(context, obj, "GMI_REVIEW_HIGH_RISK")
-            self.report({"WARNING"} if count else {"INFO"}, f"已选择 {count} 个高风险顶点")
-            return {"FINISHED"}
-        except Exception as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-
-
-class GMI_OT_validate_mesh(Operator):
-    bl_idname = "gmi.validate_mesh"
-    bl_label = "校验网格"
-    bl_description = "检查导出前置条件：三角化、四权重且归一化、骨骼名在配置档内、UV0/UV1、顶点 COLOR；只报告不修改"
-
-    def execute(self, context):
-        obj = context.active_object
-        if not obj or obj.type != "MESH":
-            self.report({"ERROR"}, "请选择一个网格对象")
-            return {"CANCELLED"}
-        _sync_object_mesh_data(context, obj)
-        if obj.get("gmi_profile_weights"):
-            try:
-                profile_set = core.load_profile_set(obj["gmi_profile_dir"])
-                component = core.component_by_id(
-                    profile_set["profile"], obj.get("gmi_component_id", "body")
-                )
-                known = set(core.inverse_skin_bone_map(
-                    obj["gmi_profile_dir"], component_id=obj.get("gmi_component_id", "body")
-                ))
-                group_names = {group.index: group.name for group in obj.vertex_groups}
-                errors, warnings = [], []
-                if any(len(poly.vertices) != 3 for poly in obj.data.polygons):
-                    errors.append("网格尚未三角化")
-                loop_count = sum(len(poly.vertices) for poly in obj.data.polygons)
-                if loop_count > 65535:
-                    warnings.append(f"{loop_count} 个展开顶点超过 R16 上限 65535，导出将使用 R32 索引缓冲")
-                if loop_count > int(component["indices"]):
-                    warnings.append(f"{loop_count} 个索引超过原 Draw 容量 {component['indices']}，导出将使用自定义 drawindexed")
-                unknown, zero, excessive, non_normalized = set(), 0, 0, 0
-                for vertex in obj.data.vertices:
-                    influences = [
-                        (group_names[item.group], float(item.weight))
-                        for item in vertex.groups
-                        if item.weight > 0.0 and not group_names[item.group].startswith("GMI_")
-                    ]
-                    unknown.update(name for name, _ in influences if name not in known)
-                    if not influences:
-                        zero += 1
-                    if len(influences) > 4:
-                        excessive += 1
-                    if influences and abs(sum(weight for _, weight in influences) - 1.0) > 1e-4:
-                        non_normalized += 1
-                if unknown:
-                    errors.append(f"未知骨骼顶点组：{', '.join(sorted(unknown)[:8])}")
-                if zero:
-                    errors.append(f"{zero} 个顶点没有权重")
-                if excessive:
-                    errors.append(f"{excessive} 个顶点超过四权重")
-                if non_normalized:
-                    errors.append(f"{non_normalized} 个顶点权重未归一化")
-                for required_uv in ("UV0", "UV1"):
-                    if required_uv not in obj.data.uv_layers:
-                        warnings.append(f"缺少 {required_uv}")
-                if obj.data.color_attributes.get("COLOR") is None:
-                    warnings.append("缺少 COLOR（导出默认白色 → 描边会变白色高光，请先“传递权重 + 颜色”）")
-                if errors:
-                    self.report({"ERROR"}, "; ".join(errors))
-                    return {"CANCELLED"}
-                message = f"带权重网格校验通过：{len(obj.data.vertices)} 个顶点 / {loop_count} 个索引"
-                self.report({"WARNING"} if warnings else {"INFO"}, message + (f"; {'; '.join(warnings)}" if warnings else ""))
-                return {"FINISHED"}
-            except Exception as exc:
-                self.report({"ERROR"}, str(exc))
-                return {"CANCELLED"}
-        if "gmi_source_vertex_count" not in obj:
-            self.report({"ERROR"}, "请选择 GakumasMI 导入的网格，或已经转为配置档权重的网格")
-            return {"CANCELLED"}
-        faces = [tuple(poly.vertices) for poly in obj.data.polygons]
-        errors, warnings = core.validate_index_mesh(
-            len(obj.data.vertices), faces,
-            int(obj["gmi_source_vertex_count"]), int(obj["gmi_source_index_count"]),
-        )
-        for required_uv in ("UV0", "UV1"):
-            if required_uv not in obj.data.uv_layers:
-                warnings.append(f"缺少 {required_uv}")
-        for required_attribute in ("COLOR", "GMI_NORMAL", "GMI_TANGENT", "GMI_TANGENT_W"):
-            if required_attribute not in obj.data.attributes and required_attribute not in obj.data.color_attributes:
-                warnings.append(f"缺少 {required_attribute}")
-        if errors:
-            self.report({"ERROR"}, "; ".join(errors))
-            return {"CANCELLED"}
-        message = "网格校验通过"
-        if warnings:
-            message += ": " + "; ".join(warnings)
-            self.report({"WARNING"}, message)
-        else:
-            self.report({"INFO"}, message)
-        return {"FINISHED"}
-
-
-class GMI_OT_export_mesh_mod(Operator):
-    bl_idname = "gmi.export_mesh_mod"
-    bl_label = "导出原拓扑模组"
-    bl_description = "把与原网格同顶点数/编号的网格导出为索引缓冲 mod，不带新权重；只适合在原网格上微调形状的场景，换新模型请走带权重导出"
-
-    def execute(self, context):
-        obj = context.active_object
-        if not obj or obj.type != "MESH" or "gmi_profile_dir" not in obj:
-            self.report({"ERROR"}, "请选择 GakumasMI 导入的网格")
-            return {"CANCELLED"}
-        _, _, output_dir = _scene_paths(context.scene)
-        faces = [tuple(poly.vertices) for poly in obj.data.polygons]
-        try:
-            package, warnings = core.write_index_package(
-                obj["gmi_profile_dir"], output_dir,
-                context.scene.gmi_package_id, context.scene.gmi_package_name,
-                context.scene.gmi_author, obj["gmi_component_id"], faces,
-                len(obj.data.vertices),
-            )
-            level = {"WARNING"} if warnings else {"INFO"}
-            self.report(level, f"已导出 {package}" + (f"（{'; '.join(warnings)}）" if warnings else ""))
-            return {"FINISHED"}
-        except Exception as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-
-
-class GMI_OT_export_inverse_skin_mod(Operator):
-    bl_idname = "gmi.export_inverse_skin_mod"
-    bl_label = "导出带权重 GPU 模组"
-    bl_description = "核心导出：把任意拓扑的作者网格连同权重打包为逆蒙皮 mod，游戏内 GPU 每帧恢复骨骼矩阵重新蒙皮。一般不直接点，由「校验并导出模组」自动调用"
-
-    def execute(self, context):
-        obj = context.active_object
-        scene = context.scene
-        if not obj or obj.type != "MESH":
-            self.report({"ERROR"}, "请激活已在步骤②绑定过的作者网格")
-            return {"CANCELLED"}
-        try:
-            component_id = _object_component_id(obj, scene)
-            _sync_object_mesh_data(context, obj)
-            profile_dir = bpy.path.abspath(scene.gmi_profile_dir)
-            profile_set = core.load_profile_set(profile_dir)
-            resolved = _resolve_body_json_library(scene, component_id)
-            skeleton_path = Path(resolved["skeletonJson"])
-            bone_map = core.inverse_skin_bone_map(
-                profile_dir, skeleton_path, component_id
-            )
-            skeleton = core.load_json(skeleton_path)
-            source_bind = {
-                node["name"]: _bind_pose_matrix(node["bindPose"]).inverted()
-                for node in skeleton["nodes"] if node.get("weightedIndex") is not None
-            }
-            remap = {}
-            if scene.gmi_bone_remap_file:
-                remap_data = core.load_json(Path(bpy.path.abspath(scene.gmi_bone_remap_file)))
-                remap = remap_data.get("bones", remap_data)
-            data = _inverse_skin_export_data(
-                obj, bone_map, source_bind, remap, scene.gmi_unmapped_bone_fallback.strip(),
-                source_rig_weights=bool(obj.get("gmi_profile_weights")),
-                outline_width_mode=scene.gmi_outline_width_mode,
-                vertex_color_mode=scene.gmi_vertex_color_mode,
-                color_per_slot=_material_slot_color_map(obj),
-            )
-            known_textures = profile_set["textures"].get("textures", {})
-            material_textures = {}
-            texture_prefix = component_id
-            for key, value, semantic in (
-                (f"{texture_prefix}.baseColor", _scene_texture_path(scene, component_id, "base_color"), None),
-                (f"{texture_prefix}.packedMask", _scene_texture_path(scene, component_id, "packed_mask"), "packedMask"),
-                (f"{texture_prefix}.shadeColor", _scene_texture_path(scene, component_id, "shade_color"), "shadeColor"),
-            ):
-                if value:
-                    path = bpy.path.abspath(value)
-                    if not path.lower().endswith(".dds"):
-                        # PNG → 临时 DDS;t1 是线性数据,不能标 sRGB
-                        path = _png_to_dds(
-                            path,
-                            srgb=semantic != "packedMask",
-                            alpha_override=(
-                                0 if component_id == "hair" and semantic is None
-                                and not scene.gmi_hair_use_base_alpha else None
-                            ),
-                        )
-                    material_textures[key] = path
-                elif semantic and scene.gmi_neutral_material and key in known_textures:
-                    # 没提供时用中性贴图盖掉原版 t1/t4（仅当配置档有该槽位）
-                    material_textures[key] = _neutral_material_dds(semantic, component_id)
-            # 描边颜色来源：「描边颜色」=取自基础色 → 基础色曲线；黑色常量 → 黑边；
-            # 按材质预设 → 保留 gather 的逐材质预设色。宽度已在 gather 按「描边宽度」处理,这里不动。
-            # hair 安全模式写全网格描边色档，其余 packed nibble 从参考网格最近邻拷贝。
-            export_color_synthesis = None
-            if component_id == "hair":
-                reference = _profile_weight_reference(context, "hair")
-                if reference.get("gmi_component_id") != "hair":
-                    raise ValueError("场景中的带权重参考模型不是 hair,无法拷贝 hair 顶点色语义")
-                no_outline = set()
-                if scene.gmi_outline_width_mode == "RISK_ONLY":
-                    no_outline = (
-                        _vertex_group_indices(obj, "GMI_NO_OUTLINE")
-                        | _vertex_group_indices(obj, "GMI_REVIEW_HIGH_RISK")
-                    )
-                data["colors"], export_color_synthesis = _hair_export_colors(
-                    reference, data, scene.gmi_hair_outline_tier,
-                    scene.gmi_outline_width_mode, no_outline,
-                )
-            elif component_id == "hairprop":
-                # 发饰同属常量描边语义(暗部逐顶点合成会塌绿),按材质槽类型给常量
-                no_outline = set()
-                if scene.gmi_outline_width_mode == "RISK_ONLY":
-                    no_outline = (
-                        _vertex_group_indices(obj, "GMI_NO_OUTLINE")
-                        | _vertex_group_indices(obj, "GMI_REVIEW_HIGH_RISK")
-                    )
-                data["colors"], export_color_synthesis = _hairprop_export_colors(
-                    obj, data, scene.gmi_outline_width_mode, no_outline,
-                )
-            elif scene.gmi_vertex_color_mode == "BASECOLOR":
-                data["colors"], export_color_synthesis = _synthesize_export_native_colors(
-                    profile_dir,
-                    component_id,
-                    data,
-                    material_textures.get(f"{texture_prefix}.baseColor")
-                    or _scene_texture_path(scene, component_id, "base_color"),
-                    _material_slot_color_map(obj),
-                )
-            elif scene.gmi_vertex_color_mode == "CONSTANT_BLACK":
-                data["colors"] = _black_outline_colors(data["colors"])
-            _, _, output_dir = _scene_paths(scene)
-            alpha_modes = _material_slot_alpha_modes(obj)
-            opacity_texture = (
-                _png_to_dds(bpy.path.abspath(scene.gmi_opacity_texture_file))
-                if scene.gmi_opacity_texture_file and not bpy.path.abspath(scene.gmi_opacity_texture_file).lower().endswith(".dds")
-                else bpy.path.abspath(scene.gmi_opacity_texture_file) if scene.gmi_opacity_texture_file else None
-            )
-            native_co_textures = {}
-            for semantic, value in (
-                ("baseColor", scene.gmi_opacity_texture_file),
-                ("packedMask", scene.gmi_opacity_packed_mask_file),
-                ("shadeColor", scene.gmi_opacity_shade_color_file),
-            ):
-                if not value:
-                    continue
-                path = bpy.path.abspath(value)
-                if not path.lower().endswith(".dds"):
-                    path = _png_to_dds(path, srgb=semantic != "packedMask")
-                native_co_textures[semantic] = path
-            cover_src = bpy.path.abspath(scene.gmi_cover_image) if scene.gmi_cover_image else ""
-            if not cover_src:
-                self.report({"ERROR"}, "必须提供 mod 预览图：请在导出面板选择「预览图」后再导出。")
-                return {"CANCELLED"}
-            cover_path = _prepare_cover_image(cover_src)
-            package = core.write_inverse_skin_package(
-                profile_dir, output_dir, scene.gmi_package_id, scene.gmi_package_name,
-                scene.gmi_author, component_id,
-                data["vertices"], data["normals"], data["tangents"], data["uv0"],
-                data["uv1"], data["colors"], data["faces"], data["skin"],
-                data["corrections"], material_textures=material_textures,
-                materials=data.get("materials"),
-                alpha_modes=alpha_modes,
-                opacity_texture=opacity_texture,
-                native_co_textures=native_co_textures,
-                cover_image=cover_path,
-            )
-            core._write_json(Path(package) / "export-report.json", {
-                "automaticAncestorRemap": data["automatic_remap"],
-                "unresolvedGroups": data["unresolved"],
-                "truncatedWeightTotal": data["truncated_weight"],
-                "materialTextures": material_textures,
-                "opacityTexture": bpy.path.abspath(scene.gmi_opacity_texture_file) if scene.gmi_opacity_texture_file else "",
-                "nativeCoTextures": native_co_textures,
-                "outlineWidthMode": scene.gmi_outline_width_mode,
-                "vertexColorMode": scene.gmi_vertex_color_mode,
-                "uvLayers": data.get("uvLayers", {}),
-                "invalidUvLayersRemoved": json.loads(obj.get("gmi_removed_invalid_uv_layers", "[]")),
-                "exportColorSynthesis": export_color_synthesis,
-                "vertexColorByMaterialSlot": {
-                    str(slot): [core._safe_unorm8(channel) for channel in color]
-                    for slot, color in _material_slot_color_map(obj).items()
-                },
-                "alphaModesByMaterialSlot": alpha_modes,
-            })
-            suffix = (
-                f"；祖先骨骼自动映射 {len(data['automatic_remap'])}，"
-                f"兜底顶点组 {len(data['unresolved'])}"
-            )
-            self.report({"INFO"}, f"已导出 {package}{suffix}")
-            return {"FINISHED"}
-        except Exception as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-
-
 class GMI_OT_export_bundle_source(Operator):
     bl_idname = "gmi.export_bundle_source"
     bl_label = "导出 bundle 源"
@@ -2285,7 +1834,7 @@ class GMI_OT_export_bundle_source(Operator):
         obj = context.active_object
         scene = context.scene
         if not obj or obj.type != "MESH":
-            self.report({"ERROR"}, "请激活已传递配置档权重的作者网格")
+            self.report({"ERROR"}, "请激活带顶点组权重的作者网格")
             return {"CANCELLED"}
         try:
             component_id, resolved, data = _prepare_bundle_export_data(
@@ -2318,6 +1867,16 @@ class GMI_OT_export_bundle_source(Operator):
                 resolved["meshJson"], resolved["skeletonJson"], textures,
                 material_slot_count=material_slot_count,
             )
+            # 坏绑定导出侧补不了，所以只能大声警告并让作者回上游重做 prep。
+            sanity = data.get("bind_sanity") or {}
+            if sanity.get("failed"):
+                self.report({"WARNING"}, "绑定体检未通过（"
+                            + "、".join(sanity["failed"])
+                            + "）：该区域动起来会变形，需回 prep 阶段重做，导出侧补不了")
+            elif sanity.get("unmeasured"):
+                self.report({"WARNING"}, "绑定体检无法评估（"
+                            + "、".join(sanity["unmeasured"])
+                            + " 没有可测顶点）：作者骨名可能没映射到游戏骨名，别当通过")
             if not self.also_patch:
                 self.report({"INFO"}, f"已导出 bundle 源 {package}")
                 return {"FINISHED"}
@@ -2328,110 +1887,6 @@ class GMI_OT_export_bundle_source(Operator):
         except Exception as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
-
-
-def _activate_object(context, obj):
-    bpy.ops.object.select_all(action="DESELECT")
-    obj.select_set(True)
-    context.view_layer.objects.active = obj
-
-
-def _export_complete_hair_mod(operator, context):
-    scene = context.scene
-    authors = {
-        component_id: [
-            obj for obj in scene.objects
-            if obj.type == "MESH"
-            and obj.get("gmi_profile_weights")
-            and obj.get("gmi_component_id") == component_id
-        ]
-        for component_id in ("hair", "hairprop")
-    }
-    if len(authors["hair"]) != 1:
-        raise ValueError("发型 mod 需要且只能有一个已绑定的发型作者网格")
-    if len(authors["hairprop"]) > 1:
-        raise ValueError("发型 mod 最多只能有一个已绑定的发饰作者网格")
-
-    original = {
-        "output": scene.gmi_output_dir,
-        "package_id": scene.gmi_package_id,
-        "package_name": scene.gmi_package_name,
-        "author": scene.gmi_author,
-        "active": context.active_object,
-        "selected": list(context.selected_objects),
-    }
-    try:
-        if not authors["hairprop"]:
-            _activate_object(context, authors["hair"][0])
-            if "FINISHED" not in bpy.ops.gmi.validate_mesh():
-                raise ValueError("发型网格校验未通过")
-            if "FINISHED" not in GMI_OT_export_inverse_skin_mod.execute(operator, context):
-                raise ValueError("发型导出失败")
-            return Path(bpy.path.abspath(scene.gmi_output_dir)) / core._sanitize_package_id(scene.gmi_package_id)
-        with tempfile.TemporaryDirectory(prefix="gmi-hair-package-") as temp:
-            scene.gmi_output_dir = temp
-            packages = {}
-            for component_id in ("hair", "hairprop"):
-                obj = authors[component_id][0]
-                _activate_object(context, obj)
-                scene.gmi_package_id = f"{original['package_id']}.{component_id}"
-                scene.gmi_package_name = f"{original['package_name']} · {component_id}"
-                if "FINISHED" not in bpy.ops.gmi.validate_mesh():
-                    raise ValueError(f"{component_id} 网格校验未通过")
-                if "FINISHED" not in GMI_OT_export_inverse_skin_mod.execute(operator, context):
-                    raise ValueError(f"{component_id} 导出失败")
-                packages[component_id] = Path(temp) / core._sanitize_package_id(scene.gmi_package_id)
-            scene.gmi_output_dir = original["output"]
-            package = core.merge_inverse_skin_packages(
-                packages["hair"], packages["hairprop"],
-                bpy.path.abspath(scene.gmi_output_dir),
-                original["package_id"], original["package_name"], original["author"],
-            )
-            return package
-    finally:
-        scene.gmi_output_dir = original["output"]
-        scene.gmi_package_id = original["package_id"]
-        scene.gmi_package_name = original["package_name"]
-        for selected in context.selected_objects:
-            selected.select_set(False)
-        for selected in original["selected"]:
-            selected.select_set(True)
-        if original["active"]:
-            context.view_layer.objects.active = original["active"]
-
-
-class GMI_OT_export_validated_mod(Operator):
-    bl_idname = "gmi.export_validated_mod"
-    bl_label = "校验并导出模组"
-    bl_description = "推荐的导出入口：先校验网格，通过后按网格类型自动选择导出方式；制作目标为发型时自动处理发型 + 可选发饰并合并为一个完整包"
-    bl_options = {"REGISTER"}
-
-    def execute(self, context):
-        obj = context.active_object
-        if not obj or obj.type != "MESH":
-            self.report({"ERROR"}, "请选择要导出的网格")
-            return {"CANCELLED"}
-        if context.scene.gmi_component_id == "hair":
-            try:
-                package = _export_complete_hair_mod(self, context)
-                self.report({"INFO"}, f"已导出发型包：{package}")
-                return {"FINISHED"}
-            except Exception as exc:
-                self.report({"ERROR"}, str(exc))
-                return {"CANCELLED"}
-        if "gmi_removed_invalid_uv_layers" in obj:
-            del obj["gmi_removed_invalid_uv_layers"]
-        _sync_object_mesh_data(context, obj)
-        result = bpy.ops.gmi.validate_mesh()
-        if "FINISHED" not in result:
-            self.report({"ERROR"}, "校验未通过，已停止导出")
-            return {"CANCELLED"}
-        if obj.get("gmi_profile_weights"):
-            return GMI_OT_export_inverse_skin_mod.execute(self, context)
-        if obj.get("gmi_source_vertex_count"):
-            return GMI_OT_export_mesh_mod.execute(self, context)
-        self.report({"ERROR"}, "激活网格没有绑定标记：请先在步骤②对它执行传权或刚体绑定")
-        return {"CANCELLED"}
 
 
 class GMI_OT_create_body_material_template(Operator):
@@ -2763,28 +2218,182 @@ class GMI_OT_bake_material_maps(Operator):
         return {"FINISHED"}
 
 
-class GMI_OT_export_texture_mod(Operator):
-    bl_idname = "gmi.export_texture_mod"
-    bl_label = "导出单贴图替换"
-    bl_description = "不换网格，只打包一张贴图按配置档槽位替换（如只改衣服颜色）；PNG 自动转 DDS"
+# ------------------------------------------------------------------ 骨映射表单
+# 作者直接说"哪根源骨对应哪根游戏骨"。preset 退化成预填,认不出来的骨架由作者点选,
+# 覆盖率因此不再取决于我们认识多少种命名规范。出口沿用已有的 explicit 通路,
+# 所以后端零改动。
+
+
+class GMI_bone_name(bpy.types.PropertyGroup):
+    """prop_search 的候选容器：目标骨架的骨名。"""
+    name: bpy.props.StringProperty()
+
+
+class GMI_bone_map_item(bpy.types.PropertyGroup):
+    source: bpy.props.StringProperty(name="源骨")
+    target: bpy.props.StringProperty(
+        name="目标骨",
+        description="填了就以此为准（优先级最高）；留空=交给自动判断（预设/装饰骨物理）",
+    )
+    origin: bpy.props.StringProperty()          # preset / auto / ""
+    mass: bpy.props.FloatProperty()             # 该骨的权重占比 %
+    strategy: bpy.props.EnumProperty(
+        name="装饰物理",
+        description="只对没填目标骨的装饰骨有效。自动=按位置猜（猜错了在这里改）；"
+                    "刚性=跟最近的已映射身体父骨，不摆，最安全；"
+                    "自建摇物=新建骨+自己的摆动链（飘带/蝴蝶结）；"
+                    "跟裙摆=蹭最近的裙摆摇物骨（裙边花边）",
+        items=[
+            ("auto", "自动", "按位置匹配最近的摇物骨（默认，猜错时改这里）"),
+            ("rigid", "刚性跟父骨", "无物理，跟最近的已映射身体父骨——不确定时选它"),
+            ("integrate", "自建摇物链", "新建骨 + 自己的 ActorSwing 链（自由悬垂的飘带/蝴蝶结）"),
+            ("follow_skirt", "跟裙摆", "蹭最近的裙摆摇物骨（裙边花边），无视距离"),
+        ],
+        default="auto",
+    )
+
+
+def _bone_map_context(context):
+    """表单要用的三样：作者网格、目标骨名表、预设映射结果。"""
+    obj = context.active_object
+    scene = context.scene
+    if not obj or obj.type != "MESH" or not obj.vertex_groups:
+        raise ValueError("请先激活带顶点组权重的作者网格")
+    component_id = _object_component_id(obj, scene)
+    resolved = _resolve_body_json_library(scene, component_id)
+    skeleton_path = Path(resolved.get("skeletonJson") or "")
+    if not skeleton_path.is_file():
+        raise ValueError("缺少带骨架的 Mesh JSON；请先完成步骤①的配置档")
+    bone_map = core.inverse_skin_bone_map(
+        bpy.path.abspath(scene.gmi_profile_dir), skeleton_path, component_id)
+    source_names = [g.name for g in obj.vertex_groups if _is_bone_group(g.name)]
+    preset = core.build_bone_remap(
+        source_names, bone_map, parent_by_name=_source_bone_parents(obj),
+        preset_name=getattr(scene, "gmi_source_rig", "auto"),
+    )
+    return obj, bone_map, preset
+
+
+class GMI_OT_build_bone_map(Operator):
+    bl_idname = "gmi.build_bone_map"
+    bl_label = "扫描源骨骼"
+    bl_description = ("列出作者网格上带权重的骨。预设认出来的自动预填目标骨，"
+                      "认不出来的留空等你指定。已填写的行不会被覆盖")
+
+    only_unmapped: bpy.props.BoolProperty(default=True, options={"HIDDEN"})
 
     def execute(self, context):
         scene = context.scene
-        profile_dir, _, output_dir = _scene_paths(scene)
         try:
-            package = core.write_texture_package(
-                profile_dir, output_dir, scene.gmi_package_id,
-                scene.gmi_package_name, scene.gmi_author,
-                scene.gmi_texture_key, bpy.path.abspath(scene.gmi_texture_file),
-            )
-            self.report({"INFO"}, f"已导出 {package}")
-            return {"FINISHED"}
+            obj, bone_map, preset = _bone_map_context(context)
         except Exception as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
+        kept = dict(_form_bone_map(scene))          # 保住作者已经填过的
+        kept_strategy = dict(_form_physics_overrides(scene))
+        scene.gmi_bone_targets.clear()
+        for name in sorted(bone_map):
+            scene.gmi_bone_targets.add().name = name
+        scene.gmi_bone_map.clear()
+        rows = 0
+        for name, mass in _weighted_group_mass(obj):
+            auto = preset["bones"].get(name)
+            if (self.only_unmapped and auto
+                    and name not in kept and name not in kept_strategy):
+                continue                            # 预设已认出且作者没改过 → 不占屏
+            item = scene.gmi_bone_map.add()
+            item.source = name
+            item.target = kept.get(name, auto or "")
+            item.origin = "preset" if auto else ""
+            item.mass = mass
+            if name in kept_strategy:
+                item.strategy = kept_strategy[name]
+            rows += 1
+        scene.gmi_bone_map_index = 0
+        empty = sum(1 for item in scene.gmi_bone_map if not item.target.strip())
+        scope = "未被预设识别的" if self.only_unmapped else "全部"
+        self.report({"INFO"}, f"已列出 {rows} 个{scope}骨（预设识别 "
+                              f"{len(preset['bones'])}/{len(_weighted_group_mass(obj))}，"
+                              f"待指定 {empty}）")
+        return {"FINISHED"}
+
+
+class GMI_OT_clear_bone_map(Operator):
+    bl_idname = "gmi.clear_bone_map"
+    bl_label = "清空映射表"
+    bl_description = "清空表单（不影响外部骨骼映射 JSON）"
+
+    def execute(self, context):
+        context.scene.gmi_bone_map.clear()
+        context.scene.gmi_bone_targets.clear()
+        self.report({"INFO"}, "已清空骨骼映射表")
+        return {"FINISHED"}
+
+
+class GMI_OT_save_bone_map(Operator):
+    bl_idname = "gmi.save_bone_map"
+    bl_label = "存为 JSON"
+    bl_description = "把表单里填好的对应关系存成骨骼映射 JSON，换模型/换目标服装时可复用"
+
+    def execute(self, context):
+        scene = context.scene
+        bones = _form_bone_map(scene)
+        physics = _form_physics_overrides(scene)
+        if not bones and not physics:
+            self.report({"ERROR"}, "表单里还没有填写任何目标骨或装饰物理策略")
+            return {"CANCELLED"}
+        path = bpy.path.abspath(scene.gmi_bone_remap_file) if scene.gmi_bone_remap_file else ""
+        if not path:
+            output = bpy.path.abspath(scene.gmi_output_dir) or bpy.app.tempdir
+            path = str(Path(output) / "bone-remap.json")
+            scene.gmi_bone_remap_file = path
+        # 骨映射和装饰物理写同一份文件:两个读取入口各取自己的键。"physics" 必须写出来
+        # (哪怕是空的),否则物理读取会 fallback 成整个 dict、把 bones 当策略用。
+        core._write_json(Path(path), {
+            "schemaVersion": 1, "bones": bones, "physics": physics,
+        })
+        if physics:
+            scene.gmi_physics_override_file = path
+        self.report({"INFO"}, f"已存 {len(bones)} 条骨映射 + {len(physics)} 条装饰物理到 {path}")
+        return {"FINISHED"}
+
+
+class GMI_OT_load_bone_map(Operator):
+    bl_idname = "gmi.load_bone_map"
+    bl_label = "从 JSON 读入"
+    bl_description = "把骨骼映射 JSON 读进表单，方便核对和微调"
+
+    def execute(self, context):
+        scene = context.scene
+        path = bpy.path.abspath(scene.gmi_bone_remap_file)
+        if not path or not Path(path).is_file():
+            self.report({"ERROR"}, "请先在「骨骼映射」里选择 JSON 文件")
+            return {"CANCELLED"}
+        data = core.load_json(Path(path))
+        bones = data.get("bones", data)
+        physics = data.get("physics", {}) if isinstance(data, dict) else {}
+        valid = {item.identifier for item in
+                 GMI_bone_map_item.bl_rna.properties["strategy"].enum_items}
+        hit = 0
+        for item in scene.gmi_bone_map:
+            if item.source in bones:
+                item.target = str(bones[item.source])
+                hit += 1
+            elif physics.get(item.source) in valid:
+                item.strategy = physics[item.source]
+                hit += 1
+        self.report({"INFO"}, f"读入 {len(bones)} 条骨映射 + {len(physics)} 条装饰物理，"
+                              f"命中表内 {hit} 行")
+        return {"FINISHED"}
 
 
 CLASSES = (
+    GMI_bone_name,
+    GMI_bone_map_item,
+    GMI_OT_build_bone_map,
+    GMI_OT_clear_bone_map,
+    GMI_OT_save_bone_map,
+    GMI_OT_load_bone_map,
     GMI_OT_extract_profile_from_frame_dump,
     GMI_OT_build_full_profile,
     GMI_OT_update_profile_from_frame_dump,
@@ -2792,18 +2401,7 @@ CLASSES = (
     GMI_OT_import_profile_object,
     GMI_OT_import_reference,
     GMI_OT_import_weighted_reference,
-    GMI_OT_transfer_profile_weights,
-    GMI_OT_transfer_hairprop_weights,
-    GMI_OT_bind_hairprop_rigid,
-    GMI_OT_transfer_profile_weights_smart,
-    GMI_OT_transfer_hairprop_weights_smart,
-    GMI_OT_select_high_risk_vertices,
-    GMI_OT_validate_mesh,
-    GMI_OT_export_mesh_mod,
-    GMI_OT_export_inverse_skin_mod,
     GMI_OT_export_bundle_source,
-    GMI_OT_export_validated_mod,
     GMI_OT_create_body_material_template,
     GMI_OT_bake_material_maps,
-    GMI_OT_export_texture_mod,
 )

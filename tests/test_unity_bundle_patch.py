@@ -3,7 +3,30 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools.patch_unity_bundle import _pack_vertex_data
+from tools.patch_unity_bundle import _pack_vertex_data, _resolve_hash_bone_names
+
+
+def test_hash_bone_name_resolution():
+    sidecar = {
+        "rootBone": "bone_101",
+        "bones": [
+            {"name": "bone_101", "parentIndex": -1},
+            {"name": "bone_202", "parentName": "bone_101"},
+            {"name": "Hips", "parentIndex": -1},
+        ],
+        "extraSwingBones": [
+            {"name": "bone_202_End", "parentName": "bone_202"},
+        ],
+    }
+    assert _resolve_hash_bone_names(
+        sidecar, {101: "DressRoot", 202: "DressTip"}
+    ) == 2
+    assert sidecar["rootBone"] == "DressRoot"
+    assert [item["name"] for item in sidecar["bones"]] == [
+        "DressRoot", "DressTip", "Hips"
+    ]
+    assert sidecar["bones"][1]["parentName"] == "DressRoot"
+    assert sidecar["extraSwingBones"][0]["parentName"] == "DressTip"
 
 
 def test_template_stream_pack():
@@ -29,4 +52,5 @@ def test_template_stream_pack():
 
 if __name__ == "__main__":
     test_template_stream_pack()
+    test_hash_bone_name_resolution()
     print("unity bundle patch contract OK")

@@ -29,6 +29,26 @@ def inspect_dds(path):
     return {"width": width, "height": height, "format": formats.get(dxgi_format, f"DXGI_{dxgi_format}")}
 
 
+def read_rgba8_dds(path):
+    """Read the top-down RGBA8 DDS emitted by write_rgba8_dds()."""
+    raw = Path(path).read_bytes()
+    if len(raw) < 148 or raw[:4] != b"DDS ":
+        raise ValueError(f"Not a GMI RGBA8 DDS file: {path}")
+    height, width = struct.unpack_from("<2I", raw, 12)
+    if raw[84:88] != b"DX10":
+        raise ValueError(f"DDS must use a DX10 header: {path}")
+    dxgi_format, dimension, _misc, array_size, _misc2 = struct.unpack_from(
+        "<5I", raw, 128
+    )
+    if dxgi_format not in (28, 29) or dimension != 3 or array_size != 1:
+        raise ValueError(f"DDS is not an uncompressed RGBA8 texture: {path}")
+    size = width * height * 4
+    pixels = raw[148:]
+    if not width or not height or len(pixels) != size:
+        raise ValueError(f"DDS RGBA8 数据长度无效：{path}")
+    return width, height, pixels
+
+
 def write_rgba8_dds(path, width, height, rgba_bytes, srgb=True):
     """Write an uncompressed R8G8B8A8 DDS with a DX10 header (top-down, 1 mip).
 
@@ -67,13 +87,6 @@ def write_solid_rgba8_dds(path, rgba, size=4, srgb=False):
         for channel in rgba
     )
     write_rgba8_dds(path, size, size, bytes([r, g, b, a]) * (size * size), srgb=srgb)
-
-
-def _dds_formats_compatible(expected, actual):
-    return expected == actual or {expected, actual} in (
-        {"BC7_UNORM", "R8G8B8A8_UNORM"},
-        {"BC7_UNORM_SRGB", "R8G8B8A8_UNORM_SRGB"},
-    )
 
 
 def load_material_presets():
@@ -304,6 +317,30 @@ def bake_material_maps(id_map, base_rgb8, class_per_slot, presets,
         # t4.A 不暴露给作者手调；它是材质类型预设的二值结果。
         t4[mask, 3] = round(m4["alpha"] * 255)
     return t1, t4
+
+
+def outline_nibbles_from_base(br, bg, bb, gain=1.0):
+    """把顶点基础色编码成描边色 nibble (R高, R低, G高)，各 0..15。
+
+    曲线实测自 saki body draw227 + 0628outfit：R 随基础 R 明显上升(亮处 ~4/15)，
+    G/B 偏低(~1-2/15) —— 暗/中性面得暗灰线，亮/米面偏暖，肤色偏棕。
+    """
+    def _nib(value):
+        return max(0, min(15, int(round(value))))
+
+    br = min(1.0, max(0.0, float(br)))
+    bg = min(1.0, max(0.0, float(bg)))
+    bb = min(1.0, max(0.0, float(bb)))
+    r_high = _nib(gain * 5.0 * br ** 2.7)
+    r_low = _nib(gain * 1.50 * bg ** 0.41)
+    g_high = _nib(gain * 1.50 * bb ** 0.86)
+    # 三条曲线陡度差太大，中暗底色(0.11~0.42)会掉通道：R(指数2.7)先归零，只剩 G/B
+    # → (0,1,1) 青边 或 (0,1,0) 绿边。而抓帧实测原版是「所有通道有 ~1/15 底，永远是
+    # 暗灰线」(中等亮度 base 0.4-0.6 三通道 nibble 都≈1)。所以只要不是纯黑面，三通道
+    # 一起抬到至少 1，回到中性暗灰；亮部曲线不受影响(本来就都 ≥1)。
+    if r_high or r_low or g_high:
+        r_high, r_low, g_high = max(1, r_high), max(1, r_low), max(1, g_high)
+    return r_high, r_low, g_high
 
 
 def packed_mask_channel_label(channel):
@@ -1467,7 +1504,8 @@ def _bundle_geojson(data, source_mesh, skeleton, material_slot_count):
     if not (len(normals) == len(tangents) == len(uv0) == len(colors) == vertex_count):
         raise ValueError("网格顶点/法线/切线/UV/COLOR 数量不一致")
 
-    bind_poses = source_mesh.get("m_BindPose") or []
+    bind_poses = list(source_mesh.get("m_BindPose") or [])
+    bind_poses.extend(data.get("bundle_extra_bind_poses") or [])
     ordered, old_to_new, bones = _bundle_bone_order(skeleton)
     if len(bind_poses) != len(ordered):
         raise ValueError(
@@ -1490,6 +1528,9 @@ def _bundle_geojson(data, source_mesh, skeleton, material_slot_count):
         "m_Indices": indices,
         "m_Skin": _bundle_skin(data.get("skin") or [], old_to_new, len(bind_poses)),
         "m_BindPose": [bind_poses[old_index] for _node, old_index, _parent in ordered],
+        # Keep the source weighted-index identity available to the template
+        # patcher when a Unity-built template omitted m_BoneNameHashes.
+        "m_BoneNameHashes": list(source_mesh.get("m_BoneNameHashes") or []),
         "m_SubMeshes": submeshes,
         "m_Name": source_mesh.get("m_Name") or source_mesh.get("Name") or "Geo_Body",
     }
@@ -1537,7 +1578,11 @@ def _bundle_root_bone(skeleton, bone_names):
     root_pathid = skeleton.get("rootBonePathId")
     if root_pathid is not None:
         candidates += [n.get("name") for n in nodes if n.get("pathId") == root_pathid]
-    candidates += [n.get("name") for n in nodes if n.get("weightedIndex") == 0]
+    # weightedIndex==0 只在真实骨架里可信；合成骨架（rootBonePathId 缺失、pathId 全 None）
+    # 的 weightedIndex 顺序是任意的（按 m_BoneNameHashes），0 号往往是手指骨之类而非根骨，
+    # 会让 modRoot != originalRoot 导致 graft 中止。合成骨架直接落到权威约定根 Hips。
+    if not skeleton.get("synthetic"):
+        candidates += [n.get("name") for n in nodes if n.get("weightedIndex") == 0]
     candidates.append("Hips")
     for candidate in candidates:
         if candidate and candidate in bone_names:
@@ -1559,6 +1604,10 @@ def write_bundle_source(
     bundle_dir.mkdir(parents=True, exist_ok=True)
     source_mesh = load_json(Path(mesh_json))
     skeleton = load_json(Path(skeleton_json))
+    extra_nodes = data.get("bundle_extra_skeleton_nodes") or []
+    if extra_nodes:
+        skeleton = dict(skeleton)
+        skeleton["nodes"] = list(skeleton.get("nodes") or []) + extra_nodes
     geo, bones = _bundle_geojson(data, source_mesh, skeleton, material_slot_count)
 
     renderer_names = {"body": "Geo_Body", "hair": "Geo_Hair", "hairprop": "Geo_HairProp"}
@@ -1569,12 +1618,36 @@ def write_bundle_source(
     prefab_name = f"{source}.prefab"
     bundle_name = f"{package_id}.bundle"
     _write_json(bundle_dir / geo_name, geo)
-    _write_json(bundle_dir / bones_name, {
-        "schemaVersion": 2,
+    source_report = data.get("source_rig_report", {})
+    sidecar = {
+        "schemaVersion": 4 if source_report.get("newBones") else 2,
+        # Bump this whenever export behaviour changes — lets a loaded-old-module vs
+        # new-code mismatch be spotted straight from the exported bundle.
+        "gmiCodeMarker": "physics-3tier-20260725",
         "boneCount": len(bones),
         "rootBone": _bundle_root_bone(skeleton, {bone["name"] for bone in bones}),
         "bones": bones,
-    })
+        "sourceRigRemap": source_report,
+    }
+    if source_report.get("newBones"):
+        if not extra_nodes:
+            sidecar["newBones"] = source_report["newBones"].get("newBones", [])
+        sidecar["extraSwingBones"] = source_report["newBones"].get("extraSwingBones", [])
+        # Runtime BuildHybridBoneArray creates new bones from bones[] and reads each entry's
+        # swing (parseSwing). New bones live in bones[] without a swing field → the runtime
+        # falls back to SetDefaultValues (mass=0/spring=0, inert) → they flail when driven or
+        # never swing. Carry the swing params computed for newBones onto the matching bones[]
+        # entry so created bones get real spring/damping instead of degenerate defaults.
+        swing_by_name = {
+            nb["name"]: nb["swing"]
+            for nb in source_report["newBones"].get("newBones", [])
+            if isinstance(nb, dict) and nb.get("name") and nb.get("swing")
+        }
+        for bone in bones:
+            swing = swing_by_name.get(bone.get("name"))
+            if swing and "swing" not in bone:
+                bone["swing"] = dict(swing)
+    _write_json(bundle_dir / bones_name, sidecar)
 
     texture_entries = []
     for item in textures:
@@ -1696,23 +1769,6 @@ def scan_body_json_library(json_dir, name_filter=None, mesh_name="Geo_Body"):
             **summary,
         })
     return entries
-
-
-def resolve_exact_body_json_entry(json_dir, body_resource, mesh_name="Geo_Body"):
-    """Return one exact body entry from the JSON library, or None.
-
-    This is used before frame-profile extraction: if the author already knows
-    the exact body resource, its vertex count is a stronger signal than generic
-    draw-size scoring.
-    """
-    body_resource = (body_resource or "").strip()
-    if not body_resource or body_resource == "unknown":
-        return None
-    entries = scan_body_json_library(json_dir, name_filter=body_resource, mesh_name=mesh_name)
-    exact = [entry for entry in entries if entry["body"] == body_resource]
-    if len(exact) == 1:
-        return dict(exact[0])
-    return None
 
 
 def body_json_vertex_hints(json_dir, body_resource, mesh_name="Geo_Body"):
@@ -2222,33 +2278,6 @@ def read_weighted_reference(mesh_json, skeleton_json):
     }
 
 
-def validate_index_mesh(vertex_count, faces, expected_vertices, expected_indices):
-    errors, warnings = [], []
-    if vertex_count != expected_vertices:
-        errors.append(
-            f"原拓扑导出要求顶点数保持 {expected_vertices}，当前为 {vertex_count}"
-        )
-    if any(len(face) != 3 for face in faces):
-        errors.append("所有面都必须先三角化")
-    index_count = sum(len(face) for face in faces)
-    if index_count > expected_indices:
-        errors.append(
-            f"索引数 {index_count} 超过原 Draw 容量 {expected_indices}"
-        )
-    elif index_count < expected_indices:
-        warnings.append(
-            f"索引数 {index_count} 会用退化三角形补齐到 {expected_indices}"
-        )
-    max_index = max((max(face) for face in faces if face), default=0)
-    if max_index > 65535:
-        errors.append("R16_UINT 无法引用超过 65535 的顶点索引")
-    return errors, warnings
-
-
-def _safe_section(value):
-    return re.sub(r"[^A-Za-z0-9]", "", value.title()) or "GakumasMI"
-
-
 def _shader_check_overrides(section, component_id, drawcalls, extra_components=()):
     """为 body IB 关联的全部 VS 生成 ShaderOverride...checktextureoverride = ib。
 
@@ -2284,82 +2313,6 @@ def _shader_check_overrides(section, component_id, drawcalls, extra_components=(
     return "\n".join(blocks)
 
 
-def _secondary_material_sections(component, drawcalls, component_id):
-    draw_component = drawcalls.get("components", {}).get(component_id, {}) or {}
-    by_id = {
-        str(section.get("id")): dict(section)
-        for section in component.get("materialSections", []) or []
-        if section.get("id") and section.get("role") != "main"
-    }
-    for section_id, section_data in (draw_component.get("sectionBindings", {}) or {}).items():
-        if section_data.get("role") == "main":
-            continue
-        entry = by_id.setdefault(str(section_id), {"id": str(section_id), "role": section_data.get("role", "secondary")})
-        for key in ("firstIndex", "indexCount", "representativeDraw"):
-            if key in section_data and key not in entry:
-                entry[key] = section_data[key]
-        if "passBindings" in section_data:
-            entry["passBindings"] = section_data["passBindings"]
-    return sorted(
-        by_id.values(),
-        key=lambda item: (
-            int(item.get("firstIndex") or 0),
-            str(item.get("id") or ""),
-        ),
-    )
-
-
-def _select_native_co_section(component, drawcalls, component_id):
-    sections = _secondary_material_sections(component, drawcalls, component_id)
-    if not sections:
-        raise ValueError(
-            "当前 Profile 没有 secondary materialSections；无法使用原生 co 材质。"
-            "请用包含 m_bdyco/第二材质段的 FrameAnalysis 重新生成配置档，"
-            "或把该材质槽改回「不透明」走主 body 路径。"
-        )
-    return sections[0]
-
-
-def _section_texture_slot(profile_set, section_id, semantic, fallback, pixel_shader=None):
-    entry = _profile_material_texture_entry(profile_set, f"{section_id}.{semantic}")
-    return _material_texture_slot(entry, fallback, pixel_shader=pixel_shader)
-
-
-def _material_texture_slot(entry, fallback, pixel_shader=None):
-    entry = entry or {}
-    if pixel_shader:
-        variants = entry.get("slotVariants") or {}
-        slot = variants.get(str(pixel_shader).lower()) or variants.get(str(pixel_shader))
-        if slot:
-            return slot
-    return entry.get("slot") or fallback
-
-
-def _profile_material_texture_entry(profile_set, texture_key):
-    """Return the runtime binding for a material texture key.
-
-    Older extracted profiles mislabeled the t2 environment cubemap as
-    shadeColor and left the real _ShadeMap/sdw texture under *.t4. For export,
-    shadeColor must bind to ps-t4, so transparently migrate those profiles.
-    """
-    textures = profile_set.get("textures", {}).get("textures", {}) or {}
-    entry = textures.get(texture_key)
-    prefix, _, semantic = texture_key.rpartition(".")
-    if semantic == "shadeColor":
-        t4_entry = textures.get(f"{prefix}.t4")
-        if t4_entry and t4_entry.get("slot") == "ps-t4":
-            migrated = dict(t4_entry)
-            migrated["semantic"] = "shadeColor"
-            migrated["_migratedFrom"] = f"{prefix}.t4"
-            return migrated
-        if entry and entry.get("slot") != "ps-t4" and not entry.get("slotVariants"):
-            migrated = dict(entry)
-            migrated["slot"] = "ps-t4"
-            migrated["_migratedFrom"] = texture_key
-            return migrated
-    return entry
-
-
 # --- Runtime texture-slot layout auto-detect (replaces per-PS slot variants) ---
 # The game repacks base/mask/shade into different ps-tN slots per lighting shader.
 # Instead of enumerating pixel-shader hashes, detect the layout at draw time from a
@@ -2369,112 +2322,6 @@ def _profile_material_texture_entry(profile_set, texture_key):
 #   neither           -> layout C/unknown (base t0, mask t1, no custom shade) -- safe
 # This needs no per-costume or per-scene shader hash and degrades gracefully.
 GMI_BODY_LAYOUT_LANDMARK = "0ff26bed"
-
-
-def _landmark_layout_sections(section, match_priority, reset_variable=None):
-    """DetectLayout command list + the landmark probe TextureOverride (once per mod)."""
-    reset_line = f"${reset_variable} = 0\n" if reset_variable else ""
-    return (
-        f"[CommandList{section}DetectLayout]\n"
-        f"$gmi_{section}_layout = 0\n"
-        f"$gmi_{section}_probe = 0\n"
-        f"checktextureoverride = ps-t2\n"
-        f"if $gmi_{section}_probe == 1\n"
-        f"    $gmi_{section}_layout = 2\n"
-        f"endif\n"
-        f"$gmi_{section}_probe = 0\n"
-        f"checktextureoverride = ps-t3\n"
-        f"if $gmi_{section}_probe == 1\n"
-        f"    $gmi_{section}_layout = 1\n"
-        f"endif\n\n"
-        f"[TextureOverride{section}BodyLayoutLandmark]\n"
-        f"; fires when the global body landmark {GMI_BODY_LAYOUT_LANDMARK} is bound;\n"
-        f"; DetectLayout reads its slot (ps-t2=A / ps-t3=B). match_priority disambiguates\n"
-        f"; the shared hash when several body mods are installed.\n"
-        f"hash = {GMI_BODY_LAYOUT_LANDMARK}\n"
-        f"match_priority = {match_priority}\n"
-        f"{reset_line}"
-        f"$gmi_{section}_probe = 1\n"
-    )
-
-
-def _hairprop_selector(profile):
-    """Return the hairprop draw signature used to select a shared hair base.
-
-    A hair IB is commonly shared by several hairstyles.  The optional hairprop
-    component is the discriminant when it has its own IB and main section.  The
-    runtime matcher uses hash + firstIndex; indexCount is retained in the
-    manifest for audit and future matcher upgrades.
-    """
-    if not isinstance(profile, dict):
-        return None
-    prop = component_by_id(profile, "hairprop")
-    if not prop or not prop.get("ibHash"):
-        return None
-    first_index = prop.get("mainFirstIndex")
-    if first_index is None:
-        return None
-    return {
-        "component": "hairprop",
-        "ibHash": str(prop["ibHash"]),
-        "firstIndex": int(first_index),
-        "indexCount": int(prop.get("indices") or 0),
-    }
-
-
-def _runtime_guard(section, body, selector_variable=None):
-    """Wrap an override body in the package enable flag and optional selector."""
-    body = textwrap.indent(body.strip("\n"), "    ")
-    if selector_variable:
-        body = (
-            f"    if ${selector_variable} == 1\n"
-            f"{textwrap.indent(body, '    ')}\n"
-            "    endif"
-        )
-    return f"if $enable_{section}\n{body}\nendif"
-
-
-def _landmark_binding_block(section, resources, indent="    "):
-    """Per-section slot binding driven by $gmi_<section>_layout (see above)."""
-    base = resources.get("baseColor")
-    mask = resources.get("packedMask")
-    shade = resources.get("shadeColor")
-    out = [f"{indent}run = CommandList{section}DetectLayout"]
-    # layout 0 = C / unknown: base+mask at t0/t1, no custom shade (safe fallback)
-    out.append(f"{indent}if $gmi_{section}_layout == 0")
-    if base:
-        out.append(f"{indent}    ps-t0 = Resource{base}")
-    if mask:
-        out.append(f"{indent}    ps-t1 = Resource{mask}")
-    out.append(f"{indent}endif")
-    # layout 2 = A: t0/t1/t4
-    out.append(f"{indent}if $gmi_{section}_layout == 2")
-    if base:
-        out.append(f"{indent}    ps-t0 = Resource{base}")
-    if mask:
-        out.append(f"{indent}    ps-t1 = Resource{mask}")
-    if shade:
-        out.append(f"{indent}    ps-t4 = Resource{shade}")
-    out.append(f"{indent}endif")
-    # layout 1 = B: t1/t2/t5
-    out.append(f"{indent}if $gmi_{section}_layout == 1")
-    if base:
-        out.append(f"{indent}    ps-t1 = Resource{base}")
-    if mask:
-        out.append(f"{indent}    ps-t2 = Resource{mask}")
-    if shade:
-        out.append(f"{indent}    ps-t5 = Resource{shade}")
-    out.append(f"{indent}endif")
-    return "\n".join(out)
-
-
-def _landmark_match_priority(ib_hash):
-    """Stable per-costume priority from the IB hash so independently generated mods
-    rarely collide on the shared landmark hash (0..65535)."""
-    try:
-        return int(str(ib_hash)[:8], 16) % 65536
-    except (ValueError, TypeError):
-        return 0
 
 
 def _sanitize_package_id(value):
@@ -2494,125 +2341,6 @@ def _sanitize_package_id(value):
 
 def _write_json(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
-def write_index_package(
-    profile_dir, output_root, package_id, name, author, component_id, faces,
-    vertex_count=None,
-):
-    package_id = _sanitize_package_id(package_id)
-    profile_set = load_profile_set(profile_dir)
-    profile = profile_set["profile"]
-    drawcalls = profile_set["drawcalls"]
-    component = component_by_id(profile, component_id)
-    expected_indices = component.get("indices")
-    if not expected_indices:
-        raise ValueError(f"Profile component {component_id} has no fixed index count")
-    errors, warnings = validate_index_mesh(
-        vertex_count if vertex_count is not None else component["vertices"],
-        faces, component["vertices"], expected_indices
-    )
-    if errors:
-        raise ValueError("; ".join(errors))
-    flat = [index for face in faces for index in face]
-    flat.extend([0] * (expected_indices - len(flat)))
-    package_dir = Path(output_root) / package_id
-    buffer_dir = package_dir / "Buffers"
-    buffer_dir.mkdir(parents=True, exist_ok=True)
-    buffer_name = f"{component_id.title()}.IB.R16_UINT.buf"
-    (buffer_dir / buffer_name).write_bytes(struct.pack(f"<{len(flat)}H", *flat))
-    target = profile["target"]
-    conflict = f"{target['actorId']}.{target['costumeId']}.{component_id}.mesh"
-    manifest = {
-        "schemaVersion": 1,
-        "id": package_id,
-        "name": name,
-        "version": "0.1.0",
-        "author": author,
-        "type": "mesh-replacement",
-        "profile": profile["id"],
-        "targets": [f"{component_id}.indexBuffer"],
-        "dependencies": [],
-        "conflicts": [conflict],
-        "runtime": ">=0.1.0",
-        "status": "draft",
-    }
-    _write_json(package_dir / "manifest.json", manifest)
-    section = _safe_section(package_id)
-    # IB-only 触发：只按本服装唯一的 IB hash 匹配，不注册共享的 ShaderOverride，
-    # 这样多个 body mod 共存也不会重复(IB hash 各不相同),且自动覆盖所有 pass。
-    ini = f"""; Generated by GakumasMI Blender Add-on
-
-[TextureOverride{section}{component_id.title()}]
-hash = {component['ibHash']}
-ib = Resource{section}IB
-
-[Resource{section}IB]
-type = Buffer
-format = DXGI_FORMAT_R16_UINT
-filename = Buffers\\{buffer_name}
-"""
-    (package_dir / "mod.ini").write_text(ini, encoding="utf-8")
-    (package_dir / "README.md").write_text(
-        f"# {name}\n\nGenerated for Profile `{profile['id']}`.\n", encoding="utf-8"
-    )
-    return package_dir, warnings
-
-
-def write_texture_package(profile_dir, output_root, package_id, name, author, texture_key, source_file):
-    package_id = _sanitize_package_id(package_id)
-    profile_set = load_profile_set(profile_dir)
-    profile = profile_set["profile"]
-    entry = _profile_material_texture_entry(profile_set, texture_key)
-    if not entry:
-        raise ValueError(f"Unknown texture key: {texture_key}")
-    source = Path(source_file)
-    if source.suffix.lower() != ".dds" or not source.is_file():
-        raise ValueError("Texture export currently requires an existing DDS file")
-    package_dir = Path(output_root) / package_id
-    texture_dir = package_dir / "Textures"
-    texture_dir.mkdir(parents=True, exist_ok=True)
-    component, semantic = texture_key.split(".", 1)
-    texture_name = f"{component.title()}.{semantic[0].upper() + semantic[1:]}.dds"
-    shutil.copy2(source, texture_dir / texture_name)
-    target = profile["target"]
-    conflict = f"{target['actorId']}.{target['costumeId']}.{texture_key}"
-    manifest = {
-        "schemaVersion": 1,
-        "id": package_id,
-        "name": name,
-        "version": "0.1.0",
-        "author": author,
-        "type": "texture-replacement",
-        "profile": profile["id"],
-        "targets": [texture_key],
-        "dependencies": [],
-        "conflicts": [conflict],
-        "runtime": ">=0.1.0",
-        "status": "draft",
-    }
-    _write_json(package_dir / "manifest.json", manifest)
-    section = _safe_section(package_id)
-    slot = entry["slot"]
-    ini = f"""; Generated by GakumasMI Blender Add-on
-
-[ShaderOverride{section}Texture]
-hash = {entry['pixelShader']}
-checktextureoverride = {slot}
-
-[TextureOverride{section}{component.title()}{semantic.title()}]
-hash = {entry['hash']}
-this = Resource{section}Texture
-
-[Resource{section}Texture]
-filename = Textures\\{texture_name}
-"""
-    (package_dir / "mod.ini").write_text(ini, encoding="utf-8")
-    (package_dir / "README.md").write_text(
-        f"# {name}\n\nGenerated for `{texture_key}` in Profile `{profile['id']}`.\n",
-        encoding="utf-8",
-    )
-    return package_dir
 
 
 def _to_unity(vector):
@@ -2637,6 +2365,430 @@ def inverse_skin_bone_map(profile_dir, skeleton_json=None, component_id="body"):
     if len(result) != int(config["weightedBoneCount"]):
         raise ValueError("Inverse-skin skeleton weighted bone count is inconsistent")
     return result
+
+
+def load_bone_remap_presets(path=None):
+    """Load the small built-in source-rig remap table."""
+    source = Path(path) if path else Path(__file__).with_name("bone_remap_presets.json")
+    return load_json(source).get("presets", {})
+
+
+def detect_source_rig(source_bones, target_bones=()):
+    """Identify the supported naming convention from bone names."""
+    names = {str(name) for name in source_bones if str(name)}
+    lowered = {name.lower() for name in names}
+    target = {str(name) for name in target_bones}
+    if any(name.startswith("mixamorig:") for name in lowered):
+        return "mixamo"
+    if any(name.startswith(("def-", "org-", "mch-")) for name in lowered):
+        return "rigify"
+    if any(name in {"センター", "下半身", "上半身", "左腕", "右腕", "左ひじ", "右ひじ"}
+           for name in names):
+        return "mmd-standard"
+    if any(re.sub(r"(?:_1)+$", "", name) in target and name not in target for name in names):
+        return "scsp"
+    return "custom"
+
+
+def _fold_side_suffix(name):
+    """mmd_tools 把 PMX 的 右腕 导成 腕.R；折回去才查得到日文表。"""
+    sided = re.fullmatch(r"(.+)\.([LR])", name)
+    if not sided:
+        return None
+    return ("左" if sided.group(2) == "L" else "右") + sided.group(1)
+
+
+def _preset_target(name, preset_bones):
+    candidate = preset_bones.get(name)
+    if candidate is not None:
+        return candidate
+    folded = _fold_side_suffix(name)
+    return preset_bones.get(folded) if folded else None
+
+
+def _best_preset(source, target, presets, preferred=None):
+    """逐张表试算命中数，取最高的那张。
+
+    嗅探（detect_source_rig）只用来打平手：这样以后支持一种新命名规范＝纯加一张表，
+    不用再加嗅探分支，也不会因为嗅探探针没命中就让整张表空转。
+    """
+    def hits(key):
+        bones = presets.get(key, {}).get("bones", {})
+        return sum(1 for name in source if _preset_target(name, bones) in target)
+
+    ranked = sorted(presets, key=lambda key: (-hits(key), key != preferred, key))
+    if ranked and hits(ranked[0]):
+        return ranked[0]
+    return preferred or "custom"
+
+
+def classify_source_bones(source_bones, target_bones, remap=None, accessory_prefixes=None):
+    """Split source bones into Track A body bones and Track B accessories."""
+    target = {str(name) for name in target_bones}
+    remap = remap or {}
+    prefixes = tuple(str(value).lower() for value in (accessory_prefixes or (
+        "skirt", "bow", "streamer", "ribbon", "hair", "cloth", "dress", "tie",
+        "accessory", "髪", "スカート", "リボン", "ネクタイ", "飾",
+    )))
+    body, accessory = [], []
+    for name in (str(value) for value in source_bones):
+        lower = name.lower()
+        if any(token in lower for token in prefixes):
+            accessory.append(name)
+        elif name in target or name in remap:
+            body.append(name)
+        else:
+            accessory.append(name)
+    return {"body": body, "accessory": accessory}
+
+
+def build_bone_remap(source_bones, target_bones, parent_by_name=None,
+                     preset_name="auto", presets=None):
+    """Build deterministic Track A mappings and diagnose Track B bones.
+
+    Direct names, ``_1`` cleanup, and the selected preset are safe weight-label
+    translations. Parent fallback is reported separately for accessory grafting;
+    it is deliberately not added to ``bones``.
+    """
+    source = list(dict.fromkeys(str(name) for name in source_bones if str(name)))
+    target = {str(name) for name in target_bones if str(name)}
+    presets = presets or load_bone_remap_presets()
+    rig = detect_source_rig(source, target)
+    selected = (_best_preset(source, target, presets, rig)
+                if preset_name in (None, "", "auto") else str(preset_name))
+    preset = presets.get(selected, {})
+    preset_bones = preset.get("bones", {})
+    mappings, methods = {}, {}
+
+    def mapped_name(name):
+        if name in target:
+            return name, "direct"
+        stripped = re.sub(r"(?:_1)+$", "", name)
+        if stripped in target:
+            return stripped, "strip_suffix"
+        candidate = _preset_target(name, preset_bones)
+        if candidate in target:
+            return candidate, "preset"
+        return None, None
+
+    for name in source:
+        candidate, method = mapped_name(name)
+        if candidate:
+            mappings[name] = candidate
+            methods[name] = method
+
+    parents = parent_by_name or {}
+    parent_fallback = {}
+    for name in source:
+        if name in mappings:
+            continue
+        parent = parents.get(name)
+        visited = set()
+        while parent and parent not in visited:
+            visited.add(parent)
+            candidate = mappings.get(parent)
+            if candidate is None:
+                candidate, _ = mapped_name(parent)
+            if candidate:
+                parent_fallback[name] = candidate
+                break
+            parent = parents.get(parent)
+
+    classes = classify_source_bones(
+        source, target, mappings, preset.get("accessoryPrefixes")
+    )
+    return {
+        "sourceRig": rig,
+        "preset": selected if selected in presets else None,
+        "bones": mappings,
+        "methods": methods,
+        "parentFallback": parent_fallback,
+        "unmapped": [name for name in source if name not in mappings],
+        "bodyBones": classes["body"],
+        "accessoryBones": classes["accessory"],
+    }
+
+
+# 任何全身网格都必须有权重的承重关节。少一个 = 源骨名没映射上，静止看着正常、
+# 进游戏那块跟着别的骨乱跑（实测过：整只手 100% 钉在 Spine1）。
+CRITICAL_TARGET_BONES = (
+    "Hips", "Spine",
+    "LeftArm", "LeftForeArm", "LeftHand", "LeftUpLeg", "LeftLeg", "LeftFoot",
+    "RightArm", "RightForeArm", "RightHand", "RightUpLeg", "RightLeg", "RightFoot",
+)
+
+
+def critical_coverage_error(source_names, remap, target_bones):
+    """承重关节零权重 → 返回报错文案，正常返回 None。
+
+    不猜源骨语义，只查游戏侧的胳膊腿有没有拿到权重，所以对任何命名规范都适用；
+    与目标骨架取交集，骨很少的测试/局部骨架不会误报。位置匹配永远能返回一个骨名，
+    不拦就是静默出废品——这是唯一便宜且可靠的拦法。
+    """
+    target = set(target_bones)
+    hit = {remap.get(name) for name in source_names}
+    missing = [name for name in CRITICAL_TARGET_BONES
+               if name in target and name not in hit]
+    if not missing:
+        return None
+    return ("以下承重关节没有拿到任何权重：" + "、".join(missing)
+            + f"（共 {len(missing)} 个）。源模型的骨名没有被识别，这样导出进游戏会让"
+              "这些部位跟着别的骨乱跑。请在导出面板「骨骼映射表」里扫描并指定对应关系。")
+
+
+def merge_accessory_bone_remap(body_remap, *accessory_maps):
+    """Add accessory guesses without overriding an explicit body mapping."""
+    result = dict(body_remap or {})
+    for mapping in accessory_maps:
+        for name, target in (mapping or {}).items():
+            result.setdefault(name, target)
+    return result
+
+
+def _named_positions(items):
+    if isinstance(items, dict):
+        items = [{"name": name, "position": position} for name, position in items.items()]
+    result = {}
+    for item in items or ():
+        if isinstance(item, str):
+            continue
+        name = str(item.get("name") or "")
+        position = item.get("position", item.get("worldPosition"))
+        if name and position is not None and len(position) >= 3:
+            result[name] = tuple(float(value) for value in position[:3])
+    return result
+
+
+def target_swing_bones(target_bones):
+    """Return target bones eligible for Track B physics inheritance."""
+    names = _named_positions(target_bones)
+    return [name for name in names if (
+        name.lower().endswith("_s")
+        or "cloth" in name.lower()
+        or re.fullmatch(r"bone_[0-9a-f]+", name, re.IGNORECASE)
+    )]
+
+
+def build_accessory_physics_remap(
+    source_bones, target_bones, accessory_bones, parent_by_name=None,
+    body_remap=None, group_by_name=None, max_distance=0.18, overrides=None,
+):
+    """Classify each Track B accessory into a physics strategy, then resolve targets.
+
+    Per bone/group the strategy is chosen by precedence — **author override >
+    built-in semantic name rule > position fallback** — so a wrong auto-guess is
+    always correctable without touching code (the general escape hatch). Strategies:
+
+      - ``integrate``      新骨 + 自己的 ActorSwing 链（自由悬垂：飘带/蝴蝶结）
+      - ``follow_skirt``   蹭最近**裙摆**摇物骨，无视距离（裙摆镶边：花边）
+      - ``follow:<bone>``  蹭指定目标骨
+      - ``follow_nearest`` / 默认  蹭最近摇物骨（太远则退刚性父骨）
+      - ``rigid``          无物理，跟最近的已映射身体父骨
+
+    ``overrides`` = ``{骨名或前缀: 策略}``（作者显式，最高优先；前缀取最长匹配）。
+    不传 overrides 时行为等价旧版（源链→integrate、lace→follow_skirt、其余位置匹配）。
+    """
+    source = _named_positions(source_bones)
+    target = _named_positions(target_bones)
+    swing_names = target_swing_bones(target_bones)
+    skirt_swing_names = [name for name in swing_names if "skirt" in name.lower()]
+    accessory = [str(name) for name in accessory_bones if str(name) in source]
+    parents = parent_by_name or {}
+    body = body_remap or {}
+    explicit_groups = group_by_name or {}
+    overrides = {str(k): str(v) for k, v in (overrides or {}).items()}
+    max_distance_sq = float(max_distance) ** 2
+
+    def nearest(position, candidates=None):
+        pool = candidates if candidates else swing_names
+        if not pool:
+            return None, None
+        name = min(pool, key=lambda candidate: sum(
+            (position[index] - target[candidate][index]) ** 2 for index in range(3)
+        ))
+        distance_sq = sum(
+            (position[index] - target[name][index]) ** 2 for index in range(3)
+        )
+        return name, distance_sq
+
+    def rigid_parent(name):
+        parent = parents.get(name)
+        visited = set()
+        while parent and parent not in visited:
+            visited.add(parent)
+            if parent in body:
+                return body[parent]
+            parent = parents.get(parent)
+        return "Hips"
+
+    def group_key(name):
+        if name in explicit_groups:
+            return str(explicit_groups[name])
+        # ponytail: name-only grouping is a heuristic; provide group_by_name for
+        # assets whose left/right pieces are not named symmetrically.
+        return re.sub(r"(?:left|right|_l|_r)(?=_|$)", "", name.lower())
+
+    def override_for(name):
+        # exact name wins; else the longest matching prefix (so "Lace" covers Lace_R_*).
+        if name in overrides:
+            return overrides[name]
+        best_key = None
+        for key in overrides:
+            if name.lower().startswith(key.lower()) and (
+                    best_key is None or len(key) > len(best_key)):
+                best_key = key
+        return overrides[best_key] if best_key else None
+
+    def semantic_for(name):
+        lower = name.lower()
+        # Free-hanging source chains own their physics; lace is skirt-hem trim.
+        if any(token in lower for token in
+               ("spine2_bow", "spine_bow", "streamer", "sstreamer")):
+            return "integrate"
+        if "lace" in lower:
+            return "follow_skirt"
+        return None
+
+    def directive_for(names):
+        for name in names:  # author override wins outright
+            directive = override_for(name)
+            if directive:
+                return directive
+        semantics = [semantic_for(name) for name in names]
+        if "integrate" in semantics:  # preserve old any(is_source_chain) behaviour
+            return "integrate"
+        for directive in semantics:
+            if directive:
+                return directive
+        return None
+
+    groups = {}
+    for name in accessory:
+        lower = name.lower()
+        kind = "segment" if any(token in lower for token in ("skirt", "dress", "cloth")) else "group"
+        key = name if kind == "segment" else group_key(name)
+        groups.setdefault((kind, key), []).append(name)
+
+    mapping, strategies, rigid, new_bones = {}, {}, {}, []
+    for (kind, _key), names in groups.items():
+        directive = directive_for(names)
+
+        if directive == "integrate":
+            new_bones.extend(names)
+            for name in names:
+                strategies[name] = "new_source_chain"
+            continue
+        if directive == "rigid":
+            for name in names:
+                rigid[name] = rigid_parent(name)
+                strategies[name] = "rigid_parent"
+            continue
+        if directive and directive.startswith("follow:"):
+            target_bone = directive.split(":", 1)[1]
+            for name in names:
+                mapping[name] = target_bone
+                strategies[name] = "override_follow"
+            continue
+
+        follow_skirt = directive == "follow_skirt"
+        position = tuple(
+            sum(source[name][axis] for name in names) / len(names)
+            for axis in range(3)
+        )
+        candidate, distance_sq = nearest(
+            position, skirt_swing_names if follow_skirt else None
+        )
+        if candidate is None:
+            new_bones.extend(names)
+            for name in names:
+                strategies[name] = "new_bone"
+            continue
+        # follow_skirt (lace) rides the skirt even past max_distance — its bones sit at the
+        # hem, farther from the skirt bones' anchors than the cutoff. Position-default falls
+        # back to a rigid body parent when the nearest swing bone is too far.
+        if distance_sq > max_distance_sq and not follow_skirt:
+            for name in names:
+                rigid[name] = rigid_parent(name)
+                strategies[name] = "rigid_parent"
+            continue
+        for name in names:
+            mapping[name] = candidate
+            strategies[name] = "segment_nearest" if kind == "segment" else "group_centroid"
+
+    return {
+        "targetSwingBones": swing_names,
+        "bones": mapping,
+        "strategies": strategies,
+        "rigidParent": rigid,
+        "newBones": new_bones,
+        "unmapped": [name for name in accessory if name not in mapping and name not in rigid],
+        "maxDistance": float(max_distance),
+    }
+
+
+def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
+                             body_remap=None, default_swing=None):
+    """Build runtime-created source bones plus a synthetic tip per leaf."""
+    records = {
+        str(item["name"]): dict(item) for item in source_bones or ()
+        if isinstance(item, dict) and item.get("name")
+    }
+    wanted = {str(name) for name in extra_names if str(name) in records}
+    parents = parent_by_name or {}
+    body = body_remap or {}
+    swing = dict(default_swing or {
+        "damping": 0.5, "stiffness": 0.02, "spring": 0.5,
+        "mass": 0.15, "useWindGlobalForce": True,
+    })
+
+    def parent_name(name):
+        parent = parents.get(name)
+        visited = set()
+        while parent and parent not in visited:
+            visited.add(parent)
+            if parent in wanted:
+                return parent
+            if parent in body:
+                return body[parent]
+            parent = parents.get(parent)
+        return "Hips"
+
+    result = []
+    pending = set(wanted)
+    while pending:
+        ready = [name for name in pending if parents.get(name) not in pending]
+        if not ready:
+            raise ValueError("新骨骼父链存在循环，无法生成 sidecar")
+        for name in sorted(ready):
+            item = records[name]
+            result.append({
+                "name": name,
+                "parentName": parent_name(name),
+                "localPosition": list(item.get("localPosition") or [0.0, 0.0, 0.0]),
+                "localRotation": list(item.get("localRotation") or [0.0, 0.0, 0.0, 1.0]),
+                "localScale": list(item.get("localScale") or [1.0, 1.0, 1.0]),
+                "swing": dict(item.get("swing") or swing),
+            })
+            if item.get("bindPose") is not None:
+                result[-1]["bindPose"] = item["bindPose"]
+            pending.remove(name)
+
+    extra_tips = []
+    for name in sorted(wanted):
+        if not any(parent == name for parent in parents.values() if parent in wanted):
+            item = records[name]
+            length = float(item.get("length") or 0.0)
+            if length <= 1e-8:
+                continue
+            extra_tips.append({
+                "name": f"{name}_End",
+                "parentName": name,
+                "localPosition": [0.0, 0.0, -length],
+                "localRotation": [0.0, 0.0, 0.0, 1.0],
+                "localScale": [1.0, 1.0, 1.0],
+                "swing": dict(swing),
+            })
+    return {"newBones": result, "extraSwingBones": extra_tips}
 
 
 _FP16_MAX = 65504.0
@@ -2776,613 +2928,3 @@ def _pack_inverse_skin_buffers(vertices, normals, tangents, uv0, uv1, colors,
 
 _COVER_EXTS = (".png", ".jpg", ".jpeg", ".webp")
 _COVER_MAX_BYTES = 2 * 1024 * 1024
-
-
-def _prepare_cover(package_dir, cover_image):
-    """校验预览图并复制进包，返回包内文件名。要求：存在、png/jpg/webp、≤2MB。"""
-    value = str(cover_image or "").strip()
-    if not value:
-        raise ValueError("必须提供 mod 预览图（cover）：导出前在面板选择预览图。")
-    src = Path(value)
-    if not src.is_file():
-        raise ValueError(f"预览图文件不存在：{src}")
-    ext = src.suffix.lower()
-    if ext not in _COVER_EXTS:
-        raise ValueError(f"预览图格式不支持：{ext or '无扩展名'}（请用 png/jpg/webp）")
-    size = src.stat().st_size
-    if size > _COVER_MAX_BYTES:
-        raise ValueError(
-            f"预览图过大：{size / 1024 / 1024:.1f}MB，上限 2MB（建议 512–1024px、≤1MB）"
-        )
-    head = src.read_bytes()[:12]
-    is_png = head.startswith(b"\x89PNG\r\n\x1a\n")
-    is_jpg = head.startswith(b"\xff\xd8\xff")
-    is_webp = head[:4] == b"RIFF" and head[8:12] == b"WEBP"
-    if not (is_png or is_jpg or is_webp):
-        raise ValueError("预览图不是有效的 png/jpg/webp 文件")
-    dest_name = "cover" + ext
-    shutil.copyfile(src, Path(package_dir) / dest_name)
-    return dest_name
-
-
-def write_inverse_skin_package(
-    profile_dir, output_root, package_id, name, author, component_id,
-    vertices, normals, tangents, uv0, uv1, colors, faces, skin, corrections,
-    material_textures=None, materials=None, alpha_modes=None, opacity_texture=None,
-    native_co_textures=None, cover_image=None,
-):
-    """Write an arbitrary-topology, bone-weighted 3Dmigoto package."""
-    package_id = _sanitize_package_id(package_id)
-    profile_set = load_profile_set(profile_dir)
-    profile = profile_set["profile"]
-    component = component_by_id(profile, component_id)
-    drawcalls = profile_set["drawcalls"]
-    config = inverse_skin_config(profile, component_id)
-    if not config:
-        raise ValueError("Profile has no inverse-skin runtime data")
-    expected_indices = int(component["indices"])
-    bind, vb1, ib, draw_ranges, index_format = _pack_inverse_skin_buffers(
-        vertices, normals, tangents, uv0, uv1, colors, faces, skin, expected_indices, materials
-    )
-    vertex_count = len(vertices)
-    source_vertex_count = int(config["sourceVertexCount"])
-    coefficient_count = int(config["coefficientCount"])
-    material_textures = material_textures or {}
-    opacity_texture = str(opacity_texture or "").strip()
-    native_co_textures = dict(native_co_textures or {})
-    if opacity_texture and not native_co_textures.get("baseColor"):
-        native_co_textures["baseColor"] = opacity_texture
-    # 只剩原生 co 一条透明路径：把第二材质段交给游戏原生 m_bdyco draw 上下文绘制。
-    # 旧的镂空(ALPHA_CLIP)/半透明(ALPHA_BLEND)自建 pass 已整体移除。
-    alpha_modes = {
-        int(slot): "NATIVE_CO"
-        for slot, mode in (alpha_modes or {}).items()
-        if str(mode).upper() in {"NATIVE_CO", "NATIVE_SECTION", "CO"}
-    }
-
-    package_dir = Path(output_root) / package_id
-    buffer_dir = package_dir / "Buffers"
-    shader_dir = package_dir / "Shaders"
-    buffer_dir.mkdir(parents=True, exist_ok=True)
-    shader_dir.mkdir(parents=True, exist_ok=True)
-    texture_dir = package_dir / "Textures"
-    (buffer_dir / "Body.BindSkin.R32_UINT.buf").write_bytes(bind)
-    flat_corrections = [float(value) for matrix in corrections for row in matrix for value in row]
-    (buffer_dir / "Body.BoneCorrections.R32_FLOAT.buf").write_bytes(
-        struct.pack(f"<{len(flat_corrections)}f", *flat_corrections)
-    )
-    (buffer_dir / "Body.VB1.buf").write_bytes(vb1)
-    ib_buffer_name = f"Body.IB.{index_format}.buf"
-    (buffer_dir / ib_buffer_name).write_bytes(ib)
-    operator_source = (profile_set["root"] / config["inverseOperator"]).resolve()
-    if not operator_source.is_file():
-        raise FileNotFoundError(f"Inverse operator not found: {operator_source}")
-    shutil.copy2(operator_source, buffer_dir / "InverseOperator.R32_FLOAT.buf")
-    shader_root = Path(__file__).parent / "shaders"
-    # RecoverMatricesCS 的 SOURCE_VERTEX_COUNT / COEFFICIENT_COUNT 必须按本配置档替换，
-    # 否则会沿用 hski 的 17615/608，导致非 hski body 读错逆算子→恢复矩阵爆炸。
-    recover_shader = (shader_root / "RecoverMatricesCS.hlsl").read_text(encoding="utf-8")
-    recover_shader = recover_shader.replace(
-        "#define SOURCE_VERTEX_COUNT 17615", f"#define SOURCE_VERTEX_COUNT {source_vertex_count}"
-    ).replace(
-        "#define COEFFICIENT_COUNT 608", f"#define COEFFICIENT_COUNT {coefficient_count}"
-    )
-    if f"SOURCE_VERTEX_COUNT {source_vertex_count}" not in recover_shader \
-            or f"COEFFICIENT_COUNT {coefficient_count}" not in recover_shader:
-        raise ValueError("RecoverMatricesCS 顶点数/系数替换失败，请检查着色器模板")
-    (shader_dir / "RecoverMatricesCS.hlsl").write_text(recover_shader, encoding="utf-8")
-    skin_shader = (shader_root / "SkinCustomCS.hlsl").read_text(encoding="utf-8")
-    skin_shader = skin_shader.replace(
-        "#define TARGET_VERTEX_COUNT 1", f"#define TARGET_VERTEX_COUNT {vertex_count}"
-    )
-    (shader_dir / "SkinCustomCS.hlsl").write_text(skin_shader, encoding="utf-8")
-    native_co_ranges = []
-    for item in draw_ranges:
-        if alpha_modes.get(int(item["material"]), "OPAQUE") == "NATIVE_CO":
-            native_co_ranges.append({
-                "start": int(item["start"]),
-                "count": int(item["count"]),
-                "material": int(item["material"]),
-                "mode": "NATIVE_CO",
-            })
-    if native_co_ranges and not native_co_textures.get("baseColor"):
-        raise ValueError("原生 co 材质需要单独的透明材质 t0 / m_bdyco；不会回退基础色 t0")
-    section = _safe_section(package_id)
-    material_bindings = []
-    material_resources = []
-    material_manifest = {}
-    material_resource_names = {}
-    native_co_section = None
-    native_section_id = None
-    if native_co_ranges:
-        native_co_section = _select_native_co_section(component, drawcalls, component_id)
-        native_section_id = str(native_co_section.get("id") or f"{component_id}.section1")
-    if material_textures:
-        texture_dir.mkdir(parents=True, exist_ok=True)
-    for texture_key, source_file in material_textures.items():
-        entry = _profile_material_texture_entry(profile_set, texture_key)
-        if not entry:
-            raise ValueError(f"Unknown Profile material texture: {texture_key}")
-        source = Path(source_file)
-        if not source.is_file() or source.suffix.lower() != ".dds":
-            raise ValueError(f"Material texture must be an existing DDS: {source}")
-        description = inspect_dds(source)
-        expected_size = entry.get("size")
-        if expected_size and [description["width"], description["height"]] != expected_size:
-            raise ValueError(
-                f"{texture_key} must be {expected_size[0]}x{expected_size[1]}, got "
-                f"{description['width']}x{description['height']}"
-            )
-        if entry.get("format") and not _dds_formats_compatible(entry["format"], description["format"]):
-            raise ValueError(
-                f"{texture_key} must be {entry['format']}, got {description['format']}"
-            )
-        texture_component, semantic = texture_key.split(".", 1)
-        if texture_component != component_id:
-            raise ValueError(f"Texture {texture_key} does not belong to {component_id}")
-        resource_name = f"{section}{semantic.title()}"
-        material_resource_names[semantic] = resource_name
-        filename = f"{component_id.title()}.{semantic[0].upper() + semantic[1:]}.dds"
-        shutil.copy2(source, texture_dir / filename)
-        material_resources.append(
-            f"[Resource{resource_name}]\nfilename = Textures\\{filename}\n"
-        )
-        material_manifest[texture_key] = {
-            "slot": entry["slot"], "hash": entry["hash"], "file": f"Textures/{filename}"
-        }
-    opacity_manifest = None
-    native_co_resource_names = {}
-
-    def add_native_co_resource(semantic, source_file=None, neutral_rgba=None, srgb=False):
-        if semantic in native_co_resource_names:
-            return native_co_resource_names[semantic]
-        texture_dir.mkdir(parents=True, exist_ok=True)
-        resource_name = f"{section}NativeCo{semantic.title()}"
-        if source_file:
-            source = Path(source_file)
-            if not source.is_file() or source.suffix.lower() != ".dds":
-                raise ValueError(f"Native co {semantic} texture must be an existing DDS: {source}")
-            entry = _profile_material_texture_entry(profile_set, f"{native_section_id}.{semantic}") or {}
-            description = inspect_dds(source)
-            expected_size = entry.get("size")
-            if expected_size and [description["width"], description["height"]] != expected_size:
-                raise ValueError(
-                    f"{native_section_id}.{semantic} must be {expected_size[0]}x{expected_size[1]}, got "
-                    f"{description['width']}x{description['height']}"
-                )
-            if entry.get("format") and not _dds_formats_compatible(entry["format"], description["format"]):
-                raise ValueError(
-                    f"{native_section_id}.{semantic} must be {entry['format']}, got {description['format']}"
-                )
-            filename = f"{component_id.title()}.NativeCo.{semantic[0].upper() + semantic[1:]}.dds"
-            shutil.copy2(source, texture_dir / filename)
-            material_manifest[f"{native_section_id}.{semantic}"] = {
-                "slot": entry.get("slot"),
-                "hash": entry.get("hash"),
-                "file": f"Textures/{filename}",
-            }
-        else:
-            filename = f"{component_id.title()}.NativeCo.{semantic[0].upper() + semantic[1:]}.Neutral.dds"
-            write_solid_rgba8_dds(texture_dir / filename, neutral_rgba, srgb=srgb)
-            material_manifest[f"{native_section_id}.{semantic}"] = {
-                "slot": None,
-                "hash": None,
-                "file": f"Textures/{filename}",
-                "generated": "neutral",
-            }
-        native_co_resource_names[semantic] = resource_name
-        material_resources.append(
-            f"[Resource{resource_name}]\nfilename = Textures\\{filename}\n"
-        )
-        return resource_name
-
-    def ensure_material_resource(semantic, neutral_rgba, srgb=False):
-        resource_name = material_resource_names.get(semantic)
-        if resource_name:
-            return resource_name
-        texture_dir.mkdir(parents=True, exist_ok=True)
-        resource_name = f"{section}{semantic.title()}"
-        filename = f"{component_id.title()}.{semantic[0].upper() + semantic[1:]}.Neutral.dds"
-        write_solid_rgba8_dds(texture_dir / filename, neutral_rgba, srgb=srgb)
-        material_resource_names[semantic] = resource_name
-        material_resources.append(
-            f"[Resource{resource_name}]\nfilename = Textures\\{filename}\n"
-        )
-        material_manifest[f"{component_id}.{semantic}"] = {
-            "slot": None,
-            "hash": None,
-            "file": f"Textures/{filename}",
-            "generated": "neutral",
-        }
-        return resource_name
-
-    dispatch_matrices = coefficient_count
-    dispatch_vertices = (vertex_count + 63) // 64
-    hairprop_selector = _hairprop_selector(profile) if component_id == "hair" else None
-    selector_variable = f"gmi_{section}_hairprop_match" if hairprop_selector else None
-    extra_shader_components = ("hairprop",) if hairprop_selector else ()
-    shader_check_blocks = [
-        _shader_check_overrides(
-            section, component_id, drawcalls, extra_components=extra_shader_components
-        )
-    ]
-    if not shader_check_blocks[0]:
-        raise ValueError("Profile drawcall_map 没有可用于 checktextureoverride 的 VS pass")
-    landmark_priority = _landmark_match_priority(component['ibHash'])
-    # 注意:landmark 不再重置 hairprop_match(reset_variable=None)。landmark 是 body draw,
-    # 夹在皇冠和发型 draw 之间清零会让发型主 pass 漏替换。改由 [Present] 每帧末重置。
-    landmark_sections = _landmark_layout_sections(
-        section, landmark_priority, reset_variable=None
-    )
-    # 共享发型选择器:配套发饰的主 draw 出现即置 latch=1,发型只在戴该发饰时替换;
-    # 每帧末由 [Present] 清零。合并成完整包时,这个 HairpropSelector 块会被 merge 删掉、
-    # 把置位语句注入发饰自己的同 hash TextureOverride——本 3DMigoto 分支的 TextureOverride
-    # 不认 allow_duplicate_hash,同 hash 两个 override 会互相覆盖。单独导出发型时此块照常生效。
-    selector_block = ""
-    if hairprop_selector:
-        selector_block = f"""
-[Present]
-${selector_variable} = 0
-
-[TextureOverride{section}HairpropSelector]
-hash = {hairprop_selector['ibHash']}
-match_first_index = {hairprop_selector['firstIndex']}
-${selector_variable} = 1
-"""
-    material_bindings = _landmark_binding_block(section, material_resource_names)
-    # 主体段可能不在 IB 偏移 0(随服装而变),原版 draw 用其 StartIndex 采我们从 0 起的
-    # 自定义 IB 会越界 → 跳过原 draw、用 drawindexed 从 0 画满整网格。
-    main_first_index = int(component.get("mainFirstIndex") or 0)
-    body_index_count = int(component.get("indices") or 0)
-    body_title = component_id.title()
-    # 每材质一段 drawindexed:切断跨材质屏幕求导,消除 atlas mip 渗色(裙角橙斑)。
-    # 原生 co 材质段从主 body draw 移出,交给 NativeCo override 在游戏原生第二材质段绘制。
-    opaque_ranges = [
-        item for item in draw_ranges
-        if int(item["material"]) not in alpha_modes
-    ]
-    if opaque_ranges:
-        drawindexed_lines = "\n".join(
-            f"    drawindexed = {int(item['count'])}, {int(item['start'])}, 0"
-            for item in opaque_ranges
-        )
-    else:
-        drawindexed_lines = "    ; no opaque material ranges"
-    packed_mask_resource = None
-    shade_color_resource = None
-    native_co_first_indices = set()
-    native_co_override = ""
-    if native_co_ranges:
-        native_co_first_indices.add(int(native_co_section.get("firstIndex") or 0))
-        opacity_resource = add_native_co_resource("baseColor", native_co_textures.get("baseColor"), srgb=True)
-        opacity_manifest = material_manifest.get(f"{native_section_id}.baseColor")
-        packed_mask_resource = add_native_co_resource(
-            "packedMask",
-            native_co_textures.get("packedMask"),
-            neutral_rgba=NEUTRAL_PACKED_MASK,
-            srgb=False,
-        )
-        shade_color_resource = add_native_co_resource(
-            "shadeColor",
-            native_co_textures.get("shadeColor"),
-            neutral_rgba=NEUTRAL_SHADE_COLOR,
-            srgb=False,
-        )
-        native_first_index = int(native_co_section.get("firstIndex") or 0)
-        native_draws = native_co_section.get("draws") or []
-        native_resources = {
-            "baseColor": opacity_resource,
-            "packedMask": packed_mask_resource,
-            "shadeColor": shade_color_resource,
-        }
-        native_bindings = _landmark_binding_block(section, native_resources)
-        native_drawindexed_lines = "\n".join(
-            f"    drawindexed = {int(item['count'])}, {int(item['start'])}, 0"
-            for item in native_co_ranges
-        )
-        native_body = f"""
-    Resource{section}PosedVB = copy vb0
-    run = CustomShader{section}RecoverMatrices
-    run = CustomShader{section}SkinCustom
-    Resource{section}SkinnedVBIA = copy Resource{section}SkinnedVB
-    vb0 = Resource{section}SkinnedVBIA
-    vb1 = Resource{section}VB1
-    vb3 = Resource{section}SkinnedVBIA
-    ib = Resource{section}IB
-{native_bindings}
-{native_drawindexed_lines}
-    handling = skip
-"""
-        native_co_override = f"""
-[TextureOverride{section}{body_title}NativeCo]
-hash = {component['ibHash']}
-match_first_index = {native_first_index}
-{_runtime_guard(section, native_body, selector_variable)}
-; native co section: {native_section_id}; source draws: {native_draws}
-"""
-    tail_skips = ""
-    for tail_index, first_index in enumerate(component.get("tailFirstIndices") or []):
-        if int(first_index) in native_co_first_indices:
-            continue
-        tail_skips += (
-            f"\n[TextureOverride{section}{body_title}Tail{tail_index}]\n"
-            f"hash = {component['ibHash']}\n"
-            f"match_first_index = {first_index}\n"
-            f"{_runtime_guard(section, 'handling = skip', selector_variable)}\n"
-        )
-    # Buffer TextureOverride 需要由相关 ShaderOverride 显式 checktextureoverride。
-    # 只登记 IB hash 会显示 resource matched，但不会稳定执行 draw-time 替换。
-    shader_checks = "\n".join(block for block in shader_check_blocks if block)
-    ini = f"""; Generated by GakumasMI Blender Add-on (inverse-skin weighted mesh)
-
-[Constants]
-global $enable_{section} = 1
-global $gmi_{section}_layout = 0
-global $gmi_{section}_probe = 0
-{f"global ${selector_variable} = 0" if selector_variable else ""}
-
-{landmark_sections}
-{shader_checks}
-{selector_block}
-
-[TextureOverride{section}{component_id.title()}]
-hash = {component['ibHash']}
-match_first_index = {main_first_index}
-{_runtime_guard(section, f'''Resource{section}PosedVB = copy vb0
-run = CustomShader{section}RecoverMatrices
-run = CustomShader{section}SkinCustom
-Resource{section}SkinnedVBIA = copy Resource{section}SkinnedVB
-vb0 = Resource{section}SkinnedVBIA
-vb1 = Resource{section}VB1
-vb3 = Resource{section}SkinnedVBIA
-ib = Resource{section}IB
-{material_bindings}
-{drawindexed_lines}
-handling = skip''', selector_variable)}
-{tail_skips}
-{native_co_override}
-
-[CustomShader{section}RecoverMatrices]
-cs = Shaders\\RecoverMatricesCS.hlsl
-cs-t0 = Resource{section}PosedVB
-cs-t1 = Resource{section}InverseOperator
-cs-u0 = Resource{section}RecoveredMatrices
-dispatch = {dispatch_matrices}, 1, 1
-post cs-t0 = null
-post cs-t1 = null
-post cs-u0 = null
-
-[CustomShader{section}SkinCustom]
-cs = Shaders\\SkinCustomCS.hlsl
-cs-t0 = Resource{section}BindVertices
-cs-t1 = Resource{section}RecoveredMatrices
-cs-t2 = Resource{section}BoneCorrections
-cs-u0 = Resource{section}SkinnedVB
-dispatch = {dispatch_vertices}, 1, 1
-post cs-t0 = null
-post cs-t1 = null
-post cs-t2 = null
-post cs-u0 = null
-
-[Resource{section}PosedVB]
-type = Buffer
-stride = 4
-array = {source_vertex_count * 10}
-
-[Resource{section}InverseOperator]
-type = Buffer
-format = R32_FLOAT
-filename = Buffers\\InverseOperator.R32_FLOAT.buf
-
-[Resource{section}RecoveredMatrices]
-type = RWBuffer
-format = R32_UINT
-array = {coefficient_count * 3}
-
-[Resource{section}BindVertices]
-type = Buffer
-format = R32_UINT
-filename = Buffers\\Body.BindSkin.R32_UINT.buf
-
-[Resource{section}BoneCorrections]
-type = Buffer
-format = R32_FLOAT
-filename = Buffers\\Body.BoneCorrections.R32_FLOAT.buf
-
-[Resource{section}SkinnedVB]
-type = RWBuffer
-format = R32_UINT
-array = {vertex_count * 10}
-
-[Resource{section}SkinnedVBIA]
-type = Buffer
-stride = 40
-
-[Resource{section}VB1]
-type = Buffer
-stride = 12
-filename = Buffers\\Body.VB1.buf
-
-[Resource{section}IB]
-type = Buffer
-format = DXGI_FORMAT_{index_format}
-filename = Buffers\\{ib_buffer_name}
-
-{chr(10).join(material_resources)}
-"""
-    (package_dir / "mod.ini").write_text(ini, encoding="utf-8")
-    target = profile["target"]
-    cover_name = _prepare_cover(package_dir, cover_image)
-    # 目标改成被替换的游戏内模型资源名（如 mdl_chr_hski-cstm-0000_body），
-    # 让用户直接看到本 mod 替换了游戏里的哪个 body/hair/face。缺资源名时回退到旧语义。
-    if component_id == "hair":
-        replaced_resource = target.get("hairResource") or target.get("bodyResource")
-    elif component_id == "hairprop":
-        replaced_resource = target.get("hairResource") or target.get("bodyResource")
-    else:
-        resource_field = {"body": "bodyResource", "face": "faceResource"}.get(component_id)
-        replaced_resource = target.get(resource_field) if resource_field else None
-    replaced_resource = replaced_resource or f"{component_id}.weightedMesh"
-    runtime_selector = dict(hairprop_selector) if hairprop_selector else None
-    manifest = {
-        "schemaVersion": 2,
-        "id": package_id,
-        "name": name,
-        "version": "0.1.0",
-        "author": author,
-        "type": "inverse-skin-mesh-replacement",
-        "profile": profile["id"],
-        "targets": [replaced_resource],
-        "cover": cover_name,
-        "components": [component_id],
-        "conflicts": [
-            f"{target['actorId']}.{target['costumeId']}.hair.bundle"
-            if runtime_selector and component_id == "hair"
-            else f"{target['actorId']}.{target['costumeId']}.{component_id}.mesh"
-        ],
-        "runtime": "3dmigoto-compute",
-        "vertexCount": vertex_count,
-        "indexCount": len(faces) * 3,
-        "indexFormat": index_format,
-        "status": "draft",
-        "materials": material_manifest,
-        "opacityTexture": opacity_manifest,
-        "alphaModes": {str(slot): mode for slot, mode in sorted(alpha_modes.items())},
-        "nativeCoRanges": native_co_ranges,
-        "nativeCoSection": native_co_section,
-        "transparencyStrategy": "native-co-section-only",
-    }
-    if runtime_selector:
-        manifest["runtimeSelector"] = runtime_selector
-    _write_json(package_dir / "manifest.json", manifest)
-    (package_dir / "README.md").write_text(
-        f"# {name}\n\nInverse-skin weighted Body mesh for Profile `{profile['id']}`.\n",
-        encoding="utf-8",
-    )
-    return package_dir
-
-
-def merge_inverse_skin_packages(
-    hair_package, hairprop_package, output_root, package_id, name, author,
-):
-    """Merge the two author meshes into one complete hair package.
-
-    The profile remains multi-component internally, but the published package
-    owns both draw overrides.  Prop filenames are prefixed to avoid the two
-    component exports clobbering each other's Body/Shader resources.
-    """
-    hair_package = Path(hair_package)
-    hairprop_package = Path(hairprop_package)
-    if not hair_package.is_dir() or not hairprop_package.is_dir():
-        raise FileNotFoundError("完整发型包需要 hair 和 hairprop 两个已导出的组件包")
-    hair_manifest = json.loads((hair_package / "manifest.json").read_text(encoding="utf-8"))
-    prop_manifest = json.loads((hairprop_package / "manifest.json").read_text(encoding="utf-8"))
-    selector = hair_manifest.get("runtimeSelector")
-    if not selector or selector.get("component") != "hairprop":
-        raise ValueError("hair 组件包缺少 hairprop runtimeSelector，拒绝生成会误替换的完整包")
-
-    package_dir = Path(output_root) / _sanitize_package_id(package_id)
-    if package_dir.exists():
-        shutil.rmtree(package_dir)
-    shutil.copytree(hair_package, package_dir)
-
-    for source in hairprop_package.rglob("*"):
-        if not source.is_file() or source.name in {"manifest.json", "mod.ini", "README.md", "export-report.json", "cover.png"}:
-            continue
-        rel = source.relative_to(hairprop_package)
-        if rel.parts[0] in {"Buffers", "Shaders"}:
-            rel = rel.with_name(f"Hairprop.{rel.name}")
-        destination = package_dir / rel
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
-
-    prop_blocks = re.split(
-        r"(?=^\[)",
-        (hairprop_package / "mod.ini").read_text(encoding="utf-8", errors="replace"),
-        flags=re.MULTILINE,
-    )
-    # 发饰的 [ShaderOverride] 丢弃(与发型同 shader-hash,发型包已顺带 check 发饰资源);
-    # 但 [Constants] 里的 global 声明必须保留——发饰段的 $enable_/$..._layout/$..._probe
-    # 被别的 block 引用,整块删掉会导致运行时"未声明标识符"。把它们并进发型 [Constants]。
-    prop_globals = [
-        line
-        for block in prop_blocks if block.startswith("[Constants]")
-        for line in block.splitlines() if line.strip().startswith("global $")
-    ]
-    prop_blocks = [
-        block for block in prop_blocks
-        if block and not block.startswith("[Constants]") and not block.startswith("[ShaderOverride")
-    ]
-    prop_ini = "\n".join(prop_blocks)
-    prop_ini = re.sub(r"Buffers\\([^\r\n]+)", r"Buffers\\Hairprop.\1", prop_ini)
-    prop_ini = re.sub(r"Shaders\\([^\r\n]+)", r"Shaders\\Hairprop.\1", prop_ini)
-    hair_ini = (package_dir / "mod.ini").read_text(encoding="utf-8")
-    if prop_globals:
-        hair_ini = hair_ini.replace(
-            "[Constants]\n", "[Constants]\n" + "\n".join(prop_globals) + "\n", 1
-        )
-    # 发型选择:删掉发型 ini 里独立的 HairpropSelector 块(它和发饰 override 挂同一 hash,
-    # 本分支不支持 allow_duplicate_hash,并存会互相覆盖),把 match=1 注入发饰自己的同 hash
-    # 主 override。发型只在该发饰主 draw 出现时替换;清零仍由发型 ini 的 [Present] 负责。
-    sel_var = re.search(r"\$(gmi_\w+_hairprop_match)\b", hair_ini)
-    if sel_var:
-        hair_ini = re.sub(
-            r"\n\[TextureOverride\w*HairpropSelector\][^\[]*", "\n", hair_ini
-        )
-        anchor = (
-            f"hash = {selector['ibHash']}\n"
-            f"match_first_index = {int(selector['firstIndex'])}\n"
-        )
-        injected, n = re.subn(
-            re.escape(anchor),
-            anchor + f"${sel_var.group(1)} = 1\n",
-            prop_ini,
-            count=1,
-        )
-        if n != 1:
-            raise ValueError("合并失败:发饰包里找不到可注入发型选择标志的主 override")
-        prop_ini = injected
-    (package_dir / "mod.ini").write_text(hair_ini.rstrip() + "\n\n" + prop_ini.lstrip(), encoding="utf-8")
-
-    manifest = dict(hair_manifest)
-    manifest.update({
-        "id": _sanitize_package_id(package_id),
-        "name": name,
-        "author": author,
-        "components": ["hair", "hairprop"],
-        "materials": {**hair_manifest.get("materials", {}), **prop_manifest.get("materials", {})},
-        "componentStats": {
-            "hair": {
-                "vertexCount": hair_manifest.get("vertexCount", 0),
-                "indexCount": hair_manifest.get("indexCount", 0),
-            },
-            "hairprop": {
-                "vertexCount": prop_manifest.get("vertexCount", 0),
-                "indexCount": prop_manifest.get("indexCount", 0),
-            },
-        },
-        "runtimeSelector": selector,
-        "conflicts": [f"{selector.get('actorId', '')}.{selector.get('costumeId', '')}.hair.bundle"]
-        if selector.get("actorId") and selector.get("costumeId")
-        else hair_manifest.get("conflicts", []),
-    })
-    _write_json(package_dir / "manifest.json", manifest)
-    def _read_report(package):
-        report = package / "export-report.json"
-        return json.loads(report.read_text(encoding="utf-8")) if report.is_file() else None
-
-    _write_json(package_dir / "export-report.json", {
-        "merge": {
-            "components": ["hair", "hairprop"],
-            "selector": selector,
-            "sourcePackages": [hair_manifest.get("id"), prop_manifest.get("id")],
-        },
-        "hair": _read_report(hair_package),
-        "hairprop": _read_report(hairprop_package),
-    })
-    (package_dir / "README.md").write_text(
-        f"# {name}\n\n这是一个完整发型包，包含 `Geo_Hair` 与 `Geo_HairProp`，两部分必须一起启用。\n"
-        f"发型只在 hairprop selector `{selector['ibHash']}@{selector['firstIndex']}` 命中时替换。\n",
-        encoding="utf-8",
-    )
-    return package_dir
