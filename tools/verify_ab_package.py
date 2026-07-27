@@ -133,16 +133,16 @@ def _check_ownership(report, sidecar: dict):
     source_report = sidecar.get("sourceRigRemap") or {}
     mapped = source_report.get("bones", {}) if isinstance(source_report, dict) else {}
     mapped_targets = set(mapped.values()) if isinstance(mapped, dict) else set()
+    source_names = set(mapped) | set(source_report.get("accessoryBones", []) or [])
     declared_records = _new_bone_records(sidecar)
     declared = {item.get("name") for item in declared_records if item.get("name")}
-    convention_targets = {
-        name for name in bone_names
-        if name.endswith("_S") or name.endswith("_Hair") or name.endswith("_hair")
-    }
-    legal_targets = mapped_targets | convention_targets | set(CRITICAL_BONES) | {"Hips"}
-    unknown = sorted(name for name in bone_names if name not in legal_targets and name not in declared)
+    # The sidecar contains the full target template skeleton, not only bones that
+    # received source weights.  Therefore an unreferenced target helper (e.g. *_H,
+    # *_S, Spine2) is legal.  Leakage means a source name survived into that array
+    # without being mapped to a target or declared as a runtime-created new bone.
+    source_leaks = sorted((bone_names & source_names) - mapped_targets - declared)
     bad_parents = []
-    known = bone_names | declared | legal_targets
+    known = bone_names | declared | mapped_targets | set(CRITICAL_BONES) | {"Hips"}
     for item in declared_records:
         name = item.get("name")
         parent = item.get("parentName")
@@ -151,12 +151,12 @@ def _check_ownership(report, sidecar: dict):
         if "swing" not in item:
             _record(report, "warnings", f"新骨 {name} 未声明 swing 参数")
     check = {
-        "unknownBoneNames": unknown,
+        "sourceBoneLeaks": source_leaks,
         "declaredNewBones": sorted(declared),
         "invalidNewBoneParents": bad_parents,
     }
-    if unknown:
-        _record(report, "errors", "sidecar 存在未归属骨名: " + ", ".join(unknown))
+    if source_leaks:
+        _record(report, "errors", "sidecar 存在未归属源骨名: " + ", ".join(source_leaks))
     if bad_parents:
         _record(report, "errors", "新骨存在无效父级")
     report["boneOwnership"] = check

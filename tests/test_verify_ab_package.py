@@ -20,7 +20,19 @@ def test_verify_ab_package_passes_minimal_contract(tmp_path):
             "localPosition": [0, 0, 0],
             "localRotation": [0, 0, 0, 1],
             "localScale": [1, 1, 1],
-        } for index, name in enumerate(critical)],
+        } for index, name in enumerate(critical)] + [{
+            "name": "LeftArm_Roll_H",
+            "parentIndex": 2,
+            "localPosition": [0, 0, 0],
+            "localRotation": [0, 0, 0, 1],
+            "localScale": [1, 1, 1],
+        }, {
+            "name": "Spine2",
+            "parentIndex": 1,
+            "localPosition": [0, 0, 0],
+            "localRotation": [0, 0, 0, 1],
+            "localScale": [1, 1, 1],
+        }],
         "sourceRigRemap": {"bones": {name: name for name in critical}},
     }
     geo = {
