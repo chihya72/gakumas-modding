@@ -48,7 +48,8 @@
 ③装饰策略让脖子缎带/腰饰不再跟着袖子甩④校色后的肤色对得上。这一轮没做，因为改动是在
 作者不在场的情况下连续做的。
 
-本轮已完成发布冻结中的离线实现：默认装饰策略翻转；sidecar/manifest 写入
+本轮已完成发布冻结中的离线实现（主仓库 commit `7937341`，插件 runtime commit `c130c8b`）：
+默认装饰策略翻转；sidecar/manifest 写入
 `runtimeProtocol=1` 与确定性 `buildId`；插件 runtime 对缺失/不匹配协议明确报错并打印 buildId；
 README 已写明通用性边界；`tools/verify_ab_package.py` 已生成且 Python 测试 26/26 通过。
 插件 `Release|x64` 已用 Visual Studio 编译通过（0 警告/0 错误）；这些仍属于 B，尚未替代真实
