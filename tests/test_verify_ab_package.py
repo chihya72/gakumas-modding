@@ -32,6 +32,22 @@ def test_verify_ab_package_passes_minimal_contract(tmp_path):
             "localPosition": [0, 0, 0],
             "localRotation": [0, 0, 0, 1],
             "localScale": [1, 1, 1],
+        }, {
+            "name": "Streamer_L_A0",
+            "parentIndex": 2,
+            "localPosition": [0, 0, 0],
+            "localRotation": [0, 0, 0, 1],
+            "localScale": [1, 1, 1],
+            "swing": {"damping": 0.5, "stiffness": 0.02, "spring": 0.5,
+                      "mass": 0.15, "useWindGlobalForce": True},
+        }, {
+            "name": "Streamer_R_A0",
+            "parentIndex": 2,
+            "localPosition": [0, 0, 0],
+            "localRotation": [0, 0, 0, 1],
+            "localScale": [1, 1, 1],
+            "swing": {"damping": 0.5, "stiffness": 0.02, "spring": 0.5,
+                      "mass": 0.15, "useWindGlobalForce": True},
         }],
         "sourceRigRemap": {"bones": {name: name for name in critical}},
     }
@@ -58,3 +74,11 @@ def test_verify_ab_package_passes_minimal_contract(tmp_path):
     assert report["ok"]
     assert report["t4"]["mbLevel"]
     assert report["weights"]["activeBoneCount"] == len(critical)
+    assert report["swing"] == {
+        "total": 2,
+        "left": 1,
+        "right": 1,
+        "unclassified": 0,
+        "invalidParentCount": 0,
+        "missingParameterCount": 0,
+    }

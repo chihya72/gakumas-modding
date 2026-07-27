@@ -548,6 +548,7 @@ Blender 导出侧:
 geojson/bundle 侧:
 - mesh verts/submesh/bindpose 数一致；身体骨已映射；未映射名称必须出现在合法 `newBones` 中，且父级和物理策略完整。
 - SMR `m_RootBone` → 目标根骨(body=Hips)。
+- 核包工具额外报告 `swing` 骨总数、左右数量、父索引和物理参数完整性；fuyuko 当前为 `26 / 13 / 13`，结构层无左右不对称。
 
 游戏 `mod-plugin.log`:
 - `matchedBones=… droppedInfluences=0 fallbackVertices=0 meshApplied=1`。

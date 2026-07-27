@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -162,6 +163,53 @@ def _check_ownership(report, sidecar: dict):
     report["boneOwnership"] = check
 
 
+def _side_of(name: str):
+    normalized = re.sub(r"[^a-z0-9]+", "_", str(name).lower()).strip("_")
+    if normalized.startswith("left_") or normalized.startswith("left"):
+        return "left"
+    if normalized.startswith("right_") or normalized.startswith("right"):
+        return "right"
+    tokens = normalized.split("_")
+    if "l" in tokens:
+        return "left"
+    if "r" in tokens:
+        return "right"
+    return "unclassified"
+
+
+def _check_swing(report, sidecar: dict):
+    bones = [item for item in sidecar.get("bones", []) if isinstance(item, dict)]
+    required = {"damping", "stiffness", "spring", "mass", "useWindGlobalForce"}
+    counts = {"left": 0, "right": 0, "unclassified": 0}
+    invalid_parents = []
+    missing_parameters = []
+    for item in bones:
+        swing = item.get("swing")
+        if not isinstance(swing, dict):
+            continue
+        name = item.get("name") or "<unnamed>"
+        counts[_side_of(name)] += 1
+        parent = item.get("parentIndex")
+        if not isinstance(parent, int) or parent < -1 or parent >= len(bones):
+            invalid_parents.append({"name": name, "parentIndex": parent})
+        missing = sorted(required - set(swing))
+        if missing:
+            missing_parameters.append({"name": name, "missing": missing})
+    check = {
+        "total": sum(counts.values()),
+        **counts,
+        "invalidParentCount": len(invalid_parents),
+        "missingParameterCount": len(missing_parameters),
+    }
+    if invalid_parents:
+        _record(report, "errors", "摇物骨存在无效 parentIndex")
+    if missing_parameters:
+        _record(report, "warnings", "摇物骨缺少物理参数: " + ", ".join(item["name"] for item in missing_parameters))
+    if counts["left"] and counts["left"] != counts["right"]:
+        _record(report, "warnings", f"摇物骨左右数量不对称: Left={counts['left']} Right={counts['right']}")
+    report["swing"] = check
+
+
 def verify_package(root, log_paths=(), hash_paths=()):
     bundle_src = _bundle_src(Path(root))
     manifest_path = bundle_src / "mod.json"
@@ -229,6 +277,7 @@ def verify_package(root, log_paths=(), hash_paths=()):
 
     if sidecar:
         _check_ownership(report, sidecar)
+        _check_swing(report, sidecar)
     for geo_path in geo_paths:
         geo = _read_json(geo_path)
         _check_colors(report, geo)
@@ -272,6 +321,9 @@ def main(argv=None):
             print(f"WARN: {message}")
         if report.get("handshake"):
             print("buildId:", report["handshake"].get("sidecarBuildId"))
+        if report.get("swing"):
+            swing = report["swing"]
+            print("swing:", "total={total} left={left} right={right} unclassified={unclassified}".format(**swing))
         print("files:", len(report["files"]))
     return 0 if report["ok"] else 1
 

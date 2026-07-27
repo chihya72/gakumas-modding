@@ -64,6 +64,10 @@ swingPrepared=36 droppedInfluences=0 fallbackVertices=0 meshApplied=1 textureApp
 fuyuko 后续重复应用时，已存在的 182 根骨全部匹配，仍为 `meshApplied=1`、`textureApplied=1`、
 `skippedMeshes=0`。
 
+核包工具的摇物结构检查结果：author 为 `total=0`；fuyuko 为 `total=26 left=13 right=13`
+（无无效父索引、无缺少物理参数、无左右数量不对称）。runtime 日志的 `swingPrepared=36` 是运行时
+准备的链节点总数，与 sidecar 中带 `swing` 字段的 26 个骨不是同一统计口径。
+
 ## 5. 历史兼容性记录（不属于 RC1 失败）
 
 日志中较早的 fuyuko/atbm 记录出现：
@@ -95,3 +99,12 @@ RC1 结论，也不要求当前开发线继续重导旧 Mod。
 
 这证明选表逻辑在真实 MMD 与 SCSP/QualiArts 样本上能选中正确家族；不是构造的最小单元测试。
 它不替代六家 C 级预设的实机回归，也不改变首发范围。
+
+## 8. 装饰物理结构体检
+
+`tools/verify_ab_package.py` 现在额外检查 sidecar 中带 `swing` 的骨：左右数量、`parentIndex` 范围、
+以及 `damping/stiffness/spring/mass/useWindGlobalForce` 参数完整性。它只对可疑结构发 warning，
+不因有意的单侧装饰直接判包失败。
+
+本轮 fuyuko 的 13/13 对称结果只证明导出结构完整；若游戏内仍出现单侧不动，后续应查 runtime
+注册/驱动物理行为，不要回头修改骨骼映射表。
