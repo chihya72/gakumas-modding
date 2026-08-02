@@ -1,4 +1,4 @@
-# 3dmigoto-gkms — 抓帧环境
+# 3dmigoto_gkms — 抓帧环境
 
 面向《学园偶像大师》的定制 3DMigoto 构建（基于 **v1.4.9**）。**0.7.0 起它只做一件事：
 给 mod 作者抓帧（F8 Frame Analysis）**，用来生成 GakumasMI 插件的配置档。
@@ -18,22 +18,19 @@
 
 ## 安装
 
-推荐用 Release 里的 `Gakumas3DMigotoCapture-Setup-<版本>.exe`，选游戏根目录即可。
+从 Release 下载 `gakumas-mod-toolkit-<版本>.zip`，把里面 `3dmigoto_gkms\` 的所有文件
+拷进游戏根目录（`gakumas.exe` 所在文件夹），然后用 `-force-d3d11` 启动游戏。
 
-手动安装则把以下文件复制到 `gakumas.exe` 同级目录：
-
-| 复制 | 说明 |
+| 文件 | 说明 |
 |---|---|
 | `d3d11.dll`、`nvapi64.dll`、`d3dcompiler_47.dll` | 3DMigoto 二进制（必须） |
-| `d3dx.ini` | 配置（必须） |
+| `d3dx.ini` | 配置（必须）。**已有自己那份就别覆盖** |
 | `ShaderFixes/` | 着色器修复（整个文件夹，必须） |
 | `键位说明.txt` | 键位速查（可选） |
 
-然后用 `-force-d3d11` 启动游戏。
-
-> 仓库**已包含自编译的补丁版 `d3d11.dll`**（直接可用）；第三方 `nvapi64.dll`、
-> `d3dcompiler_47.dll` 不入库，可从 3DMigoto v1.4.9 发行版或可工作的游戏目录补齐
-> （发布安装包由 CI 从上游 Release 取，已带好三件套）。
+> 仓库里**已包含自编译的补丁版 `d3d11.dll`**（直接可用）；第三方 `nvapi64.dll`、
+> `d3dcompiler_47.dll` 不入库，发布包由 CI 从上游 Release 取，本地手装可从
+> 3DMigoto v1.4.9 发行版或可工作的游戏目录补齐。
 > **务必使用本仓库的 `d3d11.dll`** —— 官方版会犯横竖屏切换 bug。
 
 ## 用法：抓一帧
@@ -78,7 +75,9 @@ mono share_dupes`，插件需要的 buffer / 贴图 / 描述都会导出。
 
 ## 发布
 
-`.github/workflows/release-3dmigoto-gkms.yml`，触发 tag `3dmigoto-gkms-vX.Y.Z`。
-Inno Setup 脚本在 [`installer/Gakumas3DMigotoCapture.iss`](installer/Gakumas3DMigotoCapture.iss)。
-workflow 里有守卫：`d3dx.ini` 若重新启用 `include_recursive = Mods`、或丢失 `analyse_frame`
-绑定，构建直接失败。
+随插件一起打进 `gakumas-mod-toolkit-<版本>.zip`，由
+[`../.github/workflows/release.yml`](../.github/workflows/release.yml) 在 `vX.Y.Z` tag
+上触发，不再单独编号、也不再有 Inno Setup 安装向导。
+
+workflow 里有两道守卫：`d3dx.ini` 若重新启用 `include_recursive = Mods`、或丢失
+`analyse_frame` 绑定，构建直接失败。

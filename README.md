@@ -30,9 +30,22 @@ T-pose，所以不能照搬 GIMI/WWMI。现在的解法**不去逆解**：把作
 gakumas_mi/     作者用 Blender 插件（导入 / 骨映射 / 材质 / 导出 AB bundle）
 tools/          离线脚本（AssetStudio 导出、模板构建、配置档抽取、bundle 补丁、打包）
 profiles/       各角色/服装配置档    tests/  冒烟与契约测试    research/  研究记录与路线
-3dmigoto-gkms/  抓帧环境（自编译补丁版 d3d11.dll + d3dx.ini + ShaderFixes + 安装包脚本）
+3dmigoto_gkms/  抓帧环境（自编译补丁版 d3d11.dll + d3dx.ini + ShaderFixes）
 docs/wiki/      面向 mod 作者的使用手册（GitHub Wiki 镜像）
 ```
+
+## 怎么拿
+
+Release 里只有一个包 **`gakumas-mod-toolkit-<版本>.zip`**，解开是：
+
+```text
+安装说明.txt
+blender-addon/gakumas_mi-<版本>.zip   Blender「从磁盘安装」选它
+3dmigoto_gkms/                        整个拷进游戏根目录，进游戏按 F8 抓帧
+```
+
+还需要自己装 Python 3.10+ 并 `pip install UnityPy Pillow`（导出时打包 bundle 用，
+不能用 Blender 自带的）。完整步骤见 [docs/wiki/Home.md](docs/wiki/Home.md)。
 
 ## 同级仓库（不属于本仓库，各自独立 Git）
 
@@ -57,7 +70,7 @@ docs/wiki/      面向 mod 作者的使用手册（GitHub Wiki 镜像）
 | [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) | 进度 / 完成度 / 计划（**最新状态以此为准**） |
 | [research/step3-texture-input-guide.md](research/step3-texture-input-guide.md) | 步骤② Body / Hair / HairProp 贴图路径、通道和准备要求 |
 | [research/ab-route-notes.md](research/ab-route-notes.md) | AB 路线的数据侧脚本与新骨摆动物理记录 |
-| [gakumas_mi/README.md](gakumas_mi/README.md) · [3dmigoto-gkms/README.md](3dmigoto-gkms/README.md) | 两个子项目各自的安装与用法 |
+| [gakumas_mi/README.md](gakumas_mi/README.md) · [3dmigoto_gkms/README.md](3dmigoto_gkms/README.md) | 两个子项目各自的安装与用法 |
 
 ## 许可
 
@@ -65,8 +78,8 @@ docs/wiki/      面向 mod 作者的使用手册（GitHub Wiki 镜像）
 [third-party-notices.md](third-party-notices.md)。
 
 游戏注入层基于开源项目 **3DMigoto**（[bo3b/3Dmigoto](https://github.com/bo3b/3Dmigoto)）：
-`3dmigoto-gkms/d3d11.dll` 是基于其 **v1.4.9** 自编译的补丁版（修学马仕竖横屏 live 切换闪屏，
-补丁源码与重编译步骤见 [FLIP-RESIZE-PATCH.md](3dmigoto-gkms/FLIP-RESIZE-PATCH.md)）；
+`3dmigoto_gkms/d3d11.dll` 是基于其 **v1.4.9** 自编译的补丁版（修学马仕竖横屏 live 切换闪屏，
+补丁源码与重编译步骤见 [FLIP-RESIZE-PATCH.md](3dmigoto_gkms/FLIP-RESIZE-PATCH.md)）；
 `nvapi64.dll`/`d3dcompiler_47.dll` 与 `ShaderFixes/` 亦取自其 v1.4.9 / 生态。
 感谢 3DMigoto 社区与 AssetStudio 等上游工具。
 

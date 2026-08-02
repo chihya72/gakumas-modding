@@ -1,0 +1,192 @@
+name: Release · Gakumas Mod 制作工具
+
+# 触发：推送形如 v0.9.0 的 tag。
+#
+# 0.9.0 起两条产品线合并成一个包，只有这一个 release workflow：
+#   gakumas-mod-toolkit-<版本>.zip
+#     ├─ 安装说明.txt
+#     ├─ blender-addon/gakumas_mi-<版本>.zip   ← Blender「从磁盘安装」直接选它
+#     └─ 3dmigoto_gkms/                        ← 整个拷进游戏根目录，只用来按 F8 抓帧
+# 旧的 gakumas-mi-v* 与 3dmigoto-gkms-v* 两条 tag 线到此为止，版本号统一跟插件走。
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # 需要全部 tag 来算 Full Changelog 的上一个版本
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 从 tag 提取版本号
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: 校验 tag 版本与插件源码一致
+        run: |
+          src=$(python - <<'PY'
+          import re, pathlib
+          t = pathlib.Path("gakumas_mi/__init__.py").read_text(encoding="utf-8")
+          m = re.search(r'"version"\s*:\s*\(([^)]*)\)', t)
+          print(".".join(p.strip() for p in m.group(1).split(",") if p.strip()))
+          PY
+          )
+          if [ "$src" != "${{ steps.ver.outputs.version }}" ]; then
+            echo "::error::tag 版本 ${{ steps.ver.outputs.version }} 与源码 bl_info 版本 $src 不一致"
+            exit 1
+          fi
+
+      - name: 校验 CHANGELOG 有本版版本段
+        run: |
+          if ! grep -qE "^## ${{ steps.ver.outputs.version }}( |$)" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md 缺少 '## ${{ steps.ver.outputs.version }}' 版本段"
+            exit 1
+          fi
+
+      - name: 守卫：d3dx.ini 必须是抓帧配置、不加载 mod
+        run: |
+          # include_recursive = Mods 一旦被解注释，这个包就又变回 mod 加载器，
+          # 与 AB 路线的 xinput1_3.dll 职责重叠，必须挡住。
+          if grep -qE '^\s*include_recursive\s*=\s*Mods' 3dmigoto_gkms/d3dx.ini; then
+            echo "::error::d3dx.ini 启用了 include_recursive = Mods；抓帧环境不应加载 mod"
+            exit 1
+          fi
+          if ! grep -qE '^\s*analyse_frame\s*=' 3dmigoto_gkms/d3dx.ini; then
+            echo "::error::d3dx.ini 缺少 analyse_frame 绑定；抓帧环境必须能按 F8 抓帧"
+            exit 1
+          fi
+
+      - name: 打包 Blender 插件
+        run: |
+          pip install --quiet numpy pillow
+          python tools/package_blender_addon.py \
+            -o "stage/blender-addon/gakumas_mi-${{ steps.ver.outputs.version }}.zip"
+
+      - name: 取官方 3Dmigoto 1.4.9 的匹配版第三方 dll
+        run: |
+          gh release download 1.4.9 --repo bo3b/3Dmigoto \
+            --pattern "3Dmigoto_v1.4.9.7z" --dir . --clobber
+          7z x 3Dmigoto_v1.4.9.7z -othirdparty -y > /dev/null
+          # 版本一致性守卫：与仓库内同名 dll 字节大小比对，防止上游改包
+          for f in nvapi64.dll d3dcompiler_47.dll; do
+            up=$(stat -c%s "thirdparty/x64/$f")
+            if [ -f "3dmigoto_gkms/$f" ]; then
+              repo=$(stat -c%s "3dmigoto_gkms/$f")
+              echo "$f: upstream=$up repo=$repo"
+              [ "$up" != "$repo" ] && echo "::warning::$f 上游($up)与仓库($repo)大小不一致，请人工确认"
+            else
+              echo "$f: upstream=$up repo=<not committed>"
+            fi
+          done
+
+      - name: 装配抓帧环境
+        run: |
+          mkdir -p stage/3dmigoto_gkms
+          cp 3dmigoto_gkms/d3d11.dll 3dmigoto_gkms/d3dx.ini 3dmigoto_gkms/键位说明.txt stage/3dmigoto_gkms/
+          cp thirdparty/x64/nvapi64.dll thirdparty/x64/d3dcompiler_47.dll stage/3dmigoto_gkms/
+          cp -r 3dmigoto_gkms/ShaderFixes stage/3dmigoto_gkms/
+
+      - name: 写包内安装说明
+        run: |
+          cat > stage/安装说明.txt <<'TXT'
+          Gakumas Mod 制作工具
+          ====================
+
+          这个包给 mod 作者用，两样东西都要装：
+
+          1) Blender 插件
+             blender-addon\ 里那个 gakumas_mi-<版本>.zip
+             Blender > 编辑 > 偏好设置 > 插件 > 从磁盘安装 > 选它 > 勾选启用
+             面板在：3D 视图 > 右侧边栏（按 N）> GakumasMI
+             目标 Blender 4.2 LTS（4.5 LTS 也测过）
+
+             另外还需要一个你自己装的 Python 3.10+（推荐 3.11/3.12），
+             用来在导出时打包 bundle：pip install UnityPy Pillow
+             不能用 Blender 自带的那个，它没有 UnityPy。
+
+          2) 抓帧环境
+             把 3dmigoto_gkms\ 里的所有文件拷进游戏根目录（gakumas.exe 所在文件夹）
+             用 -force-d3d11 启动游戏，进游戏按 F8 抓一帧
+             结果在游戏目录的 FrameAnalysis-<日期时间>\
+
+             它只抓帧，不加载 mod。d3dx.ini 若已存在，别覆盖你自己的那份。
+
+          做出来的 .bundle + mod.json 放进
+             <游戏目录>\gakumas-local\local-files\mods\<模组标识>\
+          换模由另外两个 DLL 负责，不在本包内。
+
+          完整教程见项目 docs/wiki/。
+          风险自负：第三方视觉修改工具，不改数值/网络/服务端，不绕过反作弊。
+          TXT
+
+      - name: 打成一个压缩包
+        run: |
+          cd stage
+          zip -r -q "../gakumas-mod-toolkit-${{ steps.ver.outputs.version }}.zip" .
+          cd ..
+          unzip -l "gakumas-mod-toolkit-${{ steps.ver.outputs.version }}.zip"
+
+      - name: 生成 Release notes
+        run: |
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          python - "${{ steps.ver.outputs.version }}" "$GITHUB_REF_NAME" > release_notes.md <<'PY'
+          import subprocess, sys
+
+          version, tag = sys.argv[1:]
+          body = subprocess.check_output(
+              ["git", "tag", "-l", "--format=%(contents)", tag], text=True).strip()
+          lines = body.splitlines()
+          theme = lines[0].strip() if lines else ""
+          changes = "\n".join(lines[1:]).strip()
+          if not theme or not changes or not any(
+                  line.lstrip().startswith("- ") for line in changes.splitlines()):
+              raise SystemExit(
+                  "tag 注解必须是：首行版本主题，空行后写面向用户的 '- ' 变更列表")
+          print(f"Gakumas Mod 制作工具 **{version}** — {theme}\n")
+          print("本版变动：")
+          print(changes)
+          print("""
+          ## 包里有什么
+
+          解开 `gakumas-mod-toolkit-%s.zip`：
+
+          - `blender-addon/gakumas_mi-%s.zip` —— Blender 插件，「从磁盘安装」选它。
+            另需自装 Python 3.10+ 并 `pip install UnityPy Pillow`（导出时打包 bundle 用，
+            不能用 Blender 自带的那个）；
+          - `3dmigoto_gkms/` —— 抓帧环境，整个拷进游戏根目录，进游戏按 F8 抓帧做配置档。
+            **它只抓帧，不加载 mod。**
+
+          换模运行时（`xinput1_3.dll`）与游戏内 Mod 管理 UI（`xinput9_1_0.dll`）是独立项目，
+          不在本包内。详细步骤见仓库 `docs/wiki/`。""" % (version, version))
+          PY
+          # 上一个版本 → Full Changelog 比较链接（兼容合并前的 gakumas-mi-v* 旧线）
+          prev=$(git tag -l 'v*' --sort=-version:refname \
+                 | awk -v cur="$GITHUB_REF_NAME" '$0==cur{getline; print; exit}')
+          if [ -z "$prev" ]; then
+            prev=$(git tag -l 'gakumas-mi-v*' --sort=-version:refname | head -1)
+          fi
+          if [ -n "$prev" ]; then
+            printf '\n\n**Full Changelog**: %s/%s/compare/%s...%s\n' \
+              "${{ github.server_url }}" "${{ github.repository }}" "$prev" "$GITHUB_REF_NAME" \
+              >> release_notes.md
+          fi
+
+      - name: 创建 Release
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "gakumas-mod-toolkit-${{ steps.ver.outputs.version }}.zip" \
+            --title "Gakumas Mod 制作工具 ${{ steps.ver.outputs.version }}" \
+            --notes-file release_notes.md

@@ -7,8 +7,8 @@
 
 | 位置 | 职责 | 新文件落点规则 |
 |---|---|---|
-| `gakumas_mi/` | Blender 作者插件（产品线 1，版本 0.9.x） | 插件代码/着色器/预设只放这里 |
-| `3dmigoto-gkms/` | 抓帧环境（产品线 2，版本 0.7.x） | d3d11.dll、d3dx.ini、ShaderFixes、`installer/` 的 Inno Setup 脚本 |
+| `gakumas_mi/` | Blender 作者插件（版本 0.9.x） | 插件代码/预设只放这里；目录名固定，Blender 按它 import |
+| `3dmigoto_gkms/` | 抓帧环境（随插件同版本发布） | d3d11.dll、d3dx.ini、ShaderFixes、键位说明 |
 | `tools/` | 离线脚本（导出/构建/审计/打包） | 一个脚本一个文件，snake_case |
 | `tests/` | Python 回归/冒烟测试 | `test` 语义文件名，CI 可跑的进 `ci.yml` |
 | `profiles/` | 角色/服装配置档 | `<actor>-<costume>/` 一档一目录 |
@@ -17,7 +17,7 @@
 | 仓库根目录 | **只允许** `README.md`、`CHANGELOG.md`、`CONTRIBUTING.md`、`LICENSE`、`third-party-notices.md` 与 dot 配置文件 | **禁止新增其它根目录文件**（`LICENSE` 必须在根，GitHub 才能识别） |
 
 产品文档跟产品走：某产品线的设计/使用文档放该产品目录（如
-`3dmigoto-gkms/FLIP-RESIZE-PATCH.md`）；跨产品的研究、抓帧证据、路线记录才进 `research/`。
+`3dmigoto_gkms/FLIP-RESIZE-PATCH.md`）；跨产品的研究、抓帧证据、路线记录才进 `research/`。
 
 本地数据目录（gitignored，永不入库）：`.local/`、`dist/`、
 `gakumas_mi/resources/assetstudio-body-json/`。
@@ -43,8 +43,9 @@ Blender 插件 ZIP 和抓帧环境安装包只放 `dist/`。
 
 ## 2. 命名规范
 
-- **目录**：产品线与普通目录用 kebab-case（`docs/wiki`、`3dmigoto-gkms`）；
-  Python 包用 snake_case（`gakumas_mi`）。
+- **目录**：普通目录用 kebab-case（`docs/wiki`、`ab-route-handoff`）；
+  Python 包用 snake_case（`gakumas_mi`）。**`3dmigoto_gkms` 也用 snake_case** ——
+  它在发布包里原样出现，与 `gakumas_mi` 并排，两者风格保持一致。
 - **文件**：Python `snake_case.py`；PowerShell `kebab-case.ps1`；
   Markdown 一律 **kebab-case 英文文件名**（内容可以是中文）。**禁止中文文件名**。
   - **唯一例外 `docs/wiki/`**：它是 GitHub Wiki 的镜像，文件名就是页面标题，
@@ -76,21 +77,31 @@ Blender 插件 ZIP 和抓帧环境安装包只放 `dist/`。
 格式：`type(scope): 中文描述`（scope 单产品时可省略括号仅在 type 后接冒号）。
 
 - **type**：`feat` / `fix` / `docs` / `test` / `refactor` / `ci` / `chore`
-- **scope**：`gakumas-mi` · `3dmigoto-gkms` · `tools` · `profiles` · `research` · `repo`
+- **scope**：`gakumas-mi` · `3dmigoto_gkms` · `tools` · `profiles` · `research` · `repo`
 - 一次提交一个主题；文档对齐可以跟随功能提交，不单独拆。
 - 发布提交固定为 `Release <产品> X.Y.Z`（例：`Release GakumasMI 0.7.2`）。
 
 ## 5. 版本与发布规范
 
-- **版本线独立，绝不同步**：`gakumas_mi`（Blender 插件 0.9.x）与 `3dmigoto-gkms`
-  （抓帧环境 0.7.x）各自演进。
-- Release tag 用产品前缀：`gakumas-mi-vX.Y.Z` / `3dmigoto-gkms-vX.Y.Z`；
-  Release 标题写明组件，不用笼统的 "GakumasMI vX"。
-- gakumas-mi 发版三件套：`gakumas_mi/__init__.py` 的 `bl_info["version"]` +
-  `CHANGELOG.md` 版本段 + tag，缺一不发。
-- Blender tag 必须使用注解格式：首行写简短版本主题，空行后写面向用户的 `- ` 变更列表。
-  Release 固定渲染为 `GakumasMI Blender 插件 **X.Y.Z** — 主题` + `本版变动：` + 列表 +
-  Full Changelog；禁止直接复制技术型 CHANGELOG、测试流水账或仓库内部链接。
-- 抓帧环境 Release 固定为 `本版更新` + `这个包是什么` + `安装`（由 workflow 拼好）+ Full Changelog。
+- **只有一条版本线，一个发布包。** 0.9.0 起插件与抓帧环境合并发布，版本号跟
+  `gakumas_mi/__init__.py` 的 `bl_info["version"]` 走。合并前的
+  `gakumas-mi-v*`（至 0.7.8）与 `3dmigoto-gkms-v*`（至 0.6.0）两条旧 tag 线到此为止。
+- Release tag 为 `vX.Y.Z`，由 `.github/workflows/release.yml` 唯一触发，产出
+  `gakumas-mod-toolkit-X.Y.Z.zip`：
+
+  ```text
+  安装说明.txt
+  blender-addon/gakumas_mi-X.Y.Z.zip   Blender「从磁盘安装」直接选它
+  3dmigoto_gkms/                       整个拷进游戏根目录，只用来按 F8 抓帧
+  ```
+
+- 发版三件套：`bl_info["version"]` + `CHANGELOG.md` 版本段 + tag，缺一不发
+  （前两条 workflow 会校验，不一致直接失败）。
+- tag 必须使用注解格式：首行写简短版本主题，空行后写面向用户的 `- ` 变更列表。
+  Release 固定渲染为 `Gakumas Mod 制作工具 **X.Y.Z** — 主题` + `本版变动：` +
+  列表 + `包里有什么` + Full Changelog；禁止直接复制技术型 CHANGELOG、测试流水账
+  或仓库内部链接。
 - 发布 zip 只打 git 跟踪文件（`tools/package_blender_addon.py` 已强制），
   防止本地 gitignored 数据混入。
+- workflow 另有两道守卫：`d3dx.ini` 若重新启用 `include_recursive = Mods`、
+  或丢失 `analyse_frame` 绑定，构建直接失败。

@@ -10,9 +10,9 @@ dist/
 
 # 3DMigoto 二进制：自编译补丁版 d3d11.dll 入库，第三方再分发件不入库。
 3Dmigoto_v1.4.9/
-3dmigoto-gkms/*.dll
-!3dmigoto-gkms/d3d11.dll
-3dmigoto-gkms/ShaderCache/
+3dmigoto_gkms/*.dll
+!3dmigoto_gkms/d3d11.dll
+3dmigoto_gkms/ShaderCache/
 
 # 提取或派生的游戏资产不得推进公开仓库。
 research/body-mesh-projections.png

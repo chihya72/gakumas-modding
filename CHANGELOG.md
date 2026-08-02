@@ -27,6 +27,15 @@
 
 跳过 0.8.x：本版一次性合入三批改动，其中「移除 3DMigoto 路线」是不兼容的工作流变更。
 
+### 发布方式：合并成一个包
+
+- 插件与抓帧环境**合并为一个 `gakumas-mod-toolkit-0.9.0.zip`**，内含
+  `blender-addon/gakumas_mi-0.9.0.zip` + `3dmigoto_gkms/` + 一页纸安装说明；
+- 两条 tag 线（`gakumas-mi-v*` / `3dmigoto-gkms-v*`）合并成一条 **`vX.Y.Z`**，
+  版本号统一跟插件走；两个 release workflow 合并成一个；
+- 去掉 Inno Setup 安装向导，抓帧环境改为直接拷文件——不再需要 Windows runner 与 .NET；
+- 仓库目录 `3dmigoto-gkms/` 改名 `3dmigoto_gkms/`，与发布包内的目录名一致。
+
 ### 肤色自动对齐原版
 
 作者模型的皮肤底色几乎不会正好等于原版。脸和头发用的是**原版贴图**，身体是作者的，
