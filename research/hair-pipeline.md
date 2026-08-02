@@ -1,4 +1,152 @@
-# Hair / HairProp 着色器逆向分析
+# 发型与发饰（hair / hairprop）
+
+> 合并自 `hair-replacement.md` 与 `hair-shader-analysis.md`（2026-08-02）。
+> `step3-hair-texture-improvement.md` 已删除：它提的默认值改动 0.7.8 已实现，
+> 而它自己的主结论（hair `t0.A` 默认清零）后来被推翻——清零会关闭刘海覆盖、
+> 让眉毛和眼睛透不出来，现在默认保留作者 Alpha。
+>
+> 作者操作步骤看 [`../docs/wiki/7-发型与发饰.md`](../docs/wiki/7-发型与发饰.md)；
+> 本文是它背后的资产事实与逆向证据。
+
+**第一部分 制作**：资产结构、共享 hair 的精确选择、流程、踩坑总表。
+**第二部分 shader 逆向证据**：pass 结构、t0–t7 逐通道、顶点 COLOR 位布局、描边原理。
+
+---
+
+# 第一部分：制作
+
+更新时间：2026-07-14 · 状态：**路线已实机验证**（hski 兔耳换色/换网格 + 圆香花饰移植 hmsz 均通过）
+
+> 发饰是继 body 之后第一个打通的多组件替换目标。核心结论：**发饰替换与 body 替换同构**，
+> 复用同一条逆解链（抓帧提取 → 库匹配 → 逆算子 → compute 重蒙皮 → draw 替换），
+> 生成器（`write_inverse_skin_package`）零改动即可出包。
+> 发型本体（`Geo_Hair`，组件 `hair`）走完全同一条链，2026-07-13 已实机验证
+> （hmsz-hair-0023 圆香波波头）；hair 组件的贴图/顶点色语义与 body 不同，见 §6。
+
+## 1. 资产组织（实测事实，2026-07-13 修订）
+
+- **一个 `_hair` bundle = 一个游戏内「发型」道具 = 两个独立部件**：发型网格 `Geo_Hair`
+  （组件 `hair`）+ 发饰网格 `Geo_HairProp`（组件 `hairprop`）。378/378 个 `_hair` 包
+  都同时含两者。从 octo 解密缓存获取（`Gakuen-idolmaster-ab-decrypt` 的
+  `output/asset_bundle/other/`）。
+- **游戏内只有「发型」选择，没有单独的「发饰」选择**——装备一个发型道具即同时渲染
+  它的 Geo_Hair 与 Geo_HairProp 两个 drawcall。
+- 同一角色不同 `hair-NNNN` 包的 `Geo_Hair` 不保证相同：
+  hski 系列确实同拓扑（16345v/67410idx 跨包一致）但顶点位置逐包微调（pos md5 不同）；
+  hmsz 系列连拓扑都不同（hair-0021: 12413v / 0023: 11459v / 0029: 12471v）。
+  「官方换发饰只换 Prop」只是 hski 这类系列的近似现象，不是通则。
+- **与 body/bodyco 的结构区别**：`m_bdyco` 是同一 body 网格的第二材质段（共用 VB/IB）；
+  hair 与 hairprop 是**两个独立网格、各自 IB/VB、权重与贴图**，因此内部保留两个 component
+  和两套 draw override，但由同一个发型 profile 与 UI 流程管理；发布时应合并为一个完整
+  发型包，避免 hair 无条件覆盖其它发型。
+- `cstm-NNNN_hair` 包 = 服装专属发型（同样是 Geo_Hair + Geo_HairProp 结构）。
+  部分服装（如 ttmr-cstm-0111）没有专属 `_hair` 包，进游戏实穿才能确定实际用哪个发型包。
+- **`Geo_HairProp` 的范围经常比"头顶挂件"大**：hski 兔耳 Prop 除耳朵外还包含编进头发的
+  挑染发丝（包围盒覆盖整个头部 y 1.13–1.63）。**替换 = 整个 Prop 网格被替换**，
+  自定义发饰若不带这些发丝件，原发丝会一并消失——作者必须知情。
+
+### 1.1 共享基础 hair 的精确选择
+
+- 多个发型可能共享同一个 `Geo_Hair` IB；只按 hair IB hash 替换会把它们全部变成同一个
+  Mod 发型。
+- hmsz 的抓帧对比已验证：`hair-0007` 的 hairprop 是 `08fee0bf`（20,784 indices，
+  sections `0/12300, 12300/3528, 15828/4956`），`hair-0023` 是 `d9cfd2ab`
+  （20,289 indices，主 section `7989/12300`），而两者 hair 都命中同一个共享基础 hair。
+- 完整发型包的 hair override 必须先匹配配套 hairprop 的 `IB hash + firstIndex`，再替换共享
+  hair；manifest 另记录 `indexCount` 供审计。未匹配的 C 发饰不设置选择器，hair 和 hairprop
+  都保持原版。
+- 如果两个发型的 hairprop 运行时特征也完全相同，则无法在 3DMigoto 中继续区分；该包只能
+  按共享基础 hair 发布并明确接受广泛影响。
+
+## 2. 注入与材质（兔耳抓帧 FrameAnalysis-2026-07-12-041807 验证）
+
+| 项 | 事实 | 与 body 对比 |
+|---|---|---|
+| VB 布局 | VB0 stride 40 + VB1 stride 12 | **完全一致** |
+| 主 VS | `fe50b7a82b0f37be` | **同一个** |
+| 阴影 VS | `221c573337491c78` / `436f9c16af3b54cf` | 同族 |
+| 镜子 pass | VS `5b7fff8ecccaf579`，精简 PS、不绑全局贴图 | 同 body 降级行为 |
+| 材质槽（主 PS） | t0=底色 / t1=打包遮罩 / t4=暗面色（512² BC7） | **布局 A 逐槽同构** |
+| 布局探测 | 全局地标 `0ff26bed` 落 ps-t2 | **0.7.2 运行时探测直接适用** |
+| 额外槽 | t5=ramp（1024×4，沿用原版）、t6=hhl 占位（4×4 dummy） | 作者仍只出 3 张图 |
+| 贴图族命名 | `t_chr_<id>_hir_col_alp / hir_def / hir_sdw / hir_hhl / rmp` + `hirco_*` | 对应 bdy 系 |
+
+注意：贴图 hash 直换不触发（本游戏通病），必须由 ShaderOverride 的
+`checktextureoverride = ib` 带起 IB hash 的 TextureOverride——生成器输出的 mod.ini 已内置。
+
+## 3. 制作流程
+
+与 body 完全同一条链，只是 `component` 与资源库不同：
+
+1. **建发饰 JSON 资源库**（一次性）：
+   ```
+   python tools/export_all_body_json.py --input <hair包目录> --suffix _hair \
+       --mesh-name Geo_HairProp --skeleton \
+       --output ../mod-workspace/libraries/assetstudio-hairprop-json
+   ```
+2. **抓帧**：游戏内穿戴目标发饰，3DMigoto Frame Analysis 抓全帧。
+3. **提取 profile**：
+   ```
+   python tools/extract_frame_profile.py <抓帧目录> profiles/<名字> \
+       --component hairprop --body-resource mdl_chr_<角色>-hair-NNNN_hair
+   ```
+   自动选 draw 会按 40+12 双 VB 打分，仍建议用资源库顶点数核对；不对就 `--draw` 指定。
+4. **补全逆解**：Blender 步骤①选择“发型”；插件自动把 hair 与
+   hairprop 的配置合并到同一 profile。脚本底层仍分别调用
+   `complete_inverse_skin_profile(profile_dir, 资源库, component_id="hairprop")`。发饰骨多为头发
+   物理骨，少量不可观测骨正常。
+5. **Blender authoring**：一次导入 hair + hairprop 参考模型与骨架 → 建自定义发型/发饰；步骤②对
+   发饰二选一：硬质发饰刚体绑定到 `Head_Hair`，需要摆动的软发饰传递权重并复核 → 分别准备
+   hair/hairprop t0/t1/t4 → 一次校验并导出完整包。`skin` 数据格式为
+   `[(骨索引, correction索引, 权重)]`，权重在源骨架上时 correction 恒 0 + 单个恒等矩阵。
+6. **验证**：装入一个合并后的完整发型包，确认 selector 命中目标发饰；换到其它发饰时，
+   原 hair 与 hairprop 都保持原版，新网格跟随头部动画、描边/投影正常。
+
+## 4. 已验证 PoC（2026-07-12，hski 兔耳 = hski-hair-0023，IB `8dab3a7b`）
+
+- **贴图换色**：IB TextureOverride 绑 ps-t0 纯青 → 耳朵+挑染丝全部变青（证明注入路径 + Prop 范围）。
+- **网格替换**：纯 Python 合成 24 顶点立方体（100% 权重绑 Prop 主宿主骨、放骨主导顶点质心），
+  `write_inverse_skin_package(component_id="hairprop")` 出包 → 游戏内原发饰整体消失、
+  立方体正确戴在头顶随动画运动，描边/投影正常。**生成器零代码改动。**
+
+## 5. 边界
+
+- LIVE 暗光场景的 hair 系 PS 槽位重排尚未实抓验证（地标探测机制已确认适用，风险低）。
+- Blender 插件的「制作目标」字段（`gmi_component_id`，默认 `body`）只暴露 `body` / `hair`；
+  选择 `hair` 后自动处理同一 profile 内的 `hair` 与 `hairprop`，资源库仍分别读取
+  `--mesh-name Geo_Hair` 与 `--mesh-name Geo_HairProp`。
+- 发型本体已用 `hmsz-hair-0023` 实机验证；注入结构与发饰一致，但材质/顶点色语义不同，见 §6。
+
+## 6. 发型替换踩坑总表：插件已自动处理 vs 需作者手动（2026-07-13 全程复盘）
+
+以 scsp 圆香波波头 + 三件发饰 → hmsz-hair-0023 全程实机迭代为准。
+
+### 6.1 插件已自动处理（gakumas_mi 0.7.4 起，作者无感）
+
+| 坑 | 症状（修复前） | 0.7.4 处理方式 |
+|---|---|---|
+| hair t1.A 打开旧 HHL | A=255 允许错误 UV 采到未替换的原版 t6 → 异色高光 | 当前只替换三图，故「头发」材质预设用 (0.263, 0.125, 0, **A=0**) 屏蔽旧 HHL；以后 t6 与 A mask 必须成对开放 |
+| hair t1 光滑度过高 | G≈153 以黄绿色漏进阴影 | 同上，预设 G=0.125 |
+| t1 被存成 sRGB DDS | 阈值被 GPU 二次解码（0.45→0.056），整体暗沉 | PNG→DDS 按语义选格式：t0/t4=sRGB(29)、t1=线性(28) |
+| hair 缺少独立 t4 | 阴影色相不对 | 缺图 fallback 用 hmsz 冷阴影 `linearMul=(0.378,0.367,0.474)`；高保真应单独绘制 t4 |
+| hair 描边逐顶点错误合成 | 暗部量化塌成 (0,1,0) → 绿边 | 安全模式用全网格色档；参考拷贝保留 G低/B低/A高等独立 nibble，不能把 B/A 整字节改写 |
+| hairprop 描边同病 | 黑蝴蝶结绿边 | 按材质槽类型写常量：metal=(3,3,3)+A144、其余=(0,0,0)+A0、B=8 |
+
+### 6.2 需作者手动（流程/判断题，插件管不了）
+
+| 事项 | 要点 |
+|---|---|
+| 选对源资产 | 同角色多款发型（scsp 圆香有 001/002/005/010），枚举后按骨链特征区分（如 `HAIR_Side_Tail`=马尾）并渲染预览确认，别只看编号 |
+| 空间对齐 | 用**发根骨→`Head_Hair` 锚点映射 + 统一缩放**（scsp→Gakumas 实测 ×1.0557），别用原点缩放；**发型与发饰必须用同一套变换**，否则相对位置漂移 |
+| 解剖差异微调 | 头骨形状差异锚点管不住（圆香耳位比莉波低 → 耳环单独 +15mm），按实机截图毫米级手动偏移部件 |
+| 发饰材质类型标注 | 金属件材质槽标 `metal` → 灰描边+A高 rim mask；亮色布件（白花等）想要灰描边也标 metal；不标默认黑描边 |
+| 暗环境金属发乌 | metal 预设 metallic=0.75 大量混入环境立方图，室内昏暗时小饰品会发乌——饰品建议用布料 t1 参数（或单独提亮该件暗面图） |
+| 双 draw | hair 与 hairprop 需各自 draw override，但发布时合并为一个完整发型包；hair 用 hairprop selector 限定 |
+| 开发环境 | 无头脚本跑导出前，确认 Blender 已安装的 gakumas_mi 与仓库同步（枚举缺项报 `enum not found` 即版本落后） |
+
+---
+
+# 第二部分：shader 逆向证据
 
 更新：2026-07-14 · 状态：**主可见 pass、t0–t7、顶点 COLOR 与描边机制已闭环**
 
@@ -6,7 +154,7 @@
 验证的结论。目标不是只得到一组“看起来差不多”的预设，而是像 body 一样，从资源名、绑定、
 指令数据流、逐通道实验和原始资产五个方向证明每项语义。
 
-## 1. 结论摘要
+### 1. 结论摘要
 
 - hair 与 body 共用同一套卡通/PBR 主光照框架；hair 的差异主要是材质类型 8 的 `hir_hhl`
   发丝高光、一个输出角度覆盖率的额外 surface pass，以及不同的顶点 COLOR 分布。
@@ -24,9 +172,9 @@
 - `Geo_HairProp` 只是网格容器，不等于一种 shader。它的不同 submesh 可以分别走普通 hair
   surface、带描边 hair surface，或用 t0.A≈0.33 硬裁切的 `hirco` cutout。
 
-## 2. 证据与分析方法
+### 2. 证据与分析方法
 
-### 2.1 body 已采用的方法
+#### 2.1 body 已采用的方法
 
 body 的 t0/t1/t4 结论不是从贴图外观猜出来的，而是按以下链条冻结：
 
@@ -42,7 +190,7 @@ body 的 t0/t1/t4 结论不是从贴图外观猜出来的，而是按以下链�
 本次 hair 完整复用了这套方法。额外加入两项：比较同一网格的普通 surface/覆盖 surface/描边
 draw，以及逐顶点验证 `Geo_Hair*.json` 与抓帧 VB1 的 UV、COLOR 是否完全一致。
 
-### 2.2 已核对样本
+#### 2.2 已核对样本
 
 | 抓帧 | 资产判定 | Geo 规模 | 代表性可见 draw |
 |---|---|---:|---|
@@ -56,7 +204,7 @@ draw，以及逐顶点验证 `Geo_Hair*.json` 与抓帧 VB1 的 UV、COLOR 是�
 精确排除 0046。运行时 VB1 与选中 Geo 的 COLOR 逐顶点相等，UV 最大误差约 `2.5e-8`，所以
 下面的顶点通道结论可以直接用于作者数据。
 
-### 2.3 置信度边界
+#### 2.3 置信度边界
 
 - **已证明**：纹理逻辑语义、t1/t4 各通道公式、t0.A 在各 pass 的用途、COLOR nibble 解码、
   outline 外扩方向/宽度、HairProp 分段差异。
@@ -66,7 +214,7 @@ draw，以及逐顶点验证 `Geo_Hair*.json` 与抓帧 VB1 的 UV、COLOR 是�
 - **尚未命名**：部分 Unity cbuffer/property 的原始符号名。编译产物没有调试符号，但不影响
   槽位和公式的功能定性。
 
-## 3. Pass 结构
+### 3. Pass 结构
 
 同一 Hair 会在一帧里多次绘制。必须先分清 pass，不能把某个精简 pass 的物理槽号当成全局
 材质定义。
@@ -85,9 +233,9 @@ body 常只需要标准主 surface；hair 样本会连续出现标准 surface �
 surface、outline 是否存在由原材质 section 和原 draw 序列决定，写一个 COLOR 值不能凭空创建
 原本不存在的 pass。
 
-## 4. 槽位布局：先区分“逻辑纹理”和“物理 tN”
+### 4. 槽位布局：先区分“逻辑纹理”和“物理 tN”
 
-### 4.1 主可见布局 A
+#### 4.1 主可见布局 A
 
 当前 hair 主样本都命中布局 A。fktn Hair draw 243 的实际绑定为：
 
@@ -102,7 +250,7 @@ surface、outline 是否存在由原材质 section 和原 draw 序列决定，�
 | t6 | 2048² BC7 sRGB | `hir_hhl` / hair highlight |
 | t7 | 128×8 RGBA8 sRGB | 可选 RampAdd LUT |
 
-### 4.2 布局 B 与精简布局
+#### 4.2 布局 B 与精简布局
 
 主 shader 还存在布局 B。插件用全局 cube hash `0ff26bed` 作为运行时地标：
 
@@ -114,9 +262,9 @@ surface、outline 是否存在由原材质 section 和原 draw 序列决定，�
 RampAdd=t5。由此可见，“作者应替换 t0/t1/t4”只是在主布局 A 下的说法；真正稳定的是
 Base/Def/Shade 的逻辑角色。现有运行时地标探测比维护 PS hash 白名单更可靠。
 
-## 5. t0–t4 与每个颜色通道
+### 5. t0–t4 与每个颜色通道
 
-### 5.1 t0：BaseColor / `*_hir_col_alp`
+#### 5.1 t0：BaseColor / `*_hir_col_alp`
 
 格式为 sRGB；与 t1/t4 共用 UV0。
 
@@ -132,9 +280,9 @@ hairprop cutout、普通 body 的 alpha 经验混为一谈。
 三个当前 Hair 样本的全图 Alpha 统计进一步说明安全默认值应为 0：ttmr 有 99.214% 像素为
 0，jsna 有 97.560%，fktn 有 94.892%。非零值只集中在少量发片/条带区域；普通 RGB PNG
 隐式带入的 A=255 不等价于原生 hair。插件步骤③的具体处理方案见
-[`step3-hair-texture-improvement.md`](step3-hair-texture-improvement.md)。
+[`hair-pipeline.md`](hair-pipeline.md)。
 
-### 5.2 t1：Def / PackedMask
+#### 5.2 t1：Def / PackedMask
 
 t1 是线性 UNORM；shader 采样后做 `.xzyw` 重排只是寄存器排列，回到 DDS 实际通道的语义如下：
 
@@ -157,7 +305,7 @@ t1.A 应恢复为可绘制的 HHL/镜面可见性 mask。
 现行头发预设 `(67,32,0,0)` 对应 R≈0.263、G≈0.125、B=0、A=0，是 hmsz 原生样本验证过
 的安全中性值，不代表所有原版 hair 的 t1 都是全图常量。
 
-### 5.3 t2：全局 HDR 环境 TextureCube
+#### 5.3 t2：全局 HDR 环境 TextureCube
 
 | 通道 | 作用 |
 |---|---|
@@ -167,13 +315,13 @@ t1.A 应恢复为可绘制的 HHL/镜面可见性 mask。
 它是所有材质共享的场景资源，不是 hair 资产图，不应被 mod 替换。hash `0ff26bed` 的稳定性
 使它适合作为布局地标，而不是作为作者贴图。
 
-### 5.4 t3：动态主光阴影深度图
+#### 5.4 t3：动态主光阴影深度图
 
 t3 是 R16 typeless 的深度 SRV/DSV，只有一个有效深度通道，没有 RGBA 材质含义。主 PS 用
 `SampleCmp` 做 4 tap PCF，叠加深度 bias 与距离淡出，得到主光/阴影可见性。它决定场景物体
 投下的动态阴影，和 t4 的“材质暗面颜色”完全不是一回事，也不应被替换。
 
-### 5.5 t4：ShadeColor / `*_hir_sdw`
+#### 5.5 t4：ShadeColor / `*_hir_sdw`
 
 t4 是 sRGB，与 t0 共用 UV0。
 
@@ -206,15 +354,15 @@ hmsz 预设 `t4_linear = t0_linear × (0.378,0.367,0.474)` 是从该角色采样
 
 所以高保真作者流程应允许单独绘制 t4；自动乘数只能作为缺图时的安全默认值。
 
-## 6. t5–t7：为什么只换三张图仍能工作、又为何不是完整保真
+### 6. t5–t7：为什么只换三张图仍能工作、又为何不是完整保真
 
-### t5：Toon Ramp
+#### t5：Toon Ramp
 
 1024×4 的角色/材质 ramp。x 坐标来自 toon 光照因子，当前变体只取特定行；RGB 塑造亮暗
 过渡的色调，A 调节 t0/t4 两套暗面公式的混合强度。它通常是角色共享资源，当前 mod 沿用
 原版即可得到稳定结果。
 
-### t6：Hair Highlight / `hir_hhl`
+#### t6：Hair Highlight / `hir_hhl`
 
 仅 hair 材质类型使用的 UV 颜色图。shader 根据视线/法线角度生成条带状权重，把 t6 RGB 混入
 t0；最终强度受 t1.A 和阴影可见性门控。普通发饰可能绑定 4×4 黑 dummy，原生 hair 则常是
@@ -223,13 +371,13 @@ t0；最终强度受 t1.A 和阴影可见性门控。普通发饰可能绑定 4�
 这是当前三图方案与“完整替换 hair 材质”之间最大的剩余差距：A=0 会可靠屏蔽旧 HHL，但也
 同时放弃原版式发丝高光。若要恢复，应把 t6 与 t1.A 作为一对提供，不能只开放其中一个。
 
-### t7：RampAdd LUT
+#### t7：RampAdd LUT
 
 可选的 128×8 LUT。x 来自视角/法线和阈值，y 来自顶点 COLOR 的 G 低 nibble `/15`；
 `RGB×(1-A)` 会同时加到 t0 和 t4。不是所有 PS 都绑定 t7，例如 `10fc39...` 变体没有它，
 `306c29...` 变体有。插件应保留参考 COLOR 的 G 低 nibble，不能为了统一描边色把整个 G 覆盖。
 
-## 7. 顶点 COLOR 的精确位布局
+### 7. 顶点 COLOR 的精确位布局
 
 输入为 `COLOR.rgba` 四个 UNORM8 字节。VS 把每字节拆成高/低 nibble：
 
@@ -265,7 +413,7 @@ TEXCOORD2 = (B高, B低, A高, A低) / 15
 同理，“B 是 0–15”也不严谨。原始 B 字节可以是 `0xF0–0xFF`，outline 只读低 4 bit；
 现有 `_clear_outline_width()` 用 `B &= 0xF0` 是正确实现，既关闭描边又保留未知的 B 高 nibble。
 
-### 7.1 Geo 样本说明了什么
+#### 7.1 Geo 样本说明了什么
 
 - hmsz Hair 的 R=0、G=16 基本恒定，所以描边 nibble RGB=(0,0,1)；B低在 0–15 变化，A高
   主要是 0 或 9。
@@ -277,9 +425,9 @@ TEXCOORD2 = (B高, B低, A高, A低) / 15
 色档”仍是新拓扑最稳的作者默认值，但它是防止错误最近邻/暗部量化的产品简化，不是 shader
 限制。高保真模式可以保留或显式绘制这些 nibble。
 
-## 8. 描边工作原理
+### 8. 描边工作原理
 
-### 8.1 Inverted hull，而不是屏幕后处理
+#### 8.1 Inverted hull，而不是屏幕后处理
 
 outline draw 使用 VS `e0ceaa...` + PS `58352a...`：
 
@@ -299,7 +447,7 @@ offset = TANGENT.xyz
 
 投影后还施加约 `projectedZ - viewZ*6.6667e-5` 的深度偏移，以降低与主体表面的 z-fighting。
 
-### 8.2 为什么必须保留 `GMI_TANGENT`
+#### 8.2 为什么必须保留 `GMI_TANGENT`
 
 这里的 tangent 不是普通 UV 切线，而是人为平滑过的 outline extrusion direction。Geo 实测
 `normal·tangent` 中位数：hmsz Hair≈0.936、fktn Hair≈0.872、两个 Prop≈0.997/0.999，说明
@@ -309,7 +457,7 @@ offset = TANGENT.xyz
 当前导出器把按位置+材质平滑后的法线写入 `GMI_TANGENT`，适合作为任意新拓扑的安全近似；
 同拓扑/高保真移植则应保留原始 tangent。
 
-### 8.3 描边颜色不是 COLOR 的字面值
+#### 8.3 描边颜色不是 COLOR 的字面值
 
 PS 先取得 `(R高,R低,G高)/15`，再乘材质/全局参数（包括 `cb1[14]`、`cb0[137]`）。因此
 顶点 nibble 是材质输入，不是最终屏幕 RGB；不同场景/材质仍可能让同一 nibble 看起来深浅不同。
@@ -317,7 +465,7 @@ PS 先取得 `(R高,R低,G高)/15`，再乘材质/全局参数（包括 `cb1[14]
 同时要满足两个条件才会出现描边：原材质 section 有 outline draw，且 B低>0。某个 HairProp
 section 若抓帧里没有 outline pass，单独把 COLOR.B 改成 15 也不会生成描边。
 
-## 9. HairProp：必须按 submesh/material section 分析
+### 9. HairProp：必须按 submesh/material section 分析
 
 `Geo_HairProp` 只表示“这个发型道具附带的第二张网格”，不保证所有 submesh 使用相同材质：
 
@@ -335,9 +483,9 @@ section 若抓帧里没有 outline pass，单独把 COLOR.B 改成 15 也不会�
 4. 不应给整张 HairProp 强行套一种 alpha 或 outline 规则；
 5. 当前按材质槽生成常量描边是安全 fallback，不等同于复刻原 section 的全部 COLOR 参数。
 
-## 10. 对当前插件行为的影响
+### 10. 对当前插件行为的影响
 
-### 10.1 保留不变的安全默认
+#### 10.1 保留不变的安全默认
 
 - 继续只自动替换逻辑 Base/Def/Shade，不碰全局 t2/t3。
 - hair 中性 t1 保持 `(67,32,0,0)`，避免未替换 t6 泄漏。
@@ -345,7 +493,7 @@ section 若抓帧里没有 outline pass，单独把 COLOR.B 改成 15 也不会�
 - 任意新拓扑继续使用常量描边色档；关闭描边只清 B 低 nibble。
 - 保持运行时 cube 地标探测，不建立逐 PS hash 列表。
 
-### 10.2 下一阶段的正确顺序
+#### 10.2 下一阶段的正确顺序
 
 1. **高保真 HHL 对**：把可选 t6 和 t1.A mask 一起加入 hair 材质导出；无 t6 时仍强制/提示
    A=0。两者必须成对交付。

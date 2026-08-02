@@ -13,20 +13,20 @@
 | `tests/` | Python 回归/冒烟测试 | `test` 语义文件名，CI 可跑的进 `ci.yml` |
 | `profiles/` | 角色/服装配置档 | `<actor>-<costume>/` 一档一目录 |
 | `experiments/` | 已验证但非主线的探索代码 | 一条路线一个子目录，必须带 README |
-| `research/` | 研究文档与抓帧证据数据 | 见第 3 节文档规范 |
+| `research/` | 技术记录与抓帧证据数据 | 见第 3 节文档规范；**先看能不能并进已有文档，别新开** |
 | `docs/wiki/` | 面向 mod 作者的使用手册（GitHub Wiki 镜像） | 一页一文件，页间用 `[[页名]]` 互链 |
 | 仓库根目录 | **只允许** `README.md`、`CHANGELOG.md`、`CONTRIBUTING.md`、`LICENSE`、`third-party-notices.md` 与 dot 配置文件 | **禁止新增其它根目录文件**（`LICENSE` 必须在根，GitHub 才能识别） |
 
 产品文档跟产品走：某产品线的设计/使用文档放该产品目录（如
 `3dmigoto-gkms/FLIP-RESIZE-PATCH.md`）；跨产品的研究、抓帧证据、路线记录才进 `research/`。
 
-本地数据目录（gitignored，永不入库）：`.local/`、`dist/`、`checkpoints/`、
+本地数据目录（gitignored，永不入库）：`.local/`、`dist/`、
 `gakumas_mi/resources/assetstudio-body-json/`。
 `.local/` 只放**可重建的**本机产物（测试输出、UI 预览、抓帧探针、QA 快照）；
 体积大又难重建的资源库放仓库外的 `..\mod-workspace\libraries\`，见下节。
-根目录 `build/` 禁止使用：AI mod 的脚本、源文件、中间产物、QA 图和最终包全部放进
-`ai-model-workspace/<项目名>/`；测试输出与本机临时产物放 `.local/`；Blender 插件 ZIP 和
-抓帧环境安装包只放 `dist/`。
+根目录 `build/` 禁止使用。作者工作文件（脚本、源文件、中间产物、QA 图、Blend、成品包）
+全部放仓库外的 `..\mod-workspace\mods\work\<项目>\`；测试输出与本机临时产物放 `.local/`；
+Blender 插件 ZIP 和抓帧环境安装包只放 `dist/`。
 
 ### 外层工作区边界
 
@@ -44,7 +44,7 @@
 
 ## 2. 命名规范
 
-- **目录**：产品线与普通目录用 kebab-case（`ab-route-handoff`、`3dmigoto-gkms`）；
+- **目录**：产品线与普通目录用 kebab-case（`docs/wiki`、`3dmigoto-gkms`）；
   Python 包用 snake_case（`gakumas_mi`）。
 - **文件**：Python `snake_case.py`；PowerShell `kebab-case.ps1`；
   Markdown 一律 **kebab-case 英文文件名**（内容可以是中文）。**禁止中文文件名**。

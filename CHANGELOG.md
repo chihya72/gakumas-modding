@@ -199,7 +199,7 @@
 ## 0.7.4 — hair/hairprop 语义转正：发型替换全链内建（圆香波波头实机校准）
 
 以 scsp 圆香波波头 + 三件发饰 → hmsz-hair-0023 的全程实机迭代为校准样本
-（踩坑总表见 [`research/hair-replacement.md`](research/hair-replacement.md) §7）：
+（踩坑总表见 [`research/hair-pipeline.md`](research/hair-pipeline.md) §7）：
 
 - **「头发」材质预设按实测修正**：t1 = (0.263, 0.125, 0, **A=0**)——hair 的 t1.A 不是
   body 的 AO，写 255 会打开暗面项、漏出未替换的原版 t4（蓝紫阴影）；光滑度写高会以

@@ -62,10 +62,9 @@ GakumasMI 已打通 Blender → chinosk6 插件 → 游戏的换模闭环：
   已知边界：某场景若不渲染该发饰（部分剧情/降级 pass），发型在该场景不替换（gate 设计使然）；
   两发型若基础发型与发饰运行时特征均相同则无法区分。
 
-数学验证见 [`inverse-skin-matrix-recovery.md`](inverse-skin-matrix-recovery.md)，材质边界见
-[`transparent-material-status.md`](transparent-material-status.md)，发型资产/制作流程见
-[`hair-replacement.md`](hair-replacement.md)，逐 pass/逐通道逆向见
-[`hair-shader-analysis.md`](hair-shader-analysis.md)。
+数学验证见 [`retired-routes.md`](retired-routes.md)，材质边界见
+[`transparent-material-status.md`](transparent-material-status.md)，发型资产、制作流程与逐 pass/逐通道逆向见
+[`hair-pipeline.md`](hair-pipeline.md)。
 
 ## 完成度评估（0.7.8 时点，对照 TheHerta4；未按 0.9.0 重评）
 

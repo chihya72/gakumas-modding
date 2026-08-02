@@ -219,7 +219,7 @@ python tools\export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>" --lim
 把 mod 网格作为真正的 Unity 资产交给 chinosk6 插件，让引擎原生蒙皮，于是描边/透明/贴图/物理
 **由引擎正确**，还能带新物理骨。代价是多一个打包环节，且游戏侧用 chinosk6 插件而不是 3Dmigoto。
 与已移除的 3Dmigoto 路线的历史对比见
-[`research/3dmigoto-vs-ab-route.md`](../research/3dmigoto-vs-ab-route.md)。
+[`research/3dmigoto-vs-ab-route.md`](../research/retired-routes.md)。
 
 **前置**（缺一不可）：
 
@@ -258,7 +258,7 @@ python tools\export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>" --lim
 
 > 带新物理骨的服装（听诊器/裙摆/缎带摆动）也已跑通，靠导出侧补齐链尾 tip 骨与每骨摆动
 > 参数——这部分由 bundle 源与模板保证，作者无需手动干预。机制与完整分步路线图见
-> [`ab-route-handoff/docs/bundle-route-roadmap.md`](../ab-route-handoff/docs/bundle-route-roadmap.md)。
+> [`../research/ab-route-notes.md`](../research/ab-route-notes.md)。
 
 ### 4. 骨骼映射表（源骨 → 游戏骨）
 
@@ -397,7 +397,7 @@ HSKI Body 已验证的身体贴图语义：
 
 hair 与 body 共用主光照框架，但原图作者规则、附加 HHL pass 和顶点参数分布不同。制作目标选
 「发型（hair）」后插件使用以下**安全作者默认值**；完整逆向见
-[`../research/hair-shader-analysis.md`](../research/hair-shader-analysis.md)：
+[`../research/hair-shader-analysis.md`](../research/hair-pipeline.md)：
 
 - **t0 Alpha**：普通 PNG 通常隐式带 A=255，但原生 hair 大部分区域接近 0；它是刘海 coverage，
   不是普通透明度。0.7.8 默认保留作者 Alpha，需要禁用 Coverage 时再关闭「使用 t0.A 发丝覆盖率」。

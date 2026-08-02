@@ -9,7 +9,7 @@
 | `SkinSourceCS.hlsl` | 用反解出的矩阵把作者网格重蒙皮回游戏的顶点格式 |
 
 数学依据与实机误差（动态 `VB0` 逐字节对照，RMS ≈ 1e-6）见
-[`../../research/inverse-skin-matrix-recovery.md`](../../research/inverse-skin-matrix-recovery.md)。
+[`../../research/inverse-skin-matrix-recovery.md`](../../research/retired-routes.md)。
 
 ## 为什么退役
 

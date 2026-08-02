@@ -31,7 +31,6 @@ gakumas_mi/     作者用 Blender 插件（导入 / 骨映射 / 材质 / 导出 
 tools/          离线脚本（AssetStudio 导出、模板构建、配置档抽取、bundle 补丁、打包）
 profiles/       各角色/服装配置档    tests/  冒烟与契约测试    research/  研究记录与路线
 3dmigoto-gkms/  抓帧环境（自编译补丁版 d3d11.dll + d3dx.ini + ShaderFixes + 安装包脚本）
-ab-route-handoff/  AB 路线的数据侧脚本与历史交接记录
 docs/wiki/      面向 mod 作者的使用手册（GitHub Wiki 镜像）
 ```
 
@@ -57,7 +56,7 @@ docs/wiki/      面向 mod 作者的使用手册（GitHub Wiki 镜像）
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 仓库规范（新建文件前必读） |
 | [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) | 进度 / 完成度 / 计划（**最新状态以此为准**） |
 | [research/step3-texture-input-guide.md](research/step3-texture-input-guide.md) | 步骤② Body / Hair / HairProp 贴图路径、通道和准备要求 |
-| [ab-route-handoff/README.md](ab-route-handoff/README.md) | AB 路线的数据侧脚本与新骨摆动物理记录 |
+| [research/ab-route-notes.md](research/ab-route-notes.md) | AB 路线的数据侧脚本与新骨摆动物理记录 |
 | [gakumas_mi/README.md](gakumas_mi/README.md) · [3dmigoto-gkms/README.md](3dmigoto-gkms/README.md) | 两个子项目各自的安装与用法 |
 
 ## 许可
