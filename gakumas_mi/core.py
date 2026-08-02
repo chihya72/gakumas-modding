@@ -2001,61 +2001,40 @@ def resolve_body_json_resource(profile_dir, json_dir, component_id="body"):
     )
 
 
-def build_inverse_operator(mesh_json_path, output_buf, ridge=1e-8):
-    """Build the fixed inverse-skin operator P from a body Mesh JSON.
+def summarize_bind_mesh(mesh_json_path):
+    """Return bind-mesh counts and per-bone total weight from a Mesh JSON.
 
-    P maps one posed source-position VB (40-byte stride) to boneCount*4 effective
-    skinning-matrix rows. It depends only on bind positions + four-influence
-    weights, so it is built once per costume and reused every animation frame.
-    Writes a coefficient-major R32_FLOAT buffer to output_buf; returns metadata.
+    Used to size the profile and to flag bones whose total weight is too low to
+    be worth trusting. Until 0.9.0 this also solved for the inverse-skin operator
+    P and wrote a ~40 MB R32_FLOAT buffer; that operator only ever fed the
+    3DMigoto re-skinning path, which is gone, so the solve and the buffer went
+    with it. The counts below are what the profile actually consumes.
     """
-    import numpy as np  # Blender ships numpy; import lazily so other paths don't require it.
-
     mesh = load_json(Path(mesh_json_path))
     vertex_count = int(mesh["m_VertexCount"])
     bone_count = len(mesh["m_BindPose"])
-    positions = np.asarray(mesh["m_Vertices"], dtype=np.float64).reshape(-1, 3)
-    if positions.shape[0] != vertex_count:
+    if len(mesh["m_Vertices"]) != vertex_count * 3:
         raise ValueError("Mesh m_Vertices 与 m_VertexCount 不一致")
 
-    # design[v, b*4:b*4+4] = sum of weight * [x y z 1] for each influence on vertex v.
-    source_h = np.column_stack((positions, np.ones(vertex_count)))
-    design = np.zeros((vertex_count, bone_count * 4), dtype=np.float64)
-    active = np.zeros(bone_count, dtype=bool)
-    bone_weight_total = np.zeros(bone_count, dtype=np.float64)
-    for vertex, influence in enumerate(mesh["m_Skin"]):
+    bone_weight_total = [0.0] * bone_count
+    active = 0
+    for influence in mesh["m_Skin"]:
         for bone, weight in zip(influence["boneIndex"], influence["weight"]):
-            bone, weight = int(bone), float(weight)
+            weight = float(weight)
             if weight <= 0.0:
                 continue
-            active[bone] = True
-            bone_weight_total[bone] += weight
-            design[vertex, bone * 4 : bone * 4 + 4] += weight * source_h[vertex]
+            if bone_weight_total[int(bone)] == 0.0:
+                active += 1
+            bone_weight_total[int(bone)] += weight
+    if active == 0:
+        raise ValueError("Mesh 没有任何加权骨骼")
 
-    active_bones = np.flatnonzero(active)
-    if active_bones.size == 0:
-        raise ValueError("Mesh 没有任何加权骨骼，无法构建逆算子")
-    # Solve only the active columns; ill-conditioning is regularized by a ridge term.
-    active_columns = np.concatenate([np.arange(b * 4, b * 4 + 4) for b in active_bones])
-    a = design[:, active_columns]
-    gram = a.T @ a
-    scale = float(np.trace(gram) / gram.shape[0])
-    regularizer = ridge * max(scale, 1.0)
-    operator_active = np.linalg.solve(gram + np.eye(gram.shape[0]) * regularizer, a.T)
-    operator = np.zeros((bone_count * 4, vertex_count), dtype=np.float32)
-    operator[active_columns] = operator_active.astype(np.float32)
-
-    output_buf = Path(output_buf)
-    output_buf.parent.mkdir(parents=True, exist_ok=True)
-    operator.tofile(str(output_buf))
     return {
         "vertexCount": vertex_count,
         "boneCount": bone_count,
         "coefficientCount": bone_count * 4,
-        "activeBoneCount": int(active_bones.size),
-        "regularizer": regularizer,
-        "boneWeightTotal": bone_weight_total.tolist(),
-        "operatorBytes": int(operator.nbytes),
+        "activeBoneCount": active,
+        "boneWeightTotal": bone_weight_total,
     }
 
 
@@ -2073,7 +2052,7 @@ def _parse_body_target(body_name):
 
 
 def complete_inverse_skin_profile(profile_dir, library_dir, component_id="body",
-                                  ridge=1e-8, unobservable_weight_threshold=0.1,
+                                  unobservable_weight_threshold=0.1,
                                   body_resource=None):
     """Upgrade a runtime-only frame profile into a complete inverse-skin profile.
 
@@ -2120,9 +2099,8 @@ def complete_inverse_skin_profile(profile_dir, library_dir, component_id="body",
         total = synthetic.get("weightedBoneCount", 0)
         bone_naming = f"boneNameHash(命名 {named}/{total})"
 
-    # (3) Inverse operator from the bind mesh.
-    operator_rel = f"Buffers/{component_id.title()}.InverseOperator.R32_FLOAT.buf"
-    operator_meta = build_inverse_operator(mesh_dst, profile_dir / operator_rel, ridge=ridge)
+    # (3) Bind-mesh statistics (counts + per-bone weight totals).
+    operator_meta = summarize_bind_mesh(mesh_dst)
 
     # Skeleton weighted-bone count must agree with the mesh bone count.
     skeleton = load_json(skeleton_dst)
@@ -2156,7 +2134,6 @@ def complete_inverse_skin_profile(profile_dir, library_dir, component_id="body",
         "weightedBoneCount": weighted_bone_count,
         "coefficientCount": operator_meta["coefficientCount"],
         "posedVertexStride": stride,
-        "inverseOperator": operator_rel,
         "meshJson": f"Reference/{mesh_name}.json",
         "skeletonJson": f"Reference/{mesh_name}.skeleton.json",
         "boneNaming": bone_naming,
@@ -2197,15 +2174,12 @@ def merge_profile_component(profile_dir, component_profile_dir, component_id):
 
     component = json.loads(json.dumps(component))
     component["inverseSkin"] = json.loads(json.dumps(config))
-    for key in ("meshJson", "skeletonJson", "inverseOperator"):
+    for key in ("meshJson", "skeletonJson"):
         src = source_dir / config[key]
-        suffix = src.name.split(".", 1)[-1]
-        folder = "Buffers" if key == "inverseOperator" else "Reference"
-        name = f"{component_id.title()}.{suffix}" if key == "inverseOperator" else src.name
-        dst = profile_dir / folder / name
+        dst = profile_dir / "Reference" / src.name
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
-        component["inverseSkin"][key] = f"{folder}/{name}"
+        component["inverseSkin"][key] = f"Reference/{src.name}"
 
     profile["components"] = [c for c in profile.get("components", []) if c.get("id") != component_id]
     profile["components"].append(component)

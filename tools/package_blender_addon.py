@@ -48,7 +48,7 @@ def _iter_files(root: Path):
     """git-tracked files under root only.
 
     Packaging must mirror a clean checkout (what the release CI ships), so local
-    gitignored working data — e.g. profiles/*/Buffers/*.buf, Reference/Geo_Body*.json,
+    gitignored working data — e.g. profiles/*/Reference/Geo_Body*.json,
     the multi-GB Body JSON library — never leaks into the zip. Without this a local
     build ballooned to 35 MB vs the CI build's ~90 KB.
     """

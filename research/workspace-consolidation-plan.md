@@ -70,7 +70,7 @@
 |---|---:|---|
 | 当前主项目 | Git 根已迁入 `D:\GIT\gakumas-modding\gakumas-modding` | HEAD、分支、remote 和 P0 未提交文件哈希在迁移前后核对一致 |
 | 主仓库 `.local` | 约 20.0 GiB | body/hair JSON 是受保护流程数据，其余内容另行判断 |
-| 主仓库 `all_body` | 4.57 GiB | 526 个文件与 AB 解密仓库完全相同；另 4 个在源仓库有不同版本 |
+| `mod-workspace\libraries\all_body` | 4.57 GiB | 526 个文件与 AB 解密仓库完全相同；另 4 个在源仓库有不同版本。2026-08-02 从主仓库根目录移入 |
 | `ai-model-workspace` | 约 1.38 GiB | 源文件、构建文件和成品混放 |
 | IP | 约 16.76 GiB | Unity `AssetBundles` 约 11.9 GiB，`Library` 约 3.72 GiB |
 | SCSP | 约 0.90 GiB | `output` 约 0.78 GiB，共 10,326 个无扩展名输入包 |

@@ -20,8 +20,8 @@
 产品文档跟产品走：某产品线的设计/使用文档放该产品目录（如
 `3dmigoto-gkms/FLIP-RESIZE-PATCH.md`）；跨产品的研究、抓帧证据、路线记录才进 `research/`。
 
-本地数据目录（gitignored，永不入库）：`all_body/`、`.local/`、`dist/`、`checkpoints/`、
-`ai-model-workspace/`、`gakumas_mi/resources/assetstudio-body-json/`。
+本地数据目录（gitignored，永不入库）：`.local/`、`dist/`、`checkpoints/`、
+`gakumas_mi/resources/assetstudio-body-json/`。
 `.local/` 只放**可重建的**本机产物（测试输出、UI 预览、抓帧探针、QA 快照）；
 体积大又难重建的资源库放仓库外的 `..\mod-workspace\libraries\`，见下节。
 根目录 `build/` 禁止使用：AI mod 的脚本、源文件、中间产物、QA 图和最终包全部放进

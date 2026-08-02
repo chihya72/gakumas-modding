@@ -19,8 +19,8 @@ dist/
 !3dmigoto-gkms/Mods/README.md
 
 # Extracted or derived game assets must not be pushed to the public repository.
-all_body/
-all_bodys/
+
+
 research/assetstudio/input/
 research/assetstudio/export-body/
 research/assetstudio/export-body-json/
@@ -46,8 +46,6 @@ obj/
 # Local stale backup artifacts.
 *.stale
 
-# AI 专用模型处理工作区(Claude 会话工具/流程,不入库)。
-ai-model-workspace/
 
 # 本机 Claude Code 会话配置。此前只靠全局 gitignore 挡着，换台机器就会被提交。
 .claude/settings.local.json

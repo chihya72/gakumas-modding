@@ -1,8 +1,7 @@
 """默认配置档(atbm-cstm-0140,带原生 co)的数据契约冒烟。
 
 旧版本审计的是 hski-cstm-0000 PoC 冻结契约(tools.audit_profile 的全量 schema);
-该档随 profiles 精简已删除。现在直接锁默认档的关键契约:几何、骨架、逆算子、
-co 第二材质段。数据缺失(如 CI 无本地 Buffers)时自动降级/SKIP。
+该档随 profiles 精简已删除。现在直接锁默认档的关键契约:几何、骨架、材质段与贴图键。
 """
 
 import json
@@ -46,12 +45,12 @@ if hair_profile.is_file():
     print("GMI_HAIR_PROFILE_CONTRACT_OK hair+optional-hairprop")
 
 inverse = profile["skinning"]["inverseSkin"]
-operator = profile_dir / "Buffers" / "InverseOperator.R32_FLOAT.buf"
-if not operator.is_file():
-    print("GMI_PROFILE_CONTRACT_OK (schema only; operator buffers not present locally)")
-    raise SystemExit(0)
 assert inverse["sourceVertexCount"] == 18972
 assert inverse["weightedBoneCount"] == 132
 assert inverse["unobservableBones"] == []
-assert (profile_dir / "Reference" / "Geo_Body.json").is_file()
-print("GMI_PROFILE_CONTRACT_OK geometry+skinning+co-section+operator")
+assert "inverseOperator" not in inverse, "逆算子已随 3DMigoto 路线移除，不应再写进配置档"
+
+# Reference/ 是 gitignored 的本地产物，CI 上没有，有才查。
+reference = profile_dir / "Reference" / "Geo_Body.json"
+if reference.is_file():
+    print("GMI_PROFILE_REFERENCE_OK", reference.stat().st_size)

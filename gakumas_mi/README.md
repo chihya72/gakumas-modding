@@ -62,8 +62,12 @@
 
 1. **① 注入信息**：扫描抓帧，识别 Body 的 Draw / IB·VB hash / stride / 贴图槽；
 2. **② 结构数据**：按顶点+索引数从资源库匹配到对应 `Geo_Body.json` + 骨架，复制进配置档 `Reference/`；
-3. **③ 逆算子**：由 bind pose + 四权重构建 `Buffers/InverseOperator.R32_FLOAT.buf`，并写入
-   `skinning.inverseSkin`（含自动标出的不可观测骨）。
+3. **③ 网格统计**：数顶点/骨数、算每根骨的权重总和，写入 `skinning.inverseSkin`
+   （含自动标出的低权重「不可观测骨」）。
+
+> 0.9.0 前这一步还会解一个最小二乘、写出约 40 MB 的 `Buffers/InverseOperator.R32_FLOAT.buf`。
+> 那个算子只服务 3DMigoto 重蒙皮，路线移除后没有任何读者，已一并删除——生成配置档因此快了不少，
+> 每档也少 40 MB。`skinning.inverseSkin` 这个键名是历史遗留，现在只装 Mesh/骨架路径与统计。
 
 完成后 `配置档目录` 自动指向新配置档，可直接进入「② 准备材质」。
 
@@ -126,7 +130,7 @@ python tools\extract_frame_profile.py <FrameAnalysis目录> <输出目录> --com
 
 #### 批量导出所有 Body 的原模型 JSON / 骨架 JSON
 
-把游戏缓存里的 body AB 文件放到仓库根目录 `all_body/` 后，可以用：
+把游戏缓存里的 body AB 文件放到 `../mod-workspace/libraries/all_body/`（仓库外）后，可以用：
 
 ```powershell
 python tools\export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>"
@@ -134,7 +138,7 @@ python tools\export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>"
 
 默认参数：
 
-- 输入目录：`all_body/`
+- 输入目录：`../mod-workspace/libraries/all_body/`
 - 输出目录：`../mod-workspace/libraries/assetstudio-body-json/`（库有数 GB，在仓库外）
 - AssetStudio CLI：通过命令行参数指定本机的 `AssetStudio.CLI.exe`
 - Unity 版本：`6000.0.67f1`

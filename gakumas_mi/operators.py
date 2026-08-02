@@ -50,7 +50,7 @@ def _bind_sanity_report(obj, remap):
     dress_2219 就是这样一路混到游戏里才炸手指。这里在导出前按游戏骨架摆一次手指，用场景里的
     GMI 参考体（游戏原生身体+原生权重）当已知正确基线做比值。结构性绝对阈值已实测不可用
     （捻骨/`_1` 双链干扰），所以只用这个功能性判据，细节见
-    ai-model-workspace/external-model-conversion-workflow.md §2 步骤 6。
+    docs/wiki 的「外部模型转换实战规范」§2 步骤 6。
     """
     here = Path(__file__).resolve().parent
     for candidate in (here / "simulate_ab_skinning.py",

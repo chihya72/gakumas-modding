@@ -5,8 +5,8 @@ Defaults export body（--suffix _body --mesh-name Geo_Body）。发饰库示例�
       --input all_hair --suffix _hair --mesh-name Geo_HairProp --skeleton \
       --output ../mod-workspace/libraries/assetstudio-hairprop-json
 
-Input layout:
-  all_body/
+Input layout（原始 AB 与导出库同放仓库外的 mod-workspace）:
+  ../mod-workspace/libraries/all_body/
     mdl_chr_amao-cstm-0000_body
     mdl_chr_hski-cstm-0000_body
 
@@ -267,7 +267,9 @@ def body_files(input_dir: Path, suffix: str = "_body") -> list[Path]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="批量导出 Gakumas 所有 body 的 Geo_Body JSON。")
-    parser.add_argument("--input", type=Path, default=ROOT / "all_body", help="body AB 目录，默认 ./all_body")
+    parser.add_argument("--input", type=Path,
+                        default=ROOT.parent / "mod-workspace" / "libraries" / "all_body",
+                        help="body AB 目录，默认 ../mod-workspace/libraries/all_body")
     parser.add_argument(
         "--output",
         type=Path,

@@ -27,7 +27,6 @@
       "weightedBoneCount": 132,
       "coefficientCount": 528,
       "posedVertexStride": 40,
-      "inverseOperator": "Buffers/InverseOperator.R32_FLOAT.buf",
       "meshJson": "Reference/Geo_Body.json",
       "skeletonJson": "Reference/Geo_Body.skeleton.json",
       "boneNaming": "boneNameHash(命名 110/132)",

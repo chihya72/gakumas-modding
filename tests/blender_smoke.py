@@ -30,14 +30,12 @@ def _write_json(path, value):
 
 def _write_profile(root):
     profile = root / "profile"
-    (profile / "Buffers").mkdir(parents=True)
-    (profile / "Reference").mkdir()
+    (profile / "Reference").mkdir(parents=True)
     inverse = {
         "sourceVertexCount": 1,
         "weightedBoneCount": 1,
         "coefficientCount": 4,
         "posedVertexStride": 40,
-        "inverseOperator": "Buffers/InverseOperator.R32_FLOAT.buf",
         "meshJson": "Reference/Geo_Body.json",
         "skeletonJson": "Reference/Geo_Body.skeleton.json",
         "unobservableBones": [],
@@ -71,7 +69,6 @@ def _write_profile(root):
         "weightedBoneCount": 1,
         "nodes": [{"name": "Bone", "weightedIndex": 0, "bindPose": IDENTITY_BIND}],
     })
-    (profile / inverse["inverseOperator"]).write_bytes(b"\0" * 16)
     return profile
 
 
