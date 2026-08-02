@@ -1,51 +1,31 @@
-# Machine-local launch credentials and other private developer state.
+# 本机私有开发状态（启动脚本、测试输出、UI 预览、抓帧探针）。
 .local/
 
-# Generated build/package staging directories.
+# 构建/打包暂存。
 build/
-checkpoints/
 /mods/
 
-# Public repository safety: keep generated release packages local for now.
+# 发布包留在本地，不入公开仓库。
 dist/
 
-# 3DMigoto binary drops — keep config/ShaderFixes in git. The self-compiled
-# d3d11.dll (GakumasMI runtime) IS committed; third-party redistributables are not.
+# 3DMigoto 二进制：自编译补丁版 d3d11.dll 入库，第三方再分发件不入库。
 3Dmigoto_v1.4.9/
 3dmigoto-gkms/*.dll
 !3dmigoto-gkms/d3d11.dll
 3dmigoto-gkms/ShaderCache/
-3dmigoto-gkms/Mods/*
-!3dmigoto-gkms/Mods/README.md
 
-# Extracted or derived game assets must not be pushed to the public repository.
-
-
-research/assetstudio/input/
-research/assetstudio/export-body/
-research/assetstudio/export-body-json/
+# 提取或派生的游戏资产不得推进公开仓库。
 research/body-mesh-projections.png
 research/texture-previews/*.png
 research/texture-previews/*.jpg
 research/inverse-skin/**/*.buf
-mdl_chr_ttmr-cstm-0119_body/
 profiles/**/Reference/
-profiles/**/Buffers/
-profiles/**/body-regions.json
 gakumas_mi/resources/assetstudio-body-json/
 
-# Python/Blender caches.
+# Python/Blender 缓存。
 __pycache__/
 *.py[cod]
 .pytest_cache/
-
-# .NET / WPF build outputs.
-bin/
-obj/
-
-# Local stale backup artifacts.
-*.stale
-
 
 # 本机 Claude Code 会话配置。此前只靠全局 gitignore 挡着，换台机器就会被提交。
 .claude/settings.local.json
