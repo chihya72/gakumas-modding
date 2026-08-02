@@ -20,7 +20,7 @@
 ③ 核对骨骼映射表 ──→ 导出并打包 bundle
                           │
                           ▼
-   .bundle + mod.json 放进 gakumas-local\local-files\mods\<mod-id>\
+   .bundle + mod.json 放进 gakumas-local\local-files\mods\<模组标识>\
 ```
 
 > 📷 **待截图**：`images/quickstart-overview.png` —— 三步面板依次展开的拼图，或一张流程示意。
@@ -57,7 +57,7 @@
    - MMD / Mixamo / Rigify / SCSP 等八家常见命名会**自动预填**，一行都不用碰；
    - 认不出来的（自定义骨名、`bone_xxx`）逐行下拉点选，可以打字搜索；
    - 第二列是装饰骨物理策略，飘带 / 蝴蝶结按需改成「自建摇物链」或「跟裙摆」。
-2. 填模组信息（ID / 名称 / 作者）；
+2. 填模组信息（`模组标识` / `模组名称` / `作者`）；
 3. 点 **`导出并打包 bundle`**。
 
 **导出前有一道硬闸门**：14 个承重关节任一没拿到权重，插件会**拒绝导出并点名是哪根**。触发了就回映射表把那根源骨指对。
@@ -65,7 +65,7 @@
 导出得到 `.bundle` + `mod.json`，放进：
 
 ```text
-<游戏目录>\gakumas-local\local-files\mods\<你的 mod-id>\
+<游戏目录>\gakumas-local\local-files\mods\<你的模组标识>\
 ```
 
 进游戏，在**游戏内 Mod 管理**页面打开开关。细节见 [[6-步骤③-导出AB bundle]]。
