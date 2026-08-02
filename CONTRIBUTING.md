@@ -8,8 +8,7 @@
 | 位置 | 职责 | 新文件落点规则 |
 |---|---|---|
 | `gakumas_mi/` | Blender 作者插件（产品线 1，版本 0.9.x） | 插件代码/着色器/预设只放这里 |
-| `3dmigoto-gkms/` | 抓帧用 3DMigoto 运行环境（产品线 2，版本 0.6.x） | d3d11.dll、d3dx.ini、ShaderFixes |
-| `mod-manager/` | 使用者侧包管理器（随产品线 2 发布） | `src/` C# 代码、`tests/` smoke、使用说明放 README |
+| `3dmigoto-gkms/` | 抓帧环境（产品线 2，版本 0.7.x） | d3d11.dll、d3dx.ini、ShaderFixes、`installer/` 的 Inno Setup 脚本 |
 | `tools/` | 离线脚本（导出/构建/审计/打包） | 一个脚本一个文件，snake_case |
 | `tests/` | Python 回归/冒烟测试 | `test` 语义文件名，CI 可跑的进 `ci.yml` |
 | `profiles/` | 角色/服装配置档 | `<actor>-<costume>/` 一档一目录 |
@@ -25,8 +24,8 @@
 `.local/` 只放**可重建的**本机产物（测试输出、UI 预览、抓帧探针、QA 快照）；
 体积大又难重建的资源库放仓库外的 `..\mod-workspace\libraries\`，见下节。
 根目录 `build/` 禁止使用：AI mod 的脚本、源文件、中间产物、QA 图和最终包全部放进
-`ai-model-workspace/<项目名>/`；本地资源库与测试输出放 `.local/`；Blender 插件 ZIP 和
-Mod 管理器安装包只放 `dist/`。
+`ai-model-workspace/<项目名>/`；测试输出与本机临时产物放 `.local/`；Blender 插件 ZIP 和
+抓帧环境安装包只放 `dist/`。
 
 ### 外层工作区边界
 
@@ -44,8 +43,8 @@ Mod 管理器安装包只放 `dist/`。
 
 ## 2. 命名规范
 
-- **目录**：产品线与普通目录用 kebab-case（`mod-manager`、`3dmigoto-gkms`）；
-  Python 包用 snake_case（`gakumas_mi`）；C# 项目用 PascalCase（`GakumasModManager`）。
+- **目录**：产品线与普通目录用 kebab-case（`ab-route-handoff`、`3dmigoto-gkms`）；
+  Python 包用 snake_case（`gakumas_mi`）。
 - **文件**：Python `snake_case.py`；PowerShell `kebab-case.ps1`；C# 跟 .NET 惯例 PascalCase；
   Markdown 一律 **kebab-case 英文文件名**（内容可以是中文）。**禁止中文文件名**。
 - **带日期的文档**：会话复盘 `session-YYYYMMDD-<topic>.md`；一次性证据快照
@@ -75,14 +74,14 @@ Mod 管理器安装包只放 `dist/`。
 格式：`type(scope): 中文描述`（scope 单产品时可省略括号仅在 type 后接冒号）。
 
 - **type**：`feat` / `fix` / `docs` / `test` / `refactor` / `ci` / `chore`
-- **scope**：`gakumas-mi` · `3dmigoto-gkms` · `mod-manager` · `tools` · `profiles` · `research` · `repo`
+- **scope**：`gakumas-mi` · `3dmigoto-gkms` · `tools` · `profiles` · `research` · `repo`
 - 一次提交一个主题；文档对齐可以跟随功能提交，不单独拆。
 - 发布提交固定为 `Release <产品> X.Y.Z`（例：`Release GakumasMI 0.7.2`）。
 
 ## 5. 版本与发布规范
 
 - **版本线独立，绝不同步**：`gakumas_mi`（Blender 插件 0.9.x）与 `3dmigoto-gkms`
-  （0.6.x）各自演进；`mod-manager` 跟随 `3dmigoto-gkms` 的版本与 tag。
+  （抓帧环境 0.7.x）各自演进。
 - Release tag 用产品前缀：`gakumas-mi-vX.Y.Z` / `3dmigoto-gkms-vX.Y.Z`；
   Release 标题写明组件，不用笼统的 "GakumasMI vX"。
 - gakumas-mi 发版三件套：`gakumas_mi/__init__.py` 的 `bl_info["version"]` +
@@ -90,6 +89,6 @@ Mod 管理器安装包只放 `dist/`。
 - Blender tag 必须使用注解格式：首行写简短版本主题，空行后写面向用户的 `- ` 变更列表。
   Release 固定渲染为 `GakumasMI Blender 插件 **X.Y.Z** — 主题` + `本版变动：` + 列表 +
   Full Changelog；禁止直接复制技术型 CHANGELOG、测试流水账或仓库内部链接。
-- Mod 管理器 Release 固定为 `本版更新` + `安装` + .NET 依赖 + Full Changelog。
+- 抓帧环境 Release 固定为 `本版更新` + `这个包是什么` + `安装`（由 workflow 拼好）+ Full Changelog。
 - 发布 zip 只打 git 跟踪文件（`tools/package_blender_addon.py` 已强制），
   防止本地 gitignored 数据混入。

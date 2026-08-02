@@ -1,11 +1,13 @@
-name: Release · 3dmigoto-gkms (游戏 mod 插件 + Mod 管理器)
+name: Release · 3dmigoto-gkms (抓帧环境)
 
-# 触发：推送形如 3dmigoto-gkms-v0.5.0 的 tag。
-# 产物：一个 Inno Setup 安装包 GakumasModManager-Setup-<版本>.exe，安装时：
-#   - 把自编译补丁版 d3d11.dll + 官方匹配版 nvapi64.dll/d3dcompiler_47.dll + d3dx.ini/ShaderFixes
-#     平铺进用户选定的游戏根目录；
-#   - 把 Mod 管理器装到 <游戏根目录>\GakumasModManager\，并可建桌面快捷方式。
-# 全流程在 windows-latest 单作业完成（WPF 与 Inno Setup 都需 Windows）。
+# 触发：推送形如 3dmigoto-gkms-v0.7.0 的 tag。
+# 产物：一个 Inno Setup 安装包 Gakumas3DMigotoCapture-Setup-<版本>.exe，安装时把自编译补丁版
+#   d3d11.dll + 官方匹配版 nvapi64.dll/d3dcompiler_47.dll + d3dx.ini/ShaderFixes/键位说明.txt
+#   平铺进用户选定的游戏根目录。
+#
+# 0.7.0 起本包**只装抓帧用的加载器**：Mod 管理器（WPF）与 3DMigoto mod 加载一并废弃，
+#   换模走 AB bundle 路线（gakumas-mod-runtime 的 xinput1_3.dll + 游戏内 xinput9_1_0.dll）。
+#   因此不再需要 .NET/WPF 构建，但 Inno Setup 仍要 Windows runner。
 # 版本号与插件 gakumas_mi 相互独立，不同步。
 
 on:
@@ -28,10 +30,6 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0  # 需要全部 tag 来取本版更新（tag 注解）与上一版 compare 链接
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "8.0.x"
 
       - name: 从 tag 提取版本号
         id: ver
@@ -56,36 +54,37 @@ jobs:
             }
           }
 
-      - name: 冒烟测试（扫描/启停/d3dx 读写回滚）
-        run: dotnet run --project mod-manager/tests/GakumasModManager.ScannerSmoke/GakumasModManager.ScannerSmoke.csproj -c Release
-
-      - name: 发布 Mod 管理器（框架依赖单文件，需 .NET 8 Desktop Runtime）
-        run: >
-          dotnet publish mod-manager/src/GakumasModManager/GakumasModManager.csproj
-          -c Release -r win-x64 --self-contained false
-          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:Version=${{ steps.ver.outputs.version }}
-          -o stage/GakumasModManager
-
-      - name: 装配 staging（加载器平铺 + 管理器子目录）
+      - name: 守卫：d3dx.ini 必须是抓帧配置、不加载 mod
         run: |
-          New-Item -ItemType Directory -Force stage/Mods, stage/ShaderFixes | Out-Null
-          Copy-Item mod-manager/README.md stage/GakumasModManager/README.md
+          # include_recursive = Mods 一旦被解注释，这个包就又变回 mod 加载器，
+          # 与 AB 路线的 xinput1_3.dll 职责重叠，必须挡住。
+          if (Select-String -Path 3dmigoto-gkms/d3dx.ini -Pattern '^\s*include_recursive\s*=\s*Mods' -Quiet) {
+            Write-Error "d3dx.ini 启用了 include_recursive = Mods；抓帧环境不应加载 mod"
+            exit 1
+          }
+          # 抓帧是本包唯一用途，F8 绑定必须在
+          if (-not (Select-String -Path 3dmigoto-gkms/d3dx.ini -Pattern '^\s*analyse_frame\s*=' -Quiet)) {
+            Write-Error "d3dx.ini 缺少 analyse_frame 绑定；抓帧环境必须能按 F8 抓帧"
+            exit 1
+          }
+
+      - name: 装配 staging（加载器平铺）
+        run: |
+          New-Item -ItemType Directory -Force stage/ShaderFixes | Out-Null
           Copy-Item 3dmigoto-gkms/d3d11.dll, 3dmigoto-gkms/d3dx.ini stage/
           Copy-Item 3dmigoto-gkms/键位说明.txt stage/
           Copy-Item thirdparty/x64/nvapi64.dll, thirdparty/x64/d3dcompiler_47.dll stage/
           Copy-Item -Recurse -Force 3dmigoto-gkms/ShaderFixes/* stage/ShaderFixes/
-          Copy-Item 3dmigoto-gkms/Mods/README.md stage/Mods/
 
       - name: 安装 Inno Setup
         run: choco install innosetup -y --no-progress
 
       - name: 编译安装包
         env:
-          GKMM_STAGE: ${{ github.workspace }}\stage
-          GKMM_VERSION: ${{ steps.ver.outputs.version }}
-          GKMM_OUT: ${{ github.workspace }}
-        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" mod-manager\installer\GakumasModManager.iss'
+          GKMS_STAGE: ${{ github.workspace }}\stage
+          GKMS_VERSION: ${{ steps.ver.outputs.version }}
+          GKMS_OUT: ${{ github.workspace }}
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" 3dmigoto-gkms\installer\Gakumas3DMigotoCapture.iss'
 
       - name: 写 Release 说明
         run: |
@@ -100,13 +99,20 @@ jobs:
           $prev = if ($idx -ge 0 -and $idx -lt $tags.Count - 1) { $tags[$idx + 1] } else { "" }
 
           $fixed = @'
-          ## 安装
-          运行 `GakumasModManager-Setup-<版本>.exe`，在目录页选择**游戏根目录**（`gakumas.exe` 所在文件夹）。安装程序会：
-          - 把 3DMigoto 加载器（自编译补丁版 `d3d11.dll` + 官方匹配版 `nvapi64.dll`/`d3dcompiler_47.dll` + `d3dx.ini`/`ShaderFixes/`）平铺进游戏根目录；
-          - 把 **Mod 管理器**装到 `<游戏根目录>\GakumasModManager\`，可勾选创建桌面快捷方式；
-          - `d3dx.ini` 与 `Mods/` 若已存在则不覆盖（保护你的配置和已装 mod）。
+          ## 这个包是什么
 
-          Mod 管理器需依赖 .NET 8 Desktop Runtime（Windows x64）：https://dotnet.microsoft.com/download/dotnet/8.0
+          **只给 mod 作者抓帧用的 3DMigoto 环境**，不加载 mod、不改画面。GakumasMI 插件做配置档
+          必须先用它按 F8 抓一帧。普通玩家不需要装。
+
+          换模走 AB bundle 路线：`xinput1_3.dll`（Mod Runtime）+ `xinput9_1_0.dll`（游戏内 Mod 管理 UI），
+          与本包相互独立。
+
+          ## 安装
+          运行 `Gakumas3DMigotoCapture-Setup-<版本>.exe`，在目录页选择**游戏根目录**（`gakumas.exe` 所在文件夹）。
+          安装程序会把加载器（自编译补丁版 `d3d11.dll` + 官方匹配版 `nvapi64.dll`/`d3dcompiler_47.dll`
+          + `d3dx.ini`/`ShaderFixes/`/`键位说明.txt`）平铺进游戏根目录；`d3dx.ini` 已存在则不覆盖。
+
+          进游戏按 **F8** 抓帧，结果在游戏目录的 `FrameAnalysis-<日期时间>\`。其余键位见 `键位说明.txt`。
           '@
 
           $notes = "## 本版更新`n`n$tagBody`n`n$fixed"
@@ -118,6 +124,6 @@ jobs:
       - name: 创建 Release
         run: >
           gh release create "${env:GITHUB_REF_NAME}"
-          "GakumasModManager-Setup-${{ steps.ver.outputs.version }}.exe"
-          --title "3dmigoto-gkms 游戏 mod 插件 + Mod 管理器 ${{ steps.ver.outputs.version }}"
+          "Gakumas3DMigotoCapture-Setup-${{ steps.ver.outputs.version }}.exe"
+          --title "3dmigoto-gkms 抓帧环境 ${{ steps.ver.outputs.version }}"
           --notes-file notes.md

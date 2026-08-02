@@ -24,4 +24,4 @@
 | [`rc1-evidence-20260727.md`](rc1-evidence-20260727.md) | RC1 验收的一次性证据快照（哈希与命令记录） |
 
 产品安装与操作说明分别位于 [`gakumas_mi/`](../gakumas_mi/README.md)、
-[`3dmigoto-gkms/`](../3dmigoto-gkms/README.md) 和 [`mod-manager/`](../mod-manager/README.md)。
+[`3dmigoto-gkms/`](../3dmigoto-gkms/README.md)。
