@@ -15,7 +15,7 @@
 
 ### 当前 Blend 审核基线
 
-- 已按范围重新扫描 `D:\GIT`、用户 Desktop（明确排除 `C:\Users\10725\Desktop\MOD`）、Documents、`D:\Games` 和 `D:\chinosk6`。
+- 已按范围重新扫描 `D:\GIT`、用户 Desktop（明确排除 `%USERPROFILE%\Desktop\MOD`）、Documents、`D:\Games` 和 `D:\chinosk6`。
 - 当前磁盘共有 20 个相关 `.blend`：9 个已整理的 MOD 候选、9 个集中保存的原始未打包备份、2 个内容完全相同的 `weighted.recovered-20260727.blend` 恢复副本；后 11 个均已核验且不纳入 MOD 候选。
 - 当前权威清单为 `mod-workspace/blend-catalog.md`：9 个已整理候选、共 170,323,412 字节；原始文件哈希和大小见 `mod-workspace/backups/blend-originals/original-migration-manifest.json`。旧 P5 中间分析快照不再保留。
 - `B053` 与 `B054` 均保留为百万现场演出服 Blend 候选，实测说明见 `mod-workspace/mods/work/dress-2609-mltd-stage/README.md`；在实测前不删除或合并。
@@ -39,7 +39,7 @@
    需要清理的是仓库内部的废弃 Mod 包、旧业务内容、旧目录和旧命名。
 2. DLL 插件不再作为主项目 submodule；以当前最新分支为源码基准，重建为独立的
    `gakumas-mod-runtime` Git 仓库。
-3. `C:\Users\10725\Desktop\MOD` 与本项目完全无关，扫描、分类、迁移和删除均不得触碰。
+3. `%USERPROFILE%\Desktop\MOD` 与本项目完全无关，扫描、分类、迁移和删除均不得触碰。
 4. `D:\GIT\IP\99-legacy-experiments` 已确认废弃，清单和安全检查已完成，并已整体永久删除，不进入长期归档。
 5. Blender 文件先由工具全面盘点、去重建议和初步分类，生成目录清单；用户逐个确认分类后，
    才从确认正确的 Blend 中提取 t0/t1/t4、抓帧路径和哈希并反查资源。
@@ -78,7 +78,7 @@
 
 高风险文件：
 
-- `C:\Users\10725\Desktop\weighted.blend1` 已恢复为 `weighted.recovered-20260727.blend`，桌面与 P0 备份各保留一份，SHA-256 已核对；原 `.blend1` 已不存在；
+- `%USERPROFILE%\Desktop\weighted.blend1` 已恢复为 `weighted.recovered-20260727.blend`，桌面与 P0 备份各保留一份，SHA-256 已核对；原 `.blend1` 已不存在；
 - 桌面 `aligned.blend`、`dress_2219_gakumas_work.blend` 仍是现存候选；`无标题.blend`（B003）已永久删除，不再列为高风险文件；
 - 主仓库、IP 和 DLL 仓库中的三份 `ModRuntime.cpp` 哈希不同；
 - 根 `README.md` 仍描述 v0.7.8/3DMigoto 主路线，与当前 0.9.0 AB-only 状态冲突。
@@ -259,7 +259,7 @@ case-name/
 
 状态：**用户审核中**。初次盘点和多轮用户确认已完成；当前进入“确认结果固化、剩余候选逐项判断”阶段，尚未开始批量反查外部贴图和抓帧资源。
 
-第一阶段只处理项目相关位置，显式排除 `C:\Users\10725\Desktop\MOD`：
+第一阶段只处理项目相关位置，显式排除 `%USERPROFILE%\Desktop\MOD`：
 
 - 重新扫描 `.blend/.blend1/.blend2`；
 - 记录 SHA-256、时间、Blender 版本、场景、对象、骨架、贴图引用和重复组；

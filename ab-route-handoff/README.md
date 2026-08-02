@@ -29,7 +29,7 @@ Unity 源码是本地 `mod-workspace/pipelines/ip/unity-template-builder`，只�
 
 - `scripts/` — 数据侧(UnityPy)。`export_rui_bones.py` 出骨架 sidecar(含摆动参数 +
   链尾 tip),`process_geo_body.py` 出 mesh,`process_textures.py` 出贴图。
-- [`gakumas-mod-runtime`](../../gakumas-mod-runtime/) — 独立维护的权威运行时源码、能力边界和构建说明。
+- 同级仓库 `gakumas-mod-runtime`（父目录下，独立 Git） — 权威运行时源码、能力边界和构建说明。
 - `tools/build_phase3_templates.py` — 批量生成 R32 模板；
 - `tools/patch_unity_bundle.py` — Blender 插件实际调用的无 Unity 成品打包入口。
 

@@ -11,18 +11,18 @@
 
 | 产物 | 路径 | SHA-256 |
 |---|---|---|
-| Blender 插件 ZIP | `D:\GIT\gakumas-modding\dist\gakumas_mi-0.9.0-code-20260727-151540.zip` | `953917C69A79AB93F526A6D2AAC354C8F6F45256217713AB53CC5B599D2E1037` |
-| 游戏侧 DLL | `D:\Games\gakumas\xinput1_3.dll` | `A10EC34756618A4B7DD50AFB591B06412C7A8092478CDD763D8BA621323DD1EA` |
-| author bundle | `C:\Users\10725\Desktop\author.hski.my-mod\author.hski.my-mod.bundle` | `0327256FFF8CE5F2B38B3B2C8958C55373F99F9884E8C5D74ECE68255F267703` |
-| fuyuko bundle（源输出/部署文件相同） | `C:\Users\10725\Desktop\fuyuko-super\fuyuko-super.bundle` | `35E5F9DD9A03019FFB00500E48ACB3046D9DFDC6EAAF420428170A57A72D85A1` |
+| Blender 插件 ZIP | `<仓库>\dist\gakumas_mi-0.9.0-code-20260727-151540.zip` | `953917C69A79AB93F526A6D2AAC354C8F6F45256217713AB53CC5B599D2E1037` |
+| 游戏侧 DLL | `<游戏目录>\xinput1_3.dll` | `A10EC34756618A4B7DD50AFB591B06412C7A8092478CDD763D8BA621323DD1EA` |
+| author bundle | `<桌面>\author.hski.my-mod\author.hski.my-mod.bundle` | `0327256FFF8CE5F2B38B3B2C8958C55373F99F9884E8C5D74ECE68255F267703` |
+| fuyuko bundle（源输出/部署文件相同） | `<桌面>\fuyuko-super\fuyuko-super.bundle` | `35E5F9DD9A03019FFB00500E48ACB3046D9DFDC6EAAF420428170A57A72D85A1` |
 
 ## 2. 核包工具
 
 命令：
 
 ```text
-python tools/verify_ab_package.py C:\Users\10725\Desktop\author.hski.my-mod
-python tools/verify_ab_package.py C:\Users\10725\Desktop\fuyuko-super
+python tools/verify_ab_package.py <桌面>\author.hski.my-mod
+python tools/verify_ab_package.py <桌面>\fuyuko-super
 ```
 
 结果：
@@ -47,7 +47,7 @@ files: 9
 
 ## 4. runtime 日志关键结果
 
-日志文件：`D:\Games\gakumas\gakumas-local\mod-plugin.log`
+日志文件：`<游戏目录>\gakumas-local\mod-plugin.log`
 
 author（MMD 外部源）：
 

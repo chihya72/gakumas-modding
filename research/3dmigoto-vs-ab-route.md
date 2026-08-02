@@ -7,7 +7,7 @@
 同一个目标(把 IP 服装换进学马),两种实现,**在渲染管线的两个不同位置拦截**。这一个分叉决定了后面所有差异、所有代价。
 
 - 3Dmigoto 路线:已在 main 完成并大量实机验证(GakumasMI 插件 + 3dmigoto-gkms)。
-- AB bundle 路线:本仓研究中,机制见 [bundle-route-roadmap.md](bundle-route-roadmap.md)、[../ab-route-handoff/docs/runtime-mechanism.md](../ab-route-handoff/docs/runtime-mechanism.md)。
+- AB bundle 路线:本仓研究中,机制见 [../ab-route-handoff/docs/bundle-route-roadmap.md](../ab-route-handoff/docs/bundle-route-roadmap.md)、[../ab-route-handoff/docs/runtime-mechanism.md](../ab-route-handoff/docs/runtime-mechanism.md)。
 
 ## 拦截点:根本分叉
 

@@ -4,7 +4,7 @@
 > 本文档 = 需求 + 已验证原型 + 架构 + 分阶段落地 + 边界 + 问题记录 + 验收清单。
 > 核心原型证据来自 2026-07-24 起对 fuyuko(SCSP)→hmsz-cstm-0059 的多轮实机调试。
 
-关联:[3dmigoto-vs-ab-route.md](3dmigoto-vs-ab-route.md)、[bundle-route-roadmap.md](bundle-route-roadmap.md)、
+关联:[3dmigoto-vs-ab-route.md](3dmigoto-vs-ab-route.md)、[../ab-route-handoff/docs/bundle-route-roadmap.md](../ab-route-handoff/docs/bundle-route-roadmap.md)、
 [../ab-route-handoff/docs/lossless-full-skeleton-plan.md](../ab-route-handoff/docs/lossless-full-skeleton-plan.md)、
 [../ab-route-handoff/docs/runtime-mechanism.md](../ab-route-handoff/docs/runtime-mechanism.md)。
 

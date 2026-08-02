@@ -47,7 +47,7 @@
 **权威参考文件**（新人必看）：
 - 模板打包契约 / geojson schema：`mod-workspace/pipelines/ip/unity-template-builder/Assets/Editor/BuildGakumasTemplateBundles.cs`
 - manifest schema：`gakumas_mi/core.py` 的 `write_bundle_source`
-- 运行时消费：[`gakumas-mod-runtime/src/runtime/ModRuntime.cpp`](../../../gakumas-mod-runtime/src/runtime/ModRuntime.cpp)（函数名以当前源码为准）
+- 运行时消费：`gakumas-mod-runtime/src/runtime/ModRuntime.cpp`（函数名以当前源码为准）
 - 现有数据侧样板（per-mod 硬编码，要泛化的对象）：`D:\GIT\gakumas-modding\ai-model-workspace\rui-nurs-hmsz-0000\scripts\process_geo_body.py`
 - Unity 版本：**6000.0.67f1**（bundle 头写死，必须匹配游戏运行时）
 
@@ -180,7 +180,7 @@ vertices, normals, tangents, uv0, uv1, colors, skin, faces, materials
 | 数据侧硬编码样板（泛化对象，然后删） | `...\ai-model-workspace\rui-nurs-hmsz-0000\scripts\process_geo_body.py` |
 | 模板编译器（Phase 3） | `mod-workspace\pipelines\ip\unity-template-builder\Assets\Editor\BuildGakumasTemplateBundles.cs` |
 | geojson / mod.json schema 真相 | 上述模板编译器 + `gakumas_mi/core.py` 的 `write_bundle_source` |
-| 运行时插件 | [`gakumas-mod-runtime/src/runtime/ModRuntime.cpp`](../../../gakumas-mod-runtime/src/runtime/ModRuntime.cpp) |
+| 运行时插件 | `gakumas-mod-runtime/src/runtime/ModRuntime.cpp` |
 | 当前进度 / 未决项 | `...\06-ab-route-handoff\docs\work-summary-2026-07-15.md` |
 
 ## 分工与开发者成本（复述目标）

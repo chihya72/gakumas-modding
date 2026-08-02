@@ -7,7 +7,7 @@
 
 独立备份根目录：
 
-`C:\Users\10725\Documents\gakumas-modding-backup\2026-07-28\p0`
+`%USERPROFILE%\Documents\gakumas-modding-backup\2026-07-28\p0`
 
 | 内容 | 当前状态 | 恢复文件 | SHA-256 |
 |---|---|---|---|
@@ -23,12 +23,12 @@ localify 工作树的 `Hook.cpp` 另按原相对路径复制；源文件与备�
 
 源文件：
 
-`C:\Users\10725\Desktop\weighted.blend1`
+`%USERPROFILE%\Desktop\weighted.blend1`
 
 恢复文件：
 
-- `C:\Users\10725\Desktop\weighted.recovered-20260727.blend`
-- `C:\Users\10725\Documents\gakumas-modding-backup\2026-07-28\p0\weighted.recovered-20260727.blend`
+- `%USERPROFILE%\Desktop\weighted.recovered-20260727.blend`
+- `%USERPROFILE%\Documents\gakumas-modding-backup\2026-07-28\p0\weighted.recovered-20260727.blend`
 
 三份文件均为 8,188,472 字节，SHA-256：
 
@@ -46,6 +46,6 @@ Blender 4.5.3 LTS 已用后台模式打开恢复文件且未保存：
 
 ## 明确未处理
 
-- `C:\Users\10725\Desktop\MOD` 未扫描、未复制、未移动、未删除；
+- `%USERPROFILE%\Desktop\MOD` 未扫描、未复制、未移动、未删除；
 - IP、SCSP 和三个受保护流程数据尚未移动或删除；
 - `D:\chinosk6\gkms-localify-dmm` 不是权威 runtime 来源，其脏工作树已单独保护，暂不清理。

@@ -244,7 +244,7 @@ python tools\export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>" --lim
 
 > 带新物理骨的服装（听诊器/裙摆/缎带摆动）也已跑通，靠导出侧补齐链尾 tip 骨与每骨摆动
 > 参数——这部分由 bundle 源与模板保证，作者无需手动干预。机制与完整分步路线图见
-> [`research/bundle-route-roadmap.md`](../research/bundle-route-roadmap.md)。
+> [`ab-route-handoff/docs/bundle-route-roadmap.md`](../ab-route-handoff/docs/bundle-route-roadmap.md)。
 
 ### 4. 骨骼映射表（源骨 → 游戏骨）
 

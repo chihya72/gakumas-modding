@@ -52,7 +52,7 @@ localPosition/localRotation/localScale)。UnityPy 可读(见 workspace 里生成
 把 parentChain 换成完整 TRS 即可)。**注意 root 名两边都是 Hips。**
 
 ### 2. 扩插件 `PatchModMeshSkinning`(核心改动)【已实现】
-[`ModRuntime.cpp`](../../../gakumas-mod-runtime/src/runtime/ModRuntime.cpp) 现在保留无 sidecar mod 的旧 remap 分支；声明 `skeleton` 的 replacement
+`gakumas-mod-runtime/src/runtime/ModRuntime.cpp` 现在保留无 sidecar mod 的旧 remap 分支；声明 `skeleton` 的 replacement
 改成 `没同名 → 嫁接`:
 
 ```

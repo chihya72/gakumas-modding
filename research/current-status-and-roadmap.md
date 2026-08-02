@@ -34,10 +34,11 @@ GakumasMI 已打通 Blender → chinosk6 插件 → 游戏的换模闭环：
   发饰/发型自动恢复原样（见下方核心结论）；
 - manifest、封面、冲突目标与 Mod Manager 完整兼容。
 
-默认示例只保留两档：
+随插件打包的示例配置档三档：
 
 - `profiles/atbm-cstm-0140`：带原生 `bdyco` 的 body；
-- `profiles/hmsz-hair-0023-hair`：hair。
+- `profiles/hmsz-hair-0023-hair`：hair；
+- `profiles/ttmr-cstm-0111`：单材质段、无 co 的 body。
 
 ## 已冻结的核心结论
 
