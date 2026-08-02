@@ -94,8 +94,12 @@ def register():
     )
     bpy.types.Scene.gmi_bundle_python = StringProperty(
         name="外部 Python", default="python",
-        description="装了 UnityPy/Pillow 的 Python 可执行文件（不是 Blender 自带的）。"
-                    "默认走 PATH 上的 python；不在 PATH 或名字不同时填绝对路径",
+        description="装了 UnityPy 与 Pillow 的 Python 可执行文件，**不能是 Blender 自带的那个**"
+                    "（它没有 UnityPy）。需要 Python 3.10 或更高，推荐 3.11 / 3.12。"
+                    "先 pip install UnityPy Pillow。"
+                    "默认值 python 走 PATH；不在 PATH、装了多个版本、或用虚拟环境时填绝对路径，"
+                    "例如 C:\\Program Files\\Python\\Python312\\python.exe。"
+                    "查路径：命令行跑 python -c \"import sys;print(sys.executable)\"",
     )
     bpy.types.Scene.gmi_component_id = EnumProperty(
         name="制作目标",

@@ -92,14 +92,20 @@ def _run_bundle_patch(scene, mod_root, output_bundle):
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True)
     except FileNotFoundError:
-        raise RuntimeError(f"找不到 Python 可执行文件：{python_exe}（在「外部 Python」里填绝对路径）")
+        raise RuntimeError(
+            f"找不到 Python 可执行文件：{python_exe}\n"
+            "在「外部 Python」栏填绝对路径，例如 C:\\Program Files\\Python\\Python312\\python.exe；"
+            "查路径：命令行跑 python -c \"import sys;print(sys.executable)\"")
     if proc.returncode != 0:
         output = "\n".join(
             stream.strip() for stream in (proc.stdout or "", proc.stderr or "") if stream.strip()
         )
         tail = output.splitlines()[-12:] if output else ["外部 Python 没有输出；请检查 Python 路径和启动权限"]
-        raise RuntimeError("模板补丁失败（外部 Python 是否装了 UnityPy/Pillow？）：\n"
-                           + f"returncode={proc.returncode}\n" + "\n".join(tail))
+        raise RuntimeError(
+            f"模板补丁失败（外部 Python：{python_exe}）。\n"
+            "先确认它是 Python 3.10+ 且装了 UnityPy 与 Pillow："
+            f"{python_exe} -m pip install UnityPy Pillow\n"
+            + f"returncode={proc.returncode}\n" + "\n".join(tail))
     return output_bundle
 
 

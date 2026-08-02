@@ -234,9 +234,18 @@ python tools\export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>" --lim
 
 **作者流程**：
 
-1. 在「导出 AB bundle」区填 **`R32 模板 bundle`**（目标 body 的模板）和 **`外部 Python`**
-   （装了 UnityPy/Pillow 的 Python，默认走 PATH 上的 `python`；不在 PATH 就填绝对路径——
-   **注意不能是 Blender 自带的 Python，它没有 UnityPy**）。
+1. 在「导出 AB bundle」区填两栏：
+
+   - **`R32 模板 bundle`** —— 目标 body/hair 对应的模板文件。留空则只出 `bundle-src/`，不打成品；
+   - **`外部 Python`** —— 跑模板补丁的解释器。要求 **Python 3.10+**（推荐 3.11/3.12，下限由
+     Pillow 决定），并 `pip install UnityPy Pillow`。默认值 `python` 走 PATH，够用就不用改；
+     不在 PATH / 多版本 / 虚拟环境时填绝对路径，例如
+     `C:\Program Files\Python\Python312\python.exe`。查路径：
+     `python -c "import sys;print(sys.executable)"`。
+
+   > **不能填 Blender 自带的 Python**（`...\Blender 4.2\4.2\python\bin\python.exe`）——
+   > 插件本体确实跑在它上面（4.2 是 3.11.7、4.5 是 3.11.11），但它没有也不该装 UnityPy。
+   > Windows 上还要留意 `...\Microsoft\WindowsApps\python.exe` 可能只是应用商店占位程序。
 2. 点 **`导出并打包 bundle（一键）`**：插件先导出 bundle 源，再自动调外部 Python 跑模板
    补丁，直接产出成品 `.bundle` 和同级 `mod.json`（写到 `<输出目录>/<id>/`）。
    **无需 Unity、无需手敲命令行，也无需再从 `bundle-src` 手动移动 `mod.json`。**

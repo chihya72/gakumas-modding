@@ -42,7 +42,51 @@ Left|Right UpLeg / Leg / Foot
 
 被拦住时：回映射表，把被点名的关节对应的源骨指对。若你的模型那块本来就没刷权重，那得回建模软件补。
 
-## 6.3 导出
+## 6.3 面板上那两个空要填什么
+
+导出区有两栏是空的，第一次用必须填，填完 Blender 会记住：
+
+### `R32 模板 bundle`
+
+目标 body / hair 的 **R32 模板 `.bundle`** 文件。模板是工具作者一次性批量产的（530 个 body +
+378 个 hair），按目标资源名取对应的那个，例如换 `mdl_chr_atbm-cstm-0140_body` 就选同名模板。
+
+**留空也能导出**，只是只出 `bundle-src\`（中间产物），不会打成成品 `.bundle`。
+
+### `外部 Python`
+
+打包这一步不开 Unity，而是用 UnityPy 把你的数据灌进模板。这需要一个**你自己装的 Python**——
+**不能是 Blender 自带的那个**，它没有 UnityPy。
+
+| 要求 | 说明 |
+|---|---|
+| 版本 | **3.10 或更高**，推荐 3.11 / 3.12。下限由 Pillow 决定，不是插件的限制 |
+| 依赖 | `pip install UnityPy Pillow` |
+
+这一栏填什么：
+
+- **默认值 `python`** —— Python 装好且在 PATH 上就不用改，直接能用；
+- **填绝对路径** —— 不在 PATH、装了多个版本、或者用虚拟环境时。Windows 上典型长这样：
+
+  ```text
+  C:\Program Files\Python\Python312\python.exe
+  ```
+
+不知道自己的在哪，命令行跑：
+
+```powershell
+python -c "import sys;print(sys.executable)"
+```
+
+把打印出来的路径原样粘进去即可。
+
+> ⚠ 两个坑：
+> - **别填 Blender 目录里的 python.exe**（`...\Blender 4.2\4.2\python\bin\python.exe`），
+>   插件本体就跑在它上面，但它没有也不该装 UnityPy；
+> - Windows 上 `C:\Users\<你>\AppData\Local\Microsoft\WindowsApps\python.exe` 可能是
+>   应用商店的**占位程序**，点了只会弹商店。装了真 Python 却报找不到模块时，先确认命中的不是它。
+
+## 6.4 导出
 
 - 填模组信息：`模组 ID`（文件名与目录名，用它区分 mod）、`名称`、`作者`；
 - **描边设置**：body 选顶点 COLOR 来源，发型选描边色档（见 [[7-发型与发饰]]）；
@@ -57,16 +101,14 @@ Left|Right UpLeg / Leg / Foot
   bundle-src\           中间产物，排错时看
 ```
 
-> 打包这一步由插件调用 `patch_unity_bundle.py` 在**你本机的外部 Python** 上跑（需要 `UnityPy`），走的是"模板补丁"而不是真开 Unity —— 所以你不用装 Unity。
-
-## 6.4 发型 + 发饰：合并成一个包
+## 6.5 发型 + 发饰：合并成一个包
 
 - **只有发型作者网格**：导出只替换 `Geo_Hair` 并保留原配套发饰，同时用 hairprop 特征精确限定目标；
 - **同时准备了发饰作者网格**：点一次导出，插件自动把 `Geo_Hair` + `Geo_HairProp` 合并为**一个完整包**。
 
 详见 [[7-发型与发饰]]。
 
-## 6.5 安装到游戏
+## 6.6 安装到游戏
 
 把整个 `<模组 ID>\` 目录放进：
 
@@ -80,13 +122,15 @@ Left|Right UpLeg / Leg / Foot
 
 > 📷 **待截图**：`images/step3-ingame.png` —— 游戏内 Mod 管理页开关 + 成品效果。
 
-## 6.6 导出报错怎么办
+## 6.7 导出报错怎么办
 
 | 报错 / 现象 | 原因 | 处理 |
 |---|---|---|
 | 承重关节缺权重被拒 | 源骨没映射，或模型该处无权重 | 回 6.1 映射表 / 回建模软件补权重 |
 | 提示配置档没有透明部件 | 材质槽选了「原生 co」但这套服装本身没有透明件 | 改回「不透明」或换含透明件的抓帧重新生成配置档，见 [[8-透明材质（原生co）]] |
-| 打包脚本报 `UnityPy` 相关错 | 外部 Python 没装 UnityPy | `pip install UnityPy` |
+| 提示找不到 Python 可执行文件 | 「外部 Python」填的名字不在 PATH | 填绝对路径，见 6.3 |
+| 打包脚本报 `No module named UnityPy` / `PIL` | 外部 Python 没装依赖 | `<你的python.exe> -m pip install UnityPy Pillow` |
+| pip 装 Pillow 时报版本不兼容 | 外部 Python 低于 3.10 | 换 3.11 / 3.12，见 6.3 |
 | 进游戏没描边 / 颜色错乱 | 顶点 COLOR / 贴图问题 | 见 [[9-常见问题与排错]] |
 | 进游戏模型错位 | 作者模型没对齐参考身体 | 见 [[4-步骤①-准备配置档]] |
 
