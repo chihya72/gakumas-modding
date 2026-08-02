@@ -153,7 +153,7 @@ def draw_export_step(layout, scene, context):
     else:
         mesh.prop(scene, "gmi_vertex_color_mode")
         if scene.gmi_vertex_color_mode == "BASECOLOR":
-            mesh.label(text="「取自基础色」要求步骤③已填 t0", icon="INFO")
+            mesh.label(text="「取自基础色」要求步骤②已填 t0", icon="INFO")
     mesh.prop(scene, "gmi_outline_width_mode")
 
     export = layout.box()
@@ -241,7 +241,7 @@ class GMI_PT_main(Panel):
         layout.use_property_split = True
         layout.use_property_decorate = False
         workflow = layout.box()
-        workflow.label(text="选好制作目标，按 ① → ④ 依次完成", icon="INFO")
+        workflow.label(text="选好制作目标，按 ① → ③ 依次完成", icon="INFO")
         workflow.prop(scene, "gmi_component_id")
         if _is_hair_package(scene):
             workflow.label(text="发型 mod 可只换发型；发饰是可选的第二个网格对象", icon="INFO")

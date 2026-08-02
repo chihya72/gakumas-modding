@@ -79,10 +79,16 @@ try:
     scene.gmi_body_resource = "mdl_chr_test-hair-0001_hair"
 
     # 工作流三步 = 三个常驻子面板,全部挂在 GMI_PT_main 下（AB 路线没有传权那一步）
-    for panel_cls in (ui.GMI_PT_step_profile,
-                      ui.GMI_PT_step_texture, ui.GMI_PT_step_export):
+    step_panels = (ui.GMI_PT_step_profile, ui.GMI_PT_step_texture, ui.GMI_PT_step_export)
+    for panel_cls in step_panels:
         assert panel_cls.bl_parent_id == "GMI_PT_main", panel_cls
         assert panel_cls.is_registered, panel_cls
+    # 收三步时漏改过步骤号文案,这里钉死:面板按 ①②③ 排,且没有任何一处还写 ④
+    assert [cls.bl_label[0] for cls in step_panels] == ["①", "②", "③"]
+    init_source = (ROOT / "gakumas_mi" / "__init__.py").read_text(encoding="utf-8")
+    assert "④" not in ui_source and "④" not in init_source
+    # t0 在步骤②「准备材质」里填,引用它的提示不能再说步骤③
+    assert "步骤③已填 t0" not in ui_source and "步骤③已填 t0" not in init_source
 
     hair_layout = FakeLayout()
     ui.draw_profile_step(hair_layout, scene)
