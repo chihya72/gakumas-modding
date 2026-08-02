@@ -2,16 +2,16 @@
 
 Defaults export body（--suffix _body --mesh-name Geo_Body）。发饰库示例：
   python tools/export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>" \
-      --input all_hair --suffix _hair \
-      --mesh-name Geo_HairProp --output .local/assetstudio-hairprop-json --skeleton
+      --input all_hair --suffix _hair --mesh-name Geo_HairProp --skeleton \
+      --output ../mod-workspace/libraries/assetstudio-hairprop-json
 
 Input layout:
   all_body/
     mdl_chr_amao-cstm-0000_body
     mdl_chr_hski-cstm-0000_body
 
-Output layout:
-  .local/assetstudio-body-json/
+Output layout（库有数 GB，落在仓库外的 mod-workspace，与 templates/unity 同级）:
+  ../mod-workspace/libraries/assetstudio-body-json/
     mdl_chr_amao-cstm-0000_body/
       Geo_Body.json
       Geo_Body.skeleton.json
@@ -271,8 +271,8 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=ROOT / ".local" / "assetstudio-body-json",
-        help="输出目录，默认 ./.local/assetstudio-body-json",
+        default=ROOT.parent / "mod-workspace" / "libraries" / "assetstudio-body-json",
+        help="输出目录，默认 ../mod-workspace/libraries/assetstudio-body-json",
     )
     parser.add_argument("--assetstudio", type=Path, required=True, help="AssetStudio.CLI.exe 路径")
     parser.add_argument("--unity-version", default=DEFAULT_UNITY_VERSION, help="Unity 版本，默认 6000.0.67f1")

@@ -44,9 +44,12 @@
 5. Blender 文件先由工具全面盘点、去重建议和初步分类，生成目录清单；用户逐个确认分类后，
    才从确认正确的 Blend 中提取 t0/t1/t4、抓帧路径和哈希并反查资源。
 6. 下列三处是专门为插件流程准备的数据，不能按普通缓存删除，必须先查明来源和用途并独立备份：
-   - `D:\GIT\gakumas-modding\gakumas-modding\.local\assetstudio-body-json`；
-   - `D:\GIT\gakumas-modding\gakumas-modding\.local\assetstudio-hair-json`；
+   - `mod-workspace\libraries\assetstudio-body-json`；
+   - `mod-workspace\libraries\assetstudio-hair-json`；
    - `D:\GIT\IP\06-ab-route-handoff\GakumasModeBundle_0119_Build\AssetBundles\Windows`。
+
+   > 前两处 2026-08-02 已从 `gakumas-modding\.local\` 移入 `mod-workspace\libraries\`，
+   > 与 `templates\unity` 同待遇。移动后文件数与字节数逐项核对一致。
 
 ## 安全原则
 
@@ -87,8 +90,8 @@
 
 | 数据 | 初步用途与来源 | 本计划要求 |
 |---|---|---|
-| `D:\GIT\gakumas-modding\gakumas-modding\.local\assetstudio-body-json` | `tools/export_all_body_json.py` 从 body AB 导出的 Mesh/骨架 JSON，供 Blender 插件和模板构建使用 | 查清输入目录、生成参数、AssetStudio 版本和消费者后完整备份 |
-| `D:\GIT\gakumas-modding\gakumas-modding\.local\assetstudio-hair-json` | 同一导出工具针对 hair/hairprop AB 生成的 Mesh/骨架 JSON | 查清原始 hair AB、后缀参数和缺失 sidecar 情况后完整备份 |
+| `mod-workspace\libraries\assetstudio-body-json` | `tools/export_all_body_json.py` 从 body AB 导出的 Mesh/骨架 JSON，供 Blender 插件和模板构建使用 | 查清输入目录、生成参数、AssetStudio 版本和消费者后完整备份 |
+| `mod-workspace\libraries\assetstudio-hair-json` | 同一导出工具针对 hair/hairprop AB 生成的 Mesh/骨架 JSON | 查清原始 hair AB、后缀参数和缺失 sidecar 情况后完整备份 |
 | `AssetBundles/Windows` | Unity 工程生成的 Windows AB，包含插件流程所需模板和测试/成品 bundle | 按 bundle 类型、生成脚本、源 commit 和可重建性分类后完整备份 |
 
 以上只是从现有脚本得到的初步证据；正式来源说明必须用输入文件、生成命令和哈希验证。

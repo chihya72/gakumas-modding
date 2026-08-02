@@ -15,8 +15,8 @@ from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BODY_JSON = ROOT / ".local" / "assetstudio-body-json"
-HAIR_JSON = ROOT / ".local" / "assetstudio-hair-json"
+BODY_JSON = ROOT.parent / "mod-workspace" / "libraries" / "assetstudio-body-json"
+HAIR_JSON = ROOT.parent / "mod-workspace" / "libraries" / "assetstudio-hair-json"
 DEFAULT_UNITY_PROJECT = ROOT.parent / "mod-workspace" / "pipelines" / "ip" / "unity-template-builder"
 DEFAULT_TEMPLATE_LIBRARY = ROOT.parent / "mod-workspace" / "templates" / "unity"
 TEXTURE_ROOT = ROOT / ".local" / "p3-textures"

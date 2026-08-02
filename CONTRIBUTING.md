@@ -22,6 +22,8 @@
 
 本地数据目录（gitignored，永不入库）：`all_body/`、`.local/`、`dist/`、`checkpoints/`、
 `ai-model-workspace/`、`gakumas_mi/resources/assetstudio-body-json/`。
+`.local/` 只放**可重建的**本机产物（测试输出、UI 预览、抓帧探针、QA 快照）；
+体积大又难重建的资源库放仓库外的 `..\mod-workspace\libraries\`，见下节。
 根目录 `build/` 禁止使用：AI mod 的脚本、源文件、中间产物、QA 图和最终包全部放进
 `ai-model-workspace/<项目名>/`；本地资源库与测试输出放 `.local/`；Blender 插件 ZIP 和
 Mod 管理器安装包只放 `dist/`。
@@ -33,6 +35,7 @@ Mod 管理器安装包只放 `dist/`。
 | 同级目录 | 职责 | 边界 |
 |---|---|---|
 | `..\mod-workspace\` | 本地 IP/SCSP 解包输入、Mod 工作文件、Blend、成品和受保护数据备份 | 不纳入 Git，不提交游戏提取资产 |
+| `..\mod-workspace\libraries\` | AssetStudio 导出的 body / hair Mesh JSON 资源库（约 7.8 GB） | 与 `templates\unity` 同级同待遇：插件与 `build_phase3_templates.py` 直接读，永不入库，清理前须核对备份 |
 | `..\gakumas-mod-runtime\` | 游戏运行时 `xinput1_3.dll` 源码与构建 | 独立 Git（GPL-3.0），不复制进本仓库、不设为 submodule |
 | `..\gakumas-in-game-mod-manager\` | 游戏内 Mod 管理 UI `xinput9_1_0.dll` 源码与构建 | 独立 Git（GPL-3.0）；编译依赖 `..\gakumas-mod-runtime\` 的 premake 与已编译 `minhook.lib` |
 

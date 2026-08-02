@@ -57,7 +57,7 @@ def extract():
     panel(d, 228, "① 生成完整配置档", 386)
     d.text((154, 270), "自动读取 Geo_Hair.json + Geo_HairProp.json", font=ft(14), fill="#cbd0d8")
     field(d, 304, "抓帧目录", "D:/Games/gakumas/FrameAnalysis-2026-07-12-062317")
-    field(d, 384, "发型 JSON 资源库", ".local/assetstudio-hairprop-json")
+    field(d, 384, "发型 JSON 资源库", "mod-workspace/libraries/assetstudio-hairprop-json")
     field(d, 464, "目标 hair 资源（可选）", "mdl_chr_ttmr-hair-0023_hair")
     button(d, 550, "生成完整配置档", True)
     panel(d, 632, "① 导入参考", 220)

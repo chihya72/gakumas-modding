@@ -30,7 +30,7 @@
 
 ## 2. 目标 game_ref
 
-学马 body JSON 库:`D:\GIT\gakumas-modding\.local\assetstudio-body-json\`。
+学马 body JSON 库:`mod-workspace\libraries\assetstudio-body-json\`(仓库外)。
 取目标 `mdl_chr_hmsz-cstm-0000_body/` 的 `Geo_Body.json` + `Geo_Body.skeleton.json`
 (146 骨、含 localTRS、rootBone=Hips)。已在 `target/`。
 

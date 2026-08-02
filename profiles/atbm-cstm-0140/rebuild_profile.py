@@ -14,7 +14,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 PROFILE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PROFILE_DIR.parents[1]
 sys.path.insert(0, str(REPO_ROOT))
-LIBRARY_DIR = str(REPO_ROOT / ".local" / "assetstudio-body-json")
+LIBRARY_DIR = str(REPO_ROOT.parent / "mod-workspace" / "libraries" / "assetstudio-body-json")
 
 IB_HASH = "d43e51c9"
 VERTICES, INDICES = 18972, 77961

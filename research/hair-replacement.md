@@ -66,7 +66,7 @@
 1. **建发饰 JSON 资源库**（一次性）：
    ```
    python tools/export_all_body_json.py --input <hair包目录> --suffix _hair \
-       --mesh-name Geo_HairProp --output .local/assetstudio-hairprop-json --skeleton
+       --mesh-name Geo_HairProp --skeleton \n       --output ../mod-workspace/libraries/assetstudio-hairprop-json
    ```
 2. **抓帧**：游戏内穿戴目标发饰，3DMigoto Frame Analysis 抓全帧。
 3. **提取 profile**：
