@@ -15,7 +15,8 @@
 | [`transparent-material-status.md`](transparent-material-status.md) | 原生 `m_bdyco` 镂空路线与透明边界 |
 | [`step3-texture-input-guide.md`](step3-texture-input-guide.md) | Body / Hair / HairProp 贴图路径、通道和必填规则 |
 | [`retired-routes.md`](retired-routes.md) | 已排除的三条路线（3DMigoto 逆蒙皮 / PC IL2CPP 注入 / 照搬 GIMI）及其原因 |
-| [`hunting/README.md`](hunting/README.md) | 3DMigoto Hunting / Frame Analysis 操作 |
+
+抓帧操作已并入 [`../3dmigoto-gkms/README.md`](../3dmigoto-gkms/README.md)（产品文档跟产品走）。
 
 2026-08-02 的一轮合并：4 份退役路线文档 → `retired-routes.md`；3 份发型文档 →
 `hair-pipeline.md`；`ab-route-handoff/docs/` 5 份 → `ab-route-notes.md`（数据侧脚本移入

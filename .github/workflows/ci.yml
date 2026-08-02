@@ -22,13 +22,19 @@ jobs:
           python-version: "3.12"
 
       - name: 安装依赖
-        run: pip install numpy pillow
+        run: pip install numpy pillow pytest
+
+      # pytest 一直没进 CI —— tests/test_*.py 的 30 个契约测试（含 500 行的
+      # bundle 源契约）在本地能跑，但从没在 CI 上跑过。
+      - name: 契约测试
+        run: python -m pytest tests -q
 
       - name: 纯 core 冒烟 + 回归测试
         run: |
           python tests/material_bake_smoke.py
           python tests/frame_profile_extract_smoke.py
           python tests/export_buffers_regression.py
+          python tests/profile_contract_smoke.py
 
   blender:
     runs-on: ubuntu-latest

@@ -1,6 +1,6 @@
 """默认配置档(atbm-cstm-0140,带原生 co)的数据契约冒烟。
 
-旧版本审计的是 hski-cstm-0000 PoC 冻结契约(tools.audit_profile 的全量 schema);
+旧版本审计的是 hski-cstm-0000 PoC 冻结契约(当时由 tools/audit_profile.py 做全量 schema);
 该档随 profiles 精简已删除。现在直接锁默认档的关键契约:几何、骨架、材质段与贴图键。
 """
 
