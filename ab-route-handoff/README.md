@@ -1,10 +1,14 @@
-# AB 路线交接包(IP 服装 → 学马,含新骨物理)
+# AB 路线历史交接记录(IP 服装 → 学马,含新骨物理)
 
 把偶像荣耀(或任意来源)的服装 mesh + 贴图 + **完整骨架 + 摆动物理**无损嫁接到学马角色上,
 走 chinosk6 `gkms-localify-dmm` 插件的 AB(AssetBundle)路线。
 
 参考实现:`mdl_chr_rui-nurs-00_body`(护士服)→ `mdl_chr_hmsz-cstm-0000_body`。
 2026-07-17 实机:换装、蒙皮、描边、翅膀/裙摆/缎带/听诊器摆动全部正常。
+
+当前作者流程以 `gakumas_mi/README.md` 为准：Blender 插件导出 bundle 源并调用
+`tools/patch_unity_bundle.py` 补丁模板。旧的 Rui 单案例 Unity oracle 已删除；唯一保留的
+Unity 源码是本地 `mod-workspace/pipelines/ip/unity-template-builder`，只批量生成 R32 模板。
 
 > **本包只含代码和文档。** 提取或派生的游戏资产(源 bundle、`rui_bones.json`、
 > `rui_Geo_Body.processed.json`、贴图、成品 bundle)按仓库规矩不入公开库 —— 见根 `.gitignore`
@@ -25,9 +29,9 @@
 
 - `scripts/` — 数据侧(UnityPy)。`export_rui_bones.py` 出骨架 sidecar(含摆动参数 +
   链尾 tip),`process_geo_body.py` 出 mesh,`process_textures.py` 出贴图。
-- `plugin/` — 运行时插件源码(`gkms-localify-dmm` 的 `src/GakumasModPlugin` 快照)。
-  权威副本在该仓库;这里是交接快照,`plugin/mod_plugin_current_status.md` 记录能力边界。
-- `unity/` — mod bundle 的 Unity 构建脚本 + `mod.json` 样例。
+- [`gakumas-mod-runtime`](../../gakumas-mod-runtime/) — 独立维护的权威运行时源码、能力边界和构建说明。
+- `tools/build_phase3_templates.py` — 批量生成 R32 模板；
+- `tools/patch_unity_bundle.py` — Blender 插件实际调用的无 Unity 成品打包入口。
 
 ## 两条铁律
 

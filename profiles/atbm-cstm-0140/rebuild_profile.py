@@ -11,9 +11,10 @@ import json, sys, traceback
 from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8")
-sys.path.insert(0, r"D:\GIT\gakumas-modding")
 PROFILE_DIR = Path(__file__).resolve().parent
-LIBRARY_DIR = str(Path(__file__).resolve().parents[2] / ".local" / "assetstudio-body-json")
+REPO_ROOT = PROFILE_DIR.parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+LIBRARY_DIR = str(REPO_ROOT / ".local" / "assetstudio-body-json")
 
 IB_HASH = "d43e51c9"
 VERTICES, INDICES = 18972, 77961

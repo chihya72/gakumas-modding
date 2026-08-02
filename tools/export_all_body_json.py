@@ -1,7 +1,8 @@
 """Batch export Gakumas Mesh JSON and optional skeleton sidecar JSON.
 
 Defaults export body（--suffix _body --mesh-name Geo_Body）。发饰库示例：
-  python tools/export_all_body_json.py --input all_hair --suffix _hair \
+  python tools/export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>" \
+      --input all_hair --suffix _hair \
       --mesh-name Geo_HairProp --output .local/assetstudio-hairprop-json --skeleton
 
 Input layout:
@@ -27,7 +28,6 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_AS_CLI = Path(r"D:\GIT\AssetStudio-net10.0-win\AssetStudio.CLI.exe")
 DEFAULT_UNITY_VERSION = "6000.0.67f1"
 
 
@@ -274,7 +274,7 @@ def main() -> int:
         default=ROOT / ".local" / "assetstudio-body-json",
         help="输出目录，默认 ./.local/assetstudio-body-json",
     )
-    parser.add_argument("--assetstudio", type=Path, default=DEFAULT_AS_CLI, help="AssetStudio.CLI.exe 路径")
+    parser.add_argument("--assetstudio", type=Path, required=True, help="AssetStudio.CLI.exe 路径")
     parser.add_argument("--unity-version", default=DEFAULT_UNITY_VERSION, help="Unity 版本，默认 6000.0.67f1")
     parser.add_argument("--game", default="Normal", help="AssetStudio --game 参数，默认 Normal")
     parser.add_argument("--limit", type=int, default=0, help="只处理前 N 个，调试用")

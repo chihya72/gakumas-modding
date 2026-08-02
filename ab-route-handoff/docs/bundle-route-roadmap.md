@@ -45,9 +45,9 @@
 3. 顶点空间由插件 `TransformModMeshVerticesToOriginalRendererSpace` + bindpose 空间修正处理。→ mesh 可以在 mod prefab 自己空间里，不用预对齐。
 
 **权威参考文件**（新人必看）：
-- 打包契约 / geojson schema：`GakumasModeBundle_0119_Build/Assets/Editor/BuildGakumasModBundleRuiNurs0000.cs`
-- manifest schema：`GakumasModeBundle_0119_Build/Assets/Mods/hmsz_0000/mod.json`
-- 运行时消费：`plugin/ModRuntime.cpp`（`LoadIpBoneSidecar` 1235、`BuildHybridBoneArray` 1301、`PatchModMeshSkinningLosslessly` 1518、`...ToOriginalOrder` 1593）
+- 模板打包契约 / geojson schema：`mod-workspace/pipelines/ip/unity-template-builder/Assets/Editor/BuildGakumasTemplateBundles.cs`
+- manifest schema：`gakumas_mi/core.py` 的 `write_bundle_source`
+- 运行时消费：[`gakumas-mod-runtime/src/runtime/ModRuntime.cpp`](../../../gakumas-mod-runtime/src/runtime/ModRuntime.cpp)（函数名以当前源码为准）
 - 现有数据侧样板（per-mod 硬编码，要泛化的对象）：`D:\GIT\gakumas-modding\ai-model-workspace\rui-nurs-hmsz-0000\scripts\process_geo_body.py`
 - Unity 版本：**6000.0.67f1**（bundle 头写死，必须匹配游戏运行时）
 
@@ -99,13 +99,10 @@ vertices, normals, tangents, uv0, uv1, colors, skin, faces, materials
 
 分两步：**2A 先用 Unity 当 oracle 跑通**，**2B 再做开发者侧的无 Unity 补丁工具**。2A 的产物是 2B 的验证基准。
 
-### 2A — headless Unity build（当参照系，不是最终交付）
-**做什么**：把 `BuildGakumasModBundleRuiNurs0000.cs` 的写死路径参数化成 `BuildGakumasModBundle(modRoot)`，命令行跑：
-```
-Unity.exe -batchmode -quit -projectPath <工程> -executeMethod BuildGakumasModBundle.BuildFromArg -modRoot <path>
-```
-`ConfigureTextures()` 里 t1→线性/其余 sRGB/不压缩/可读的逻辑保留。
-**完成判据**：吃 Phase 1 产物 → 出 bundle → 进游戏经插件加载 = 复现当前 rui-nurs 效果。
+### 2A — headless Unity build（历史参照系，已收敛）
+
+早期逐 MOD Unity oracle 已删除。当前唯一 Unity 入口是
+`BuildGakumasTemplateBundles.BuildAllFromArg`，只服务 Phase 3 批量模板；作者成品统一走 2B。
 
 ### 2B — UnityPy 模板补丁（开发者侧最终交付，无 Unity）
 **做什么**：拿一个模板 bundle（Phase 3 产；开发 2B 期间先用现成 `hmsz_0000_ruinurs.bundle`），用 UnityPy **原地覆写数据**，不重建结构。
@@ -181,9 +178,9 @@ Unity.exe -batchmode -quit -projectPath <工程> -executeMethod BuildGakumasModB
 | COLOR / 骨架合成（复用） | `operators.py:701`、`core.py:1210/1254` |
 | 基础 body 导出（Phase 3） | `D:\GIT\gakumas-modding\tools\export_all_body_json.py` |
 | 数据侧硬编码样板（泛化对象，然后删） | `...\ai-model-workspace\rui-nurs-hmsz-0000\scripts\process_geo_body.py` |
-| 打包 oracle（2A / Phase 3） | `...\06-ab-route-handoff\GakumasModeBundle_0119_Build\Assets\Editor\BuildGakumasModBundleRuiNurs0000.cs` |
-| geojson / mod.json schema 真相 | 同上 build 脚本 + `Assets\Mods\hmsz_0000\mod.json` |
-| 运行时插件 | `...\06-ab-route-handoff\plugin\ModRuntime.cpp`（源 `D:\GIT\git.chinosk6.cn\gkms-localify-dmm\src\GakumasModPlugin\ModRuntime.cpp`） |
+| 模板编译器（Phase 3） | `mod-workspace\pipelines\ip\unity-template-builder\Assets\Editor\BuildGakumasTemplateBundles.cs` |
+| geojson / mod.json schema 真相 | 上述模板编译器 + `gakumas_mi/core.py` 的 `write_bundle_source` |
+| 运行时插件 | [`gakumas-mod-runtime/src/runtime/ModRuntime.cpp`](../../../gakumas-mod-runtime/src/runtime/ModRuntime.cpp) |
 | 当前进度 / 未决项 | `...\06-ab-route-handoff\docs\work-summary-2026-07-15.md` |
 
 ## 分工与开发者成本（复述目标）

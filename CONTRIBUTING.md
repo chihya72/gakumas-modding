@@ -26,6 +26,18 @@
 `ai-model-workspace/<项目名>/`；本地资源库与测试输出放 `.local/`；Blender 插件 ZIP 和
 Mod 管理器安装包只放 `dist/`。
 
+### 外层工作区边界
+
+本仓库只占用 `D:\GIT\gakumas-modding\gakumas-modding`。其父目录下另外两个一级目录不是本仓库内容：
+
+| 同级目录 | 职责 | 边界 |
+|---|---|---|
+| `..\mod-workspace\` | 本地 IP/SCSP 解包输入、Mod 工作文件、Blend、成品和受保护数据备份 | 不纳入本仓库 Git，不提交游戏提取资产 |
+| `..\gakumas-mod-runtime\` | 独立的游戏 DLL runtime 源码与构建 | 使用独立 Git，不复制进本仓库、不设为 submodule |
+
+跨目录工具不得假定旧的绝对路径；迁移完成后应通过命令行参数或集中配置定位本地数据。
+公开仓库文档只描述接口和工作流，不复制 `mod-workspace` 的私有资产清单。
+
 ## 2. 命名规范
 
 - **目录**：产品线与普通目录用 kebab-case（`mod-manager`、`3dmigoto-gkms`）；

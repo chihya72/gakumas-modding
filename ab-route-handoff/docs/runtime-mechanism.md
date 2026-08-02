@@ -1,7 +1,8 @@
-# 插件运行时换网格机制(读 plugin/ModRuntime.cpp 源码结论)
+# 插件运行时换网格机制(读 ModRuntime.cpp 源码结论)
 
 chinosk6 `gkms-localify-dmm` 插件如何把 mod 网格塞进游戏。理解这个才能懂为什么 bindpose
-要转置、为什么共享骨自动 retarget、为什么无损方案要扩这里。权威源码在 `plugin/ModRuntime.cpp`。
+要转置、为什么共享骨自动 retarget、为什么无损方案要扩这里。权威源码在
+[`gakumas-mod-runtime/src/runtime/ModRuntime.cpp`](../../../gakumas-mod-runtime/src/runtime/ModRuntime.cpp)。
 
 ## 加载链
 

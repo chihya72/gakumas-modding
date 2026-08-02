@@ -84,28 +84,19 @@ UnityPy.config.FALLBACK_UNITY_VERSION="2022.3.57f1"
 - t4 = 源 sdw,A 改为皮肤二值 mask。
 - **肤色校准当前跳过**(需 hmsz-0000 皮肤采样)。
 
-## 6. Unity JSON→Mesh 导入器(不走 FBX)
+## 6. 当前模板补丁打包
 
-`GakumasModeBundle_0119_Build/Assets/Editor/BuildGakumasModBundleRuiNurs0000.cs`：类 `BuildGakumasModBundle`，菜单 `Gakumas Mod/Build Bundle From Mod Root`。
-- 读 processed geojson(.txt)建 Mesh:vertices/normals/tangents/uv/**colors32 精确**/
-  boneWeights/**bindposes(转置修正)**/2 submesh。
-- 建 101 命名骨 Transform(导入器只负责提供顺序和名字，运行时 sidecar 会替换 renderer 的混合 bones[];root 名=Hips)。
-- 建 prefab + `ConfigureTextures()`(t1 线性、t0/t4 sRGB,非压缩)+ 打 bundle。
+早期流程曾把 Rui 输入复制到 Unity `Assets/Mods/hmsz_0000` 后逐案例构建；该 oracle 已由
+通用模板补丁流程替代。现在 Unity 只由 `tools/build_phase3_templates.py` 批量生成 R32
+模板，最终作者 MOD 由 Blender 插件调用 `tools/patch_unity_bundle.py` 生成，无需再启动 Unity。
 
-stage 输入:把 `build/rui_Geo_Body.processed.json`、`build/rui_bones.json`、6 张贴图、mod.json
-拷进工程 `Assets/Mods/hmsz_0000/`(JSON 用 .txt 扩展名)。
-
-无头构建:
-```bash
-"C:/Program Files/Unity/Hub/Editor/6000.0.67f1/Editor/Unity.exe" -batchmode -quit \
-  -projectPath "D:/GIT/IP/06-ab-route-handoff/GakumasModeBundle_0119_Build" \
-  -executeMethod BuildGakumasModBundle.BuildFromArg -modRoot Assets/Mods/hmsz_0000 -logFile build.log
-```
-产物 `AssetBundles/Windows/hmsz_0000_ruinurs.bundle`。
+模板编译器位于本地
+`mod-workspace/pipelines/ip/unity-template-builder/Assets/Editor/BuildGakumasTemplateBundles.cs`，
+正式模板库位于 `mod-workspace/templates/unity`。
 
 ## 7. mod.json + 部署
 
-`unity/mod.json`(= final-mod/mod.json):schemaVersion 2,source=`mdl_chr_hmsz-cstm-0000_body`,
+Blender 插件生成的 `mod.json` 使用 schemaVersion 2，source=`mdl_chr_hmsz-cstm-0000_body`,
 part=body,renderers Geo_Body↔Geo_Body,replaceMaterials=false,textures 绑
 `_BaseMap`(t0)`_DefMap`(t1)`_ShadeMap`(t4) slot0(bdy)/slot1(bdyco)。
 

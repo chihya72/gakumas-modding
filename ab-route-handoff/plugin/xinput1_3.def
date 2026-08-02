@@ -1,9 +1,0 @@
-EXPORTS
-    XInputGetState
-    XInputSetState
-    XInputGetCapabilities
-    XInputEnable
-    XInputGetDSoundAudioDeviceGuids
-    XInputGetBatteryInformation
-    XInputGetKeystroke
-    XInputGetStateEx @100
