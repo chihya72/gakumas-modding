@@ -15,8 +15,8 @@
 > 下文保留原始记录（研究时点：2026-06-30），**其中「3DMigoto 是正式路线」的定位已经过时**：
 > 0.9.0 起插件只做 AB bundle，3DMigoto 只剩抓帧工具。第 4、5 节按当时语境读。
 >
-> 原文引用的 `theherta4-gpu-vs-gakumas-cpu-vs-il2cpp.md`
-> 未合入本分支，只在 `codex/il2cpp-route` 上。
+> 原文引用的 [`theherta4-gpu-vs-gakumas-cpu-vs-il2cpp.md`](theherta4-gpu-vs-gakumas-cpu-vs-il2cpp.md)
+> 同批取回，其结论部分亦已废弃。
 
 更新：2026-06-30 · 场景：`yuika.gmim` 运行时替换 `fktn-cstm-0001` 的 `Geo_Body`
 
@@ -190,4 +190,4 @@ IL2CPP 支线的透明结论向 3DMigoto 已验证成功的正式路线收敛：
 **不要自造透明；IL2CPP 也必须复用游戏原生 `m_bdyco` 材质段。**
 
 更完整的 TheHerta4/SSMT4、学马 3DMigoto、学马 IL2CPP 层级对比见
-`theherta4-gpu-vs-gakumas-cpu-vs-il2cpp.md`。
+[`theherta4-gpu-vs-gakumas-cpu-vs-il2cpp.md`](theherta4-gpu-vs-gakumas-cpu-vs-il2cpp.md)（同样已废弃结论部分）。
