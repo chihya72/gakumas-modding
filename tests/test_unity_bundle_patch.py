@@ -29,6 +29,15 @@ def test_hash_bone_name_resolution():
     assert sidecar["extraSwingBones"][0]["parentName"] == "DressTip"
 
 
+def test_unresolved_hash_bones_are_valid_carrier_names():
+    sidecar = {
+        "rootBone": "Hips",
+        "bones": [{"name": "Hips"}, {"name": "bone_303"}],
+    }
+    assert _resolve_hash_bone_names(sidecar, {101: "DressRoot"}) == 0
+    assert sidecar["bones"][1]["name"] == "bone_303"
+
+
 def test_template_stream_pack():
     channels = [{"stream": 0, "offset": 0, "format": 0, "dimension": 3},
                 {"stream": 0, "offset": 12, "format": 0, "dimension": 3},

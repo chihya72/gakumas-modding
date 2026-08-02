@@ -481,20 +481,7 @@ def patch_bundle(template: Path, mod_root: Path, output: Path) -> None:
         hash_to_name = _template_bone_hash_map(
             env, renderer_name, geo.get("m_BoneNameHashes")
         )
-        bad_template_names = [name for name in hash_to_name.values()
-                              if _HASH_BONE_NAME.fullmatch(str(name))]
-        if bad_template_names:
-            raise ValueError(
-                f"template {renderer_name!r} 含 {len(bad_template_names)} 个 bone_* 占位骨；"
-                "请使用带真实游戏骨名的 R32 模板"
-            )
         resolved = _resolve_hash_bone_names(sidecar, hash_to_name)
-        placeholders = _placeholder_names(sidecar)
-        if placeholders and resolved == 0:
-            raise ValueError(
-                f"template {renderer_name!r} 仍含 bone_* 占位骨（如 {placeholders[0]}）；"
-                "请使用带真实游戏骨名的 R32 模板"
-            )
         item["_sidecar"] = sidecar
         _patch_mesh(mesh_object, geo, allow_bindpose_growth=True)
         _reorder_smr_bones(env, renderer_name,

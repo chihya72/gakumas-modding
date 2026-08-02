@@ -40,6 +40,7 @@
 | 身体骨对照（另六家预设） | ✅ | **C 纸面** | VRM / Biped / ARP / 英文 Humanoid 四家按各自公开命名规范写表，**没有对应模型试过**；Mixamo / Rigify 沿用旧表未回归实机 |
 | 逐张表打分选表 | ✅ 真实样本已验证 | **B→A（真实模型）** | author/MMD 与 fuyuko/SCSP 两个真实 bundle 重跑完整选表；命中/误选记录见 RC1 证据 |
 | 骨骼映射表（UI 表单） | ✅ 真 UI 已走通 | **A 实证** | 0.9.0 ZIP 全新安装后，真面板完成扫描、修改并导出；配置档保存/加载已执行，证据归档待补 |
+| 匿名 `bone_*` 源骨的人工覆盖 | ✅ 真 UI + 实机 | **A 实机（fktn-0119）** | `aligned.blend` 保留源权重直接导出；领带→`Spine2`、袖口→`Left/RightForeArm`、裙摆→“跟裙摆”后，领带穿模与袖口崩坏消失。证明 AB 不需要先传递权重，但匿名源骨不能留给自动兜底 |
 | 出门闸门（14 承重关节） | ✅ 真作者会话已拦截并放行 | **A 实证** | 故意把 `Spine` 改成无权重/错误映射时被拦，恢复后放行；提示点名 `Spine` |
 | 装饰骨策略列 | ✅ 已翻转并完成两套 Mod 实机 | **A 实证** | 默认跟源父骨；胸/Bust 走 `Bust*_S`；两套当前 Mod 已进游戏验证加载与动作，物理细节证据需归档 |
 | t1/t4 不再导成纯黑 | ✅ | **A 实机** | 2026-07-26 重导后 t4 从 78KB(纯黑) 变 3.4MB，游戏内颜色分层正确 |
@@ -64,7 +65,7 @@ README 已写明通用性边界；`tools/verify_ab_package.py` 已生成且 Pyth
 
 | 检查项 | 当前结果 | 证据 |
 |---|---|---|
-| 新版插件安装 | 已完成 | `dist/gakumas_mi-0.9.0-code-20260727-151540.zip` 全新安装并彻底重启 Blender |
+| 新版插件安装 | 已完成 | `dist/gakumas_mi-0.9.0-code-20260727-233342.zip` 全新安装并彻底重启 Blender；当前 fktn-0119 Mod 即由此版本导出并实机确认正常 |
 | 真面板骨骼映射 | 已完成 | 扫描、修改、保存/加载、导出均已执行；结果已归档到 RC1 证据 |
 | 承重骨闸门 | 已完成 | 故意破坏 `Spine` 映射时拦截；修正后重新导出放行 |
 | 核包工具 | 已完成 | `author.hski.my-mod`：`PASS`, `buildId=b01fdd1629112716`, `files=6`；`fuyuko-super`：`PASS`, `buildId=ea2bbcfb74aca8e6`, `files=9` |
@@ -415,7 +416,7 @@ fuyuko 的失败性质不是"某步没自动",而是**坏数据静默通过导�
 1. **`_bundle_root_bone` 合成骨架认错根骨** ✅：合成骨架跳过不可信的 `weightedIndex==0`，回退到 `Hips`；测试覆盖 `Finger(weightedIndex=0) + Hips` 场景。
 2. **`_export_bundle_png` 读不了插件自写的烘焙 DDS** ✅：`core.read_rgba8_dds` 读取 DX10 RGBA8 后由导出器写入 Blender PNG，覆盖 148 字节头 + top-down raw RGBA 路径。
 3. **`Unmapped weighted bones` 校验拦空组** ✅：只把真实带正权重的顶点组加入 unresolved 校验，零权重空组不再阻塞导出。
-4. **mesh-only skeleton 的 `bone_<hash>` 退化 ✅**：资源目录只有 `Geo_Body.json` 时，未命中的服装专属 hash 曾退回 `bone_<hash>`，44 根错误骨全部挂到 `Hips`，导致上半身/裙摆/蝴蝶结扭曲。现在模板修复工具按目标 profile 补真实名称，模板构建和 bundle patch 都拒绝未解析占位名。这里修的是**错误占位骨归零**；合法装饰骨仍会让运行时 `createdBones>0`。
+4. **mesh-only skeleton 的 `bone_<hash>` 语义已拆开 ✅**：资源目录只有 `Geo_Body.json` 时，未命中的服装专属 hash 必然可能退回 `bone_<hash>`。历史 bug 是把这些名字直接当成运行时可用骨并全部挂到 `Hips`，造成上半身/裙摆/蝴蝶结扭曲；现在运行时以 sidecar 建真实骨链，R32 模板只作 carrier，模板内的 `bone_<hash>` 不再被错误拒绝或要求 UnityPy 合成 Transform。能从 profile/sidecar 得到真实游戏名时仍优先映射；拿不到时保留 hash carrier，不伪造骨名。
 5. **SCSP 手臂主体骨被猜到服装骨 ✅**：`*_rot/Elbow/Clavicle` 等源骨不能交给装饰骨最近点匹配；SCSP/IP/QualiArts 预设现覆盖躯干、四肢、手指和脚趾，且装饰映射不得覆盖身体 preset。重导后手部实机动作已正常。
 6. **源飘带被目标摆动骨吞并 ✅**：导出和运行时建链已修，明确的源悬挂链会保留父子关系并生成 `newBones/extraSwingBones`。最新实机日志为 `Chain tips attached: 10/10`、`createdBones=26`、`swingPrepared=36`，并成功建立 3/4/5 层链；当前 RC1 fuyuko sidecar 的摇物骨为 `26 / 13 左 / 13 右`，左右结构对称，历史上的“左动右不动/整根飘带不联动”已关闭。
 7. **Unity 6 加载新增骨 bundle 崩溃 ✅**：AABB 数量不一致曾被修复，但不是最终根因。真正根因是 UnityPy 向 bundle 合成 GameObject/Transform；现已删除合成路径，缺失骨槽回退 root，由运行时按 sidecar 建骨。fuyuko 已能加载、graft、替换网格和贴图。
@@ -656,7 +657,7 @@ Mod 实机测试也已完成并归档。**当前唯一外部动作是由作者�
 - **P6.3 实机日志已取得（2026-07-24）**：`D:\Games\gakumas\gakumas-local\mod-plugin.log` 已证明 `atbm-0140` 新骨网格替换、权重闭环和 ActorSwing 多层建链成功；视觉上的持续自摆仍需人工观察确认。
 - **最新阻塞（2026-07-24，fuyuko-super）**：重新导出的 `hmsz-cstm-0059` bundle 网格替换和权重闭环成功（`meshApplied=1`、`droppedInfluences=0`），但 44 根 `bone_<hash>` 被当作新骨全部挂到 `Hips`，日志为 `createdBones=44`、`ChainInfo=44x1`，造成上半身、裙摆、蝴蝶结扭曲。
 - **根因已确认**：`D:\GIT\gakumas-modding\.local\assetstudio-body-json\mdl_chr_hmsz-cstm-0059_body` 只有 `Geo_Body.json`，没有 `Geo_Body.skeleton.json`；Mesh 只有 156 个 `m_BoneNameHashes`/`m_BindPose`。合成骨架只能从其他资源 sidecar 补公共骨名，0059 独有的 44 根退回 `bone_<hash>`。游戏 profile 已证明这 156 个 hash 顺序可对应真实骨名。
-- **P6.4 模板修复已完成，实机复测待做（2026-07-24）**：新增 `tools/repair_template_bone_names.py`。它按 `Geo_Body.json` 的 `m_BoneNameHashes` 与目标 profile 的 `bones[index]` 修复 R32 模板 Transform/sidecar；0059 修复结果已放回原模板文件名，SMR 156 根、sidecar 156 根、`bone_* = 0`，旧坏模板保留为 `template_mdl_chr_hmsz-cstm-0059_body.before-bone-fix.bundle`。`build_phase3_templates.py` 现在遇到 `bone_*` 会直接拒绝交付坏模板。
+- **P6.4 模板修复与全量重建（2026-07-27，离线完成）**：`tools/repair_template_bone_names.py` 仍用于有权威 profile 的存量模板修名；但它不再是所有 mesh-only 目标的前置条件。`build_phase3_templates.py` 已改为忽略 sidecar 中的伪 `bone_*` 名、优先使用跨资源真实映射，并允许无法观测的 hash carrier；`patch_unity_bundle.py` 同步取消“模板必须零 `bone_*`”的旧检查。随后已重新生成全部 `530 body + 378 hair = 908` 个 R32 模板，输出仍在 Unity 工程 `AssetBundles/Windows`，不复制到 `dist`。0119 的 18 个未知 hash 保留为 carrier，未伪造游戏骨名。
 - **当前 fuyuko 热修状态**：`bone_<hash>` 名称热修和源飘带新骨导出均已写入当前 bundle；AABB 热修后当前文件指标为 `SMR.m_Bones=184`、`Mesh.m_BindPose=184`、`Mesh.m_BonesAABB=184`，引用缺失数为 0、骨引用重复数为 0。旧文件保留为 `fuyuko-super.before-aabb-fix.bundle`；但游戏仍在加载阶段崩溃，尚未进入 mesh graft/ActorSwing。
 - **最新手部问题（2026-07-24 19:00）**：新版导出报告已显示 `preset=scsp`，但后续装饰物理位置映射用 `update` 覆盖了身体 preset，实际仍是 `LeftElbow→LeftSleeve2_S`、`RightElbow→RightSleeve1_S`、锁骨→`Spine2`，所以画面未变。已修正合并优先级：身体 preset 命中后不可被装饰映射覆盖，只有未命中的装饰骨才允许按位置匹配。旧 bundle 的错误权重已烘焙，必须用新版插件重新导出，不能只再次改名。
 - **最新背部蝴蝶结/飘带物理问题（2026-07-24 19:05–19:12）**：手部已正常；但导出 sidecar 仍为 `newBones=0/extraSwingBones=0`，`Streamer_L/R` 被质心合并并映射到左侧 `LeftBackRibbon2_S/LeftBackSkirt*_S`，`Lace_R` 还落到腿部摆动骨，故出现背后乱摆、左右不对称、整根飘带不联动。已在 `build_accessory_physics_remap` 修复：`Spine*_Bow`、`Streamer`、`SStreamer`、`Lace` 源链强制保留源父子关系并进入 P4 新骨；新包为 `dist/gakumas_mi-0.8.0-code-20260724-191244.zip`，15 个 bundle contract 测试通过。旧 bundle 需重新导出后再看实机画面。

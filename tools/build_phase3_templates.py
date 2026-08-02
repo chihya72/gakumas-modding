@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from PIL import Image
@@ -16,14 +17,9 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 BODY_JSON = ROOT / ".local" / "assetstudio-body-json"
 HAIR_JSON = ROOT / ".local" / "assetstudio-hair-json"
-OTHER = Path(r"D:\GIT\Gakuen-idolmaster-ab-decrypt\output\asset_bundle\other")
-ASSETSTUDIO = Path(r"D:\GIT\AssetStudio-net10.0-win\AssetStudio.CLI.exe")
-UNITY = Path(r"C:\Program Files\Unity\Hub\Editor\6000.0.67f1\Editor\Unity.exe")
-UNITY_PROJECT = Path(r"D:\GIT\IP\06-ab-route-handoff\GakumasModeBundle_0119_Build")
-STAGE_ROOT = UNITY_PROJECT / "Assets" / "Mods" / "p3_templates"
-LIBRARY_ROOT = UNITY_PROJECT / "Library"
+DEFAULT_UNITY_PROJECT = ROOT.parent / "mod-workspace" / "pipelines" / "ip" / "unity-template-builder"
+DEFAULT_TEMPLATE_LIBRARY = ROOT.parent / "mod-workspace" / "templates" / "unity"
 TEXTURE_ROOT = ROOT / ".local" / "p3-textures"
-WINDOWS_OUT = UNITY_PROJECT / "AssetBundles" / "Windows"  # 模板就地留这里，不再复制到 dist
 
 
 def read_json(path: Path) -> dict:
@@ -42,6 +38,40 @@ def safe_remove(path: Path, parent: Path) -> None:
         raise RuntimeError(f"refusing to remove outside generated root: {target}")
     if target.exists():
         shutil.rmtree(target)
+
+
+def unlink_with_retry(path: Path, timeout: float = 5.0) -> None:
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.1)
+
+
+def cleanup_unity_work(unity_project: Path, clean_project_cache: bool) -> None:
+    stage_root = unity_project / "Assets" / "Mods" / "p3_templates"
+    if stage_root.exists():
+        safe_remove(stage_root, unity_project / "Assets" / "Mods")
+    stage_meta = stage_root.with_name(stage_root.name + ".meta")
+    if stage_meta.is_file():
+        stage_meta.unlink()
+    mods_root = stage_root.parent
+    if mods_root.is_dir() and not any(mods_root.iterdir()):
+        mods_root.rmdir()
+        mods_meta = mods_root.with_name(mods_root.name + ".meta")
+        if mods_meta.is_file():
+            mods_meta.unlink()
+    generated_names = ["GakumasTemplateBuild"]
+    if clean_project_cache:
+        generated_names.extend(("Library", "Logs", "Temp", "UserSettings"))
+    for name in generated_names:
+        path = unity_project / name
+        if path.exists():
+            safe_remove(path, unity_project)
 
 
 def mesh_path(directory: Path, name: str) -> Path:
@@ -71,9 +101,11 @@ def skeleton_name_template(root: Path) -> dict[int, str]:
             except Exception:
                 continue
             for node in data.get("nodes") or []:
-                if node.get("boneNameHash") is None or not node.get("name"):
+                name = str(node.get("name") or "")
+                if (node.get("boneNameHash") is None or not name
+                        or re.fullmatch(r"bone_-?\d+", name, re.IGNORECASE)):
                     continue
-                result.setdefault(int(node["boneNameHash"]), str(node["name"]))
+                result.setdefault(int(node["boneNameHash"]), name)
     return result
 
 
@@ -89,9 +121,17 @@ def bones_from_mesh(mesh: dict, sidecar: dict | None, names: dict[int, str]) -> 
     hashes = mesh.get("m_BoneNameHashes") or []
     weighted = []
     for index in range(count):
-        node = by_weight.get(index) or {}
         bone_hash = int(hashes[index]) if index < len(hashes) else index
-        bone_name = node.get("name") or names.get(bone_hash) or f"bone_{bone_hash}"
+        node = by_weight.get(index) or {}
+        # A hair-prop renderer may omit its own skeleton sidecar.  Do not reuse
+        # the primary renderer's node merely because its weightedIndex matches:
+        # the two renderer meshes can have different hash orders.
+        if node.get("boneNameHash") is not None and int(node["boneNameHash"]) != bone_hash:
+            node = {}
+        node_name = str(node.get("name") or "")
+        if re.fullmatch(r"bone_-?\d+", node_name, re.IGNORECASE):
+            node_name = ""
+        bone_name = node_name or names.get(bone_hash) or f"bone_{bone_hash}"
         weighted.append({"index": index, "name": str(bone_name)})
 
     root_name = None
@@ -114,15 +154,17 @@ def bones_from_mesh(mesh: dict, sidecar: dict | None, names: dict[int, str]) -> 
 
 
 def validate_template_bone_names(bones: dict, asset_id: str) -> None:
-    placeholders = [
-        item.get("name") for item in bones.get("bones") or []
-        if re.fullmatch(r"bone_-?\d+", str(item.get("name") or ""), re.IGNORECASE)
-    ]
-    if placeholders:
-        raise ValueError(
-            f"{asset_id}: 模板骨架缺真实 Transform 名称，仍有 {len(placeholders)} 个 bone_* 占位骨；"
-            "请先导出该目标的 skeleton sidecar/profile，再生成 R32 模板"
-        )
+    """Validate the carrier skeleton without requiring unavailable game names.
+
+    Mesh-only game assets legitimately expose only bone-name hashes.  Since the
+    runtime graft builds the live skeleton from the sidecar, the Unity template
+    may carry deterministic ``bone_<hash>`` Transform names; rejecting those
+    here made the documented 908-template batch impossible to rebuild.
+    """
+    items = list(bones.get("bones") or [])
+    names = [str(item.get("name") or "") for item in items]
+    if len(names) != len(set(names)) or any(not name for name in names):
+        raise ValueError(f"{asset_id}: 模板骨架含空骨名或重复骨名")
 
 
 def phase1_geo(mesh: dict) -> dict:
@@ -152,18 +194,18 @@ def phase1_geo(mesh: dict) -> dict:
     }
 
 
-def asset_ids() -> list[tuple[str, str, Path, Path]]:
+def asset_ids(other: Path) -> list[tuple[str, str, Path, Path]]:
     result = []
     for kind, root, mesh_name in [("body", BODY_JSON, "Geo_Body"), ("hair", HAIR_JSON, "Geo_Hair")]:
         for directory in sorted(p for p in root.iterdir() if p.is_dir()):
-            bundle = OTHER / directory.name
+            bundle = other / directory.name
             if not bundle.is_file():
                 raise FileNotFoundError(f"missing source bundle: {bundle}")
             result.append((kind, directory.name, directory, bundle))
     return result
 
 
-def prepare_texture_inputs(items: list[tuple[str, str, Path, Path]], force: bool) -> None:
+def prepare_texture_inputs(items: list[tuple[str, str, Path, Path]], force: bool, assetstudio: Path) -> None:
     if force and TEXTURE_ROOT.exists():
         safe_remove(TEXTURE_ROOT, ROOT / ".local")
     TEXTURE_ROOT.mkdir(parents=True, exist_ok=True)
@@ -181,7 +223,7 @@ def prepare_texture_inputs(items: list[tuple[str, str, Path, Path]], force: bool
     if marker.is_file() and not force:
         return
     command = [
-        str(ASSETSTUDIO), str(links), str(TEXTURE_ROOT),
+        str(assetstudio), str(links), str(TEXTURE_ROOT),
         "--game", "Normal", "--unity_version", "6000.0.67f1",
         "--types", "Texture2D", "--export_type", "Convert",
         "--group_assets", "None", "--image_format", "Png", "--silent",
@@ -298,34 +340,62 @@ def stage_item(kind: str, asset_id: str, source_dir: Path, package_dir: Path) ->
     })
 
 
-def build_chunk(chunk: list[tuple[str, str, Path, Path]], index: int, total: int, timeout: int, clear_library: bool) -> list[Path]:
-    if clear_library and LIBRARY_ROOT.exists():
-        safe_remove(LIBRARY_ROOT, UNITY_PROJECT)
-    if STAGE_ROOT.exists():
-        safe_remove(STAGE_ROOT, UNITY_PROJECT / "Assets" / "Mods")
-    STAGE_ROOT.mkdir(parents=True, exist_ok=True)
+def build_chunk(
+    chunk: list[tuple[str, str, Path, Path]],
+    index: int,
+    total: int,
+    timeout: int,
+    clear_library: bool,
+    unity: Path,
+    unity_project: Path,
+) -> list[Path]:
+    stage_root = unity_project / "Assets" / "Mods" / "p3_templates"
+    library_root = unity_project / "Library"
+    if clear_library and library_root.exists():
+        safe_remove(library_root, unity_project)
+    if stage_root.exists():
+        safe_remove(stage_root, unity_project / "Assets" / "Mods")
+    stage_root.mkdir(parents=True, exist_ok=True)
     list_path = ROOT / ".local" / "p3-mod-list.txt"
     staged = []
     for kind, asset_id, source_dir, _bundle in chunk:
-        package_dir = STAGE_ROOT / asset_id
+        package_dir = stage_root / asset_id
         package_dir.mkdir(parents=True, exist_ok=True)
         stage_item(kind, asset_id, source_dir, package_dir)
         staged.append(f"Assets/Mods/p3_templates/{asset_id}")
     list_path.write_text("\n".join(staged) + "\n", encoding="utf-8")
     log_path = ROOT / ".local" / f"p3-unity-{index:03d}.log"
     command = [
-        str(UNITY), "-batchmode", "-quit", "-nographics",
-        "-projectPath", str(UNITY_PROJECT),
-        "-executeMethod", "BuildGakumasModBundle.BuildAllFromArg",
+        str(unity), "-batchmode", "-quit", "-nographics",
+        "-projectPath", str(unity_project),
+        "-executeMethod", "BuildGakumasTemplateBundles.BuildAllFromArg",
         "-modList", str(list_path), "-logFile", str(log_path),
+        "-bundleOutput", str(unity_project / "GakumasTemplateBuild" / "Windows"),
     ]
-    result = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, check=False)
-    if result.returncode != 0:
-        print(result.stdout[-4000:])
-        raise RuntimeError(f"Unity batch {index}/{total} failed: {result.returncode}; see {log_path}")
+    try:
+        result = subprocess.run(
+            command,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=timeout,
+            check=False,
+        )
+        log_tail = ""
+        if log_path.is_file():
+            log_tail = log_path.read_text(encoding="utf-8", errors="ignore")[-4000:]
+        if result.returncode != 0:
+            print(log_tail or result.stdout[-4000:])
+            raise RuntimeError(f"Unity batch {index}/{total} failed: {result.returncode}")
+    except subprocess.TimeoutExpired:
+        if log_path.is_file():
+            print(log_path.read_text(encoding="utf-8", errors="ignore")[-4000:])
+        raise
+    finally:
+        unlink_with_retry(log_path)
     outputs = []
     for _kind, asset_id, _source_dir, _bundle in chunk:
-        bundle = UNITY_PROJECT / "AssetBundles" / "Windows" / f"template_{asset_id}.bundle"
+        bundle = unity_project / "GakumasTemplateBuild" / "Windows" / f"template_{asset_id}.bundle"
         if not bundle.is_file():
             raise FileNotFoundError(f"Unity did not produce {bundle}")
         outputs.append(bundle)
@@ -335,6 +405,16 @@ def build_chunk(chunk: list[tuple[str, str, Path, Path]], index: int, total: int
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--other", type=Path, required=True, help="decrypted asset_bundle/other directory")
+    parser.add_argument("--assetstudio", type=Path, help="AssetStudio.CLI.exe; required unless --skip-textures")
+    parser.add_argument("--unity", type=Path, required=True, help="Unity executable")
+    parser.add_argument("--unity-project", type=Path, default=DEFAULT_UNITY_PROJECT)
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_TEMPLATE_LIBRARY,
+        help="stable template bundle library used by the Blender add-on",
+    )
     parser.add_argument("--chunk-size", type=int, default=24)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--kind", choices=("body", "hair"), default="")
@@ -342,25 +422,69 @@ def main() -> int:
     parser.add_argument("--skip-textures", action="store_true")
     parser.add_argument("--force-textures", action="store_true")
     parser.add_argument("--clear-library", action="store_true", help="clear generated Unity Library before each batch")
+    parser.add_argument(
+        "--keep-work",
+        action="store_true",
+        help="keep p3-textures and Unity generated directories for debugging; default is to clean them",
+    )
     parser.add_argument("--timeout", type=int, default=900)
     args = parser.parse_args()
-    if not ASSETSTUDIO.is_file(): raise SystemExit(f"AssetStudio not found: {ASSETSTUDIO}")
-    if not UNITY.is_file(): raise SystemExit(f"Unity not found: {UNITY}")
-    items = asset_ids()
+    if not args.other.is_dir(): raise SystemExit(f"bundle directory not found: {args.other}")
+    if not args.skip_textures and (args.assetstudio is None or not args.assetstudio.is_file()):
+        raise SystemExit(f"AssetStudio not found: {args.assetstudio}")
+    if not args.unity.is_file(): raise SystemExit(f"Unity not found: {args.unity}")
+    if not args.unity_project.is_dir(): raise SystemExit(f"Unity project not found: {args.unity_project}")
+    unity_project = args.unity_project.resolve()
+    output_dir = args.output_dir.resolve()
+    if output_dir == unity_project or unity_project in output_dir.parents:
+        raise SystemExit("--output-dir must be outside the generated Unity project")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    items = asset_ids(args.other)
     if args.kind:
         items = [item for item in items if item[0] == args.kind]
     if args.start > 0:
         items = items[args.start:]
     if args.limit > 0: items = items[:args.limit]
-    if not args.skip_textures:
-        prepare_texture_inputs(items, args.force_textures)
+    built_sources = []
     outputs = []
-    chunks = [items[i:i + args.chunk_size] for i in range(0, len(items), args.chunk_size)]
-    for index, chunk in enumerate(chunks, 1):
-        outputs.extend(build_chunk(chunk, index, len(chunks), args.timeout, args.clear_library))
-    # 模板就地留在 Unity 输出目录 AssetBundles/Windows（构建脚本已让模板恒 R32）；
-    # 不再复制到 dist/templates。2B 直接 --template 指向该目录里的 template_*.bundle。
-    print(f"Phase 3 complete: {len(outputs)} templates -> {WINDOWS_OUT}")
+    list_path = ROOT / ".local" / "p3-mod-list.txt"
+    try:
+        if not args.skip_textures:
+            prepare_texture_inputs(items, args.force_textures, args.assetstudio)
+        chunks = [items[i:i + args.chunk_size] for i in range(0, len(items), args.chunk_size)]
+        for index, chunk in enumerate(chunks, 1):
+            built_sources.extend(
+                build_chunk(
+                    chunk,
+                    index,
+                    len(chunks),
+                    args.timeout,
+                    args.clear_library,
+                    args.unity,
+                    unity_project,
+                )
+            )
+        # Do not mutate the stable plug-in library until every Unity batch has
+        # completed.  A failed later batch therefore cannot leave mixed
+        # generations in templates/unity.
+        for source in built_sources:
+            target = output_dir / source.name
+            temporary = output_dir / f".{source.name}.tmp"
+            try:
+                shutil.copy2(source, temporary)
+                temporary.replace(target)
+            finally:
+                temporary.unlink(missing_ok=True)
+            outputs.append(target)
+    finally:
+        if not args.keep_work:
+            cleanup_unity_work(
+                unity_project,
+                clean_project_cache=unity_project == DEFAULT_UNITY_PROJECT.resolve(),
+            )
+            safe_remove(TEXTURE_ROOT, ROOT / ".local")
+            list_path.unlink(missing_ok=True)
+    print(f"Phase 3 complete: {len(outputs)} templates -> {output_dir}")
     return 0
 
 
