@@ -9,6 +9,10 @@
 - 3Dmigoto 路线:已在 main 完成并大量实机验证(GakumasMI 插件 + 3dmigoto-gkms)。
 - AB bundle 路线:本仓研究中,机制见 [../ab-route-handoff/docs/bundle-route-roadmap.md](../ab-route-handoff/docs/bundle-route-roadmap.md)、[../ab-route-handoff/docs/runtime-mechanism.md](../ab-route-handoff/docs/runtime-mechanism.md)。
 
+还有过第三条:**PC IL2CPP 进程内注入**,直接把外部模型装进 `SkinnedMeshRenderer.sharedMesh`。
+它证明的正是「让引擎自己蒙皮」可行,这个结论后来由 AB 路线以正规资产管线实现,该路线已放弃、
+代码已删除,实测结论见 [pc-il2cpp-gmim-runtime-replacement.md](pc-il2cpp-gmim-runtime-replacement.md)。
+
 ## 拦截点:根本分叉
 
 | | 3Dmigoto 路线 | AB bundle 路线 |

@@ -76,7 +76,9 @@ mesh.boneWeights    = 不改(索引已对)
 ```
 
 探针实验已验证 IL2CPP 在学马 `il2cpp_object_new` 建 GameObject/Transform、`SetParent`、写
-localTRS 可行(见 gakumas-modding `experiments/pc-il2cpp-proxy` 与 memory `pc-il2cpp-gimi-path`)。
+localTRS 可行(结论见
+[`research/pc-il2cpp-gmim-runtime-replacement.md`](../../research/pc-il2cpp-gmim-runtime-replacement.md);
+探针代码 `experiments/pc-il2cpp-proxy/` 已于 2026-08-02 删除,需要时从 git 历史取)。
 注意跨线程:建对象/改层级必须在主线程(hook `Time.get_deltaTime` 泵),不能在轮询线程。
 
 ### 3. prefab/bundle 侧【已实现】
