@@ -14,6 +14,7 @@
 | `profiles/` | 角色/服装配置档 | `<actor>-<costume>/` 一档一目录 |
 | `experiments/` | 已验证但非主线的探索代码 | 一条路线一个子目录，必须带 README |
 | `research/` | 研究文档与抓帧证据数据 | 见第 3 节文档规范 |
+| `docs/wiki/` | 面向 mod 作者的使用手册（GitHub Wiki 镜像） | 一页一文件，页间用 `[[页名]]` 互链 |
 | 仓库根目录 | **只允许** `README.md`、`CHANGELOG.md`、`CONTRIBUTING.md`、`LICENSE`、`third-party-notices.md` 与 dot 配置文件 | **禁止新增其它根目录文件**（`LICENSE` 必须在根，GitHub 才能识别） |
 
 产品文档跟产品走：某产品线的设计/使用文档放该产品目录（如
@@ -45,8 +46,10 @@
 
 - **目录**：产品线与普通目录用 kebab-case（`ab-route-handoff`、`3dmigoto-gkms`）；
   Python 包用 snake_case（`gakumas_mi`）。
-- **文件**：Python `snake_case.py`；PowerShell `kebab-case.ps1`；C# 跟 .NET 惯例 PascalCase；
+- **文件**：Python `snake_case.py`；PowerShell `kebab-case.ps1`；
   Markdown 一律 **kebab-case 英文文件名**（内容可以是中文）。**禁止中文文件名**。
+  - **唯一例外 `docs/wiki/`**：它是 GitHub Wiki 的镜像，文件名就是页面标题，
+    `[[页名]]` 按文件名解析。改名会同时改掉页面标题和所有互链，所以保持中文原名。
 - **带日期的文档**：会话复盘 `session-YYYYMMDD-<topic>.md`；一次性证据快照
   `<topic>-YYYYMMDD[-HHMMSS].md`。无日期的文件名表示「持续维护的活文档」。
 
