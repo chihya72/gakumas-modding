@@ -22,7 +22,7 @@ jobs:
           python-version: "3.12"
 
       - name: 安装依赖
-        run: pip install numpy pillow pytest
+        run: pip install numpy pillow pytest UnityPy
 
       # pytest 一直没进 CI —— tests/test_*.py 的 30 个契约测试（含 500 行的
       # bundle 源契约）在本地能跑，但从没在 CI 上跑过。
