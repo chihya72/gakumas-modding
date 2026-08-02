@@ -69,6 +69,12 @@ AB 路线把这些**从根上换成了一次性的打包门槛**：引擎自己�
 
 **3DMigoto 本身没有被放弃**，它现在的唯一角色是抓帧工具（做配置档必须用它抓一帧）。
 
+> **两个 compute shader 去哪了。**`RecoverMatricesCS.hlsl`（反解矩阵）与
+> `SkinSourceCS.hlsl`（重蒙皮）原在 `experiments/inverse-skin/`，2026-08-02 随目录删除。
+> 需要时从 git 历史取：`git show b991250:experiments/inverse-skin/RecoverMatricesCS.hlsl`。
+> 注意它们的头两行把 `SOURCE_VERTEX_COUNT`/`COEFFICIENT_COUNT` 写死在已删除的
+> `hski-cstm-0000` 上，不是可直接复用件。
+
 ## 2. PC IL2CPP 进程内注入（证明了引擎自蒙皮可行，被 AB 路线取代）
 
 ### 做法与结论

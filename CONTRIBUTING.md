@@ -12,7 +12,6 @@
 | `tools/` | 离线脚本（导出/构建/审计/打包） | 一个脚本一个文件，snake_case |
 | `tests/` | Python 回归/冒烟测试 | `test` 语义文件名，CI 可跑的进 `ci.yml` |
 | `profiles/` | 角色/服装配置档 | `<actor>-<costume>/` 一档一目录 |
-| `experiments/` | 已验证但非主线的探索代码 | 一条路线一个子目录，必须带 README |
 | `research/` | 技术记录与抓帧证据数据 | 见第 3 节文档规范；**先看能不能并进已有文档，别新开** |
 | `docs/wiki/` | 面向 mod 作者的使用手册（GitHub Wiki 镜像） | 一页一文件，页间用 `[[页名]]` 互链 |
 | 仓库根目录 | **只允许** `README.md`、`CHANGELOG.md`、`CONTRIBUTING.md`、`LICENSE`、`third-party-notices.md` 与 dot 配置文件 | **禁止新增其它根目录文件**（`LICENSE` 必须在根，GitHub 才能识别） |
