@@ -106,3 +106,36 @@ assert core.outline_nibbles_from_base(0.0, 0.0, 0.0) == (0, 0, 0)
 assert core.outline_nibbles_from_base(0.50, 0.50, 0.50) == (1, 1, 1)
 assert core.outline_nibbles_from_base(0.99, 0.95, 0.90) == (5, 1, 1)
 print("outline_nibbles OK")
+
+# ---------------------------------------------------------------- 肤色校准
+# 均值 vs 众数：皮肤区里画进阴影时，均值被拖暗而众数守住肤色。这是 v1 把整块皮肤
+# 调灰的原因，所以直接锁死用的是众数。
+skin = np.full((4000, 3), (200, 180, 170), dtype=np.uint8)
+skin[:800] = (60, 50, 45)          # 20% 画进去的阴影
+assert tuple(core.dominant_tone(skin)) == (202.0, 182.0, 170.0), core.dominant_tone(skin)
+assert skin.reshape(-1, 3).mean(0)[0] < 180, "阴影应当把均值拖暗，否则这个测试没意义"
+
+# 校准把主色调搬到原版肤色，且只动 area_mask 内的 texel、不碰 alpha
+base = np.zeros((16, 16, 4), dtype=np.uint8)
+base[..., :3] = (200, 180, 170)
+base[..., 3] = 123
+base[8:, :, :3] = (10, 20, 30)     # 非皮肤区，必须原样保留
+area = np.zeros((16, 16), dtype=bool)
+area[:8, :] = True
+out, report = core.calibrate_skin_tone(base, area, base[:8, :, :3].reshape(-1, 3))
+assert report["calibrated"], report
+assert np.allclose(report["after"], core.VANILLA_SKIN_TONE, atol=4), report
+assert (out[8:, :, :3] == (10, 20, 30)).all(), "非皮肤区被改动了"
+assert (out[..., 3] == 123).all(), "alpha 被改动了"
+
+# 已经是原版肤色的图应当基本不动
+same = np.zeros((16, 16, 4), dtype=np.uint8)
+same[..., :3] = core.VANILLA_SKIN_TONE
+out2, rep2 = core.calibrate_skin_tone(same, np.ones((16, 16), bool), same[..., :3].reshape(-1, 3))
+assert np.abs(out2[..., :3].astype(int) - np.array(core.VANILLA_SKIN_TONE)).max() <= 2, rep2
+
+# 全黑采样不应炸，也不应把图刷成肉色
+black = np.zeros((8, 8, 4), dtype=np.uint8)
+out3, rep3 = core.calibrate_skin_tone(black, np.ones((8, 8), bool), black[..., :3].reshape(-1, 3))
+assert not rep3["calibrated"] and (out3 == 0).all(), rep3
+print("skin_calibration OK")

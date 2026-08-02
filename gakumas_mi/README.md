@@ -129,7 +129,7 @@ python tools\extract_frame_profile.py <FrameAnalysis目录> <输出目录> --com
 把游戏缓存里的 body AB 文件放到仓库根目录 `all_body/` 后，可以用：
 
 ```powershell
-python tools\export_all_body_json.py
+python tools\export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>"
 ```
 
 默认参数：
@@ -152,13 +152,13 @@ python tools\export_all_body_json.py
 只导出 Mesh JSON：
 
 ```powershell
-python tools\export_all_body_json.py
+python tools\export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>"
 ```
 
 同时生成骨架 JSON：
 
 ```powershell
-python tools\export_all_body_json.py --skeleton
+python tools\export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>" --skeleton
 ```
 
 注意：`Geo_Body.json`（Mesh，含 bind pose / 权重 / bindpose / 骨骼 hash）会**始终保留**，
@@ -173,7 +173,7 @@ python tools\export_all_body_json.py --skeleton
 调试前几个文件：
 
 ```powershell
-python tools\export_all_body_json.py --limit 5 --force --skeleton
+python tools\export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>" --limit 5 --force --skeleton
 ```
 
 ### 2. 导入对象
@@ -223,7 +223,8 @@ python tools\export_all_body_json.py --limit 5 --force --skeleton
   「导出 bundle 源」按钮为灰、下方提示「bundle 源需要作者模型顶点组权重」）；
 - 作者模型已按游戏骨架**对齐并烘成 rest 姿势**（镜像 / 缩放 / A→T retarget 属作者
   基本功，插件不代做）；
-- 目标 body 的 **R32 模板 bundle**（工具作者一次性产，见下方路线图）；
+- 目标 body/hair 的 **R32 模板 bundle**（工作区默认库：
+  `../mod-workspace/templates/unity`；由 `tools/build_phase3_templates.py` 批量生成）；
 - 游戏侧装 **chinosk6 插件**（`gkms-localify-dmm`）替代 3Dmigoto，**一次性**。
 
 **作者流程**：
@@ -232,7 +233,8 @@ python tools\export_all_body_json.py --limit 5 --force --skeleton
    （装了 UnityPy/Pillow 的 Python，默认走 PATH 上的 `python`；不在 PATH 就填绝对路径——
    **注意不能是 Blender 自带的 Python，它没有 UnityPy**）。
 2. 点 **`导出并打包 bundle（一键）`**：插件先导出 bundle 源，再自动调外部 Python 跑模板
-   补丁，直接产出成品 `.bundle`（写到 `<输出目录>/<id>/<id>.bundle`）。**无需 Unity、无需手敲命令行。**
+   补丁，直接产出成品 `.bundle` 和同级 `mod.json`（写到 `<输出目录>/<id>/`）。
+   **无需 Unity、无需手敲命令行，也无需再从 `bundle-src` 手动移动 `mod.json`。**
    - 只想要中间产物时，点 `导出 bundle 源`（不打包），再自行跑
      `python tools/patch_unity_bundle.py --template <模板.bundle> --mod-root <bundle源目录> --output <成品.bundle>`。
 3. 把成品 `.bundle` + `mod.json` 放进 chinosk6 插件的
@@ -282,7 +284,7 @@ AB 路线保留作者模型自带的权重，只把**骨名**换成游戏骨名�
 | 列 | 给谁用 | 说明 |
 |---|---|---|
 | 左：目标游戏骨 | 身体骨 | 下拉可打字搜索（如输入 `Hand`）。填了就以此为准，优先级最高 |
-| 右：装饰物理 | 飘带 / 花边 / 挂件 | 自动＝跟源父骨（胸/Bust 按 Bust*_S）；**刚性跟父骨**＝不摆、最安全；自建摇物链＝自由悬垂的飘带；跟裙摆＝裙边花边 |
+| 右：装饰物理 | 飘带 / 花边 / 挂件 | 自动＝跟源父骨（胸/Bust 按 Bust*_S）；**刚性跟父骨**＝不摆、最安全；自建摇物链＝自由悬垂的飘带；**跟随最近骨骼**＝跟最近的目标摇物骨（过远则回退父骨）；跟裙摆＝裙边花边 |
 
 - 填了左列的行，右列自动置灰——那已经是确定映射；
 - 一个完全陌生的骨架，实测需要点选约 **21 行**（脊椎 5 + 左右各 8）就能过闸门；
@@ -356,13 +358,26 @@ HSKI Body 已验证的身体贴图语义：
 1. `基础色 t0` 填单图 atlas PNG。
 2. 只把外部阴影阈值图填到 `t1.R 阴影阈值`；`t1.G/B/A` 先留空。
 3. 在步骤③的「材质槽设置」区选择 `皮肤 / 布料 / 皮鞋 / 金属...`；身体材质同时在这里选择
-   `不透明 / 原生 co`，再点 `按材质生成 t1/t4`。
+   `不透明 / 原生 co`，再点 `按材质生成 t1/t4 并校准肤色`。
 4. 若暗面范围不对，先调整 `t1.R` 的黑白点 / 输出范围或材质行的 `明暗`，不要把 Rmask 直接塞满 `t1.G/B/A`。
 
 四个 t1 通道都填时，插件认为你提供了完整 PackedMask，会整图合成。只填部分通道时，插件会先按材质预设生成完整 t1，再只覆盖有有效内容的材质区域；空白 atlas 黑区不会覆盖未贴图材质。
 
 > 几何 AO 软化（可选，默认关）：从网格烘 AO 只对凹陷缝隙加深阴影，对光滑凸面（腿/袜）
 > 无效；圆柱体的硬光影分界应用「明暗」调，而非 AO。
+
+#### 肤色对齐原版（默认开）
+
+脸和头发用的是**原版贴图**，身体是你的，肤色不对齐脖子上就有一道色差断层。烘焙时会把材质类型
+标为**皮肤**的区域整体缩放到原版身体肤色 `(254, 230, 218)`，t4 从 t0 派生所以自动跟着修正。
+
+- **实测该肤色跨角色相同**（atbm/hmsz/fktn/jsna 共 16 套服装、58,651 个皮肤顶点，
+  差异在一个量化桶内）。角色间的肤色差异走 `_RampMap`，不在 t0 上，所以没有按角色的选项。
+- 缩放是**统一系数**，你画在皮肤上的阴影、腮红、渐变按比例保留，不会被抹平。
+- 校准后的 t0 **另存并回填到「基础色 t0」栏，不改你的原文件**；回退把那栏改回自己的路径。
+- 完成提示会打出 `肤色 [你的] → [校准后]（原版 [...]）`。若材质类型标错或皮肤 UV 没覆盖，
+  会明确报「未校准」及原因，不会静默跳过、也不会把非皮肤区刷成肉色。
+- **不覆盖 `co 基础色 t0`**：原生 co 是镂空装饰件，正常不含皮肤。皮肤别标成「原生co」。
 
 #### hair 组件的贴图 / 顶点色语义（0.7.4；2026-07-14 多抓帧闭环）
 

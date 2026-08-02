@@ -103,6 +103,17 @@ def _run_bundle_patch(scene, mod_root, output_bundle):
     return output_bundle
 
 
+def _publish_runtime_manifest(mod_root, output_bundle):
+    """打包成功后把游戏要读取的 mod.json 放到成品 bundle 同级。"""
+    source = Path(mod_root) / "mod.json"
+    if not source.is_file():
+        raise FileNotFoundError(f"bundle 源缺少 mod.json：{source}")
+    destination = Path(output_bundle).parent / "mod.json"
+    if source.resolve() != destination.resolve():
+        shutil.copy2(source, destination)
+    return destination
+
+
 def _scene_component_id(scene):
     return scene.gmi_component_id
 
@@ -1882,7 +1893,11 @@ class GMI_OT_export_bundle_source(Operator):
                 return {"FINISHED"}
             output_bundle = Path(output_root) / package_id / f"{package_id}.bundle"
             _run_bundle_patch(scene, bundle_dir, output_bundle)
-            self.report({"INFO"}, f"已导出并打包 bundle {output_bundle}")
+            output_manifest = _publish_runtime_manifest(bundle_dir, output_bundle)
+            self.report(
+                {"INFO"},
+                f"已导出并打包 bundle {output_bundle}；mod.json {output_manifest}",
+            )
             return {"FINISHED"}
         except Exception as exc:
             self.report({"ERROR"}, str(exc))
@@ -2007,7 +2022,7 @@ def _compute_vertex_ao(obj, samples=20):
 
 class GMI_OT_bake_material_maps(Operator):
     bl_idname = "gmi.bake_material_maps"
-    bl_label = "按材质生成 t1/t4"
+    bl_label = "按材质生成 t1/t4 并校准肤色"
     bl_description = (
         "按各材质槽标注的「材质类型」实测预设，从基础色 t0 派生 t1/t4 并自动填入导出贴图栏。"
         "需要先填 t0 并给材质槽标好类型；对激活的发饰网格执行会写入发饰贴图栏"
@@ -2115,6 +2130,28 @@ class GMI_OT_bake_material_maps(Operator):
 
         id_map = _slot_id_map(opaque_slots, width)
 
+        # 肤色校准：作者模型的皮肤底色几乎不会正好等于原版，脸/头发用的是原版贴图，
+        # 不对齐脖子上就有一道断层。取样按网格 UV（与 core.VANILLA_SKIN_TONE 的测法同
+        # 口径），改的是光栅化皮肤区。t4 在下面从 base8 派生，所以会自动跟着修正。
+        skin_note = ""
+        skin_slots = [idx for idx, cls in class_per_slot.items() if cls == "skin"]
+        if scene.gmi_skin_calibrate and skin_slots:
+            skin_tris = _slot_triangle_mask(skin_slots)
+            skin_area = np.isin(id_map, np.asarray(skin_slots, dtype=np.int16))
+            if skin_tris.any() and skin_area.any():
+                skin_uv = tris[skin_tris].reshape(-1, 2)
+                sy = np.clip(((1.0 - skin_uv[:, 1]) * height).astype(int), 0, height - 1)
+                sx = np.clip((skin_uv[:, 0] * width).astype(int), 0, width - 1)
+                base8, skin_report = core.calibrate_skin_tone(
+                    base8, skin_area, base8[sy, sx, :3])
+                if skin_report["calibrated"]:
+                    skin_note = (f"；肤色 {skin_report['before']} → {skin_report['after']}"
+                                 f"（原版 {skin_report['target']}）")
+                else:
+                    skin_note = f"；肤色未校准（{skin_report['reason']}）"
+            else:
+                skin_note = "；肤色未校准（皮肤材质没有 UV 覆盖）"
+
         form_map = None
         ao = None
         if scene.gmi_form_shading:
@@ -2184,6 +2221,29 @@ class GMI_OT_bake_material_maps(Operator):
 
         core.write_rgba8_dds(t1_path, width, height, t1.tobytes(), srgb=False)
         core.write_rgba8_dds(t4_path, width, height, t4.tobytes(), srgb=True)
+        if skin_note.startswith("；肤色 "):
+            # 校准后的 t0 必须落盘并回填，否则导出仍然用作者原图，只有 t4 被修正。
+            # 写 PNG 不写 DDS：_load_base_texture 读不了 DDS 像素。
+            t0_path = out / f"{bake_prefix}_baseColor.png"
+            image = bpy.data.images.new(
+                t0_path.stem, width=width, height=height, alpha=True)
+            try:
+                # 先设 colorspace 再写像素：赋值会重建缓冲、丢掉已写入的像素（赋同值也一样）。
+                try:
+                    image.colorspace_settings.name = "sRGB"
+                except Exception:
+                    pass
+                image.pixels.foreach_set(
+                    (base8[::-1].astype(np.float32) / 255.0).ravel())  # Blender 像素自下而上
+                image.filepath_raw = str(t0_path)
+                image.file_format = "PNG"
+                image.save()
+            finally:
+                bpy.data.images.remove(image)
+            if component_id == "hairprop":
+                scene.gmi_hairprop_base_color_file = str(t0_path)
+            else:
+                scene.gmi_base_color_file = str(t0_path)
         if component_id == "hairprop":
             scene.gmi_hairprop_packed_mask_file = str(t1_path)
             scene.gmi_hairprop_shade_color_file = str(t4_path)
@@ -2212,8 +2272,9 @@ class GMI_OT_bake_material_maps(Operator):
             channel_note = f"；通道覆盖：{' / '.join(parts)}"
         self.report(
             {"INFO"},
-            f"已生成{target_name} t1/t4（{covered}% UV 覆盖{co_note}；材质：{'、'.join(used)}{form_note}{channel_note}）；"
-            f"已设为导出 t1/t4，可直接校验导出",
+            f"已生成{target_name} t1/t4（{covered}% UV 覆盖{co_note}；材质：{'、'.join(used)}"
+            f"{form_note}{channel_note}{skin_note}）；"
+            f"已设为导出 {'t0/t1/t4' if skin_note.startswith('；肤色 ') else 't1/t4'}，可直接校验导出",
         )
         return {"FINISHED"}
 
@@ -2242,12 +2303,15 @@ class GMI_bone_map_item(bpy.types.PropertyGroup):
         description="只对没填目标骨的装饰骨有效。自动=跟源父骨（胸/Bust 按 Bust*_S）；"
                     "刚性=跟最近的已映射身体父骨，不摆，最安全；"
                     "自建摇物=新建骨+自己的摆动链（飘带/蝴蝶结）；"
-                    "跟裙摆=蹭最近的裙摆摇物骨（裙边花边）",
+                    "跟裙摆=蹭最近的裙摆摇物骨（裙边花边）；"
+                    "跟随最近骨骼=跟最近的目标摇物骨，过远则安全回退到父骨",
         items=[
             ("auto", "自动", "跟源父骨；胸/Bust 名称按 Bust*_S，异常件用覆盖策略"),
             ("rigid", "刚性跟父骨", "无物理，跟最近的已映射身体父骨——不确定时选它"),
             ("integrate", "自建摇物链", "新建骨 + 自己的 ActorSwing 链（自由悬垂的飘带/蝴蝶结）"),
             ("follow_skirt", "跟裙摆", "蹭最近的裙摆摇物骨（裙边花边），无视距离"),
+            ("follow_nearest", "跟随最近骨骼",
+             "跟随最近的目标摇物骨；超过安全距离时改为刚性跟父骨"),
         ],
         default="auto",
     )
@@ -2315,6 +2379,44 @@ class GMI_OT_build_bone_map(Operator):
         self.report({"INFO"}, f"已列出 {rows} 个{scope}骨（预设识别 "
                               f"{len(preset['bones'])}/{len(_weighted_group_mass(obj))}，"
                               f"待指定 {empty}）")
+        return {"FINISHED"}
+
+
+class GMI_OT_show_bone_weights(Operator):
+    bl_idname = "gmi.show_bone_weights"
+    bl_label = "查看骨骼权重"
+    bl_description = "选中源骨骼并在作者模型上高亮它实际影响的权重"
+
+    source: bpy.props.StringProperty(options={"HIDDEN"})
+
+    def execute(self, context):
+        obj = context.active_object
+        if not obj or obj.type != "MESH":
+            self.report({"ERROR"}, "请先激活作者模型")
+            return {"CANCELLED"}
+        group = obj.vertex_groups.get(self.source)
+        armature = next(
+            (modifier.object for modifier in obj.modifiers
+             if modifier.type == "ARMATURE" and modifier.object), None
+        )
+        bone = armature.data.bones.get(self.source) if armature else None
+        if not group or not armature or not bone:
+            self.report({"ERROR"}, f"找不到源骨骼或顶点组：{self.source}")
+            return {"CANCELLED"}
+        if obj.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        for selected in context.selected_objects:
+            selected.select_set(False)
+        for selected_bone in armature.data.bones:
+            selected_bone.select = False
+        bone.select = True
+        armature.data.bones.active = bone
+        armature.select_set(True)
+        obj.select_set(True)
+        context.view_layer.objects.active = obj
+        obj.vertex_groups.active_index = group.index
+        bpy.ops.object.mode_set(mode="WEIGHT_PAINT")
+        self.report({"INFO"}, f"已高亮 {self.source} 的权重")
         return {"FINISHED"}
 
 
@@ -2391,6 +2493,7 @@ CLASSES = (
     GMI_bone_name,
     GMI_bone_map_item,
     GMI_OT_build_bone_map,
+    GMI_OT_show_bone_weights,
     GMI_OT_clear_bone_map,
     GMI_OT_save_bone_map,
     GMI_OT_load_bone_map,

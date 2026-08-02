@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import bpy
 
@@ -12,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import gakumas_mi
+from gakumas_mi import operators
 
 
 IDENTITY_BIND = {
@@ -142,6 +144,21 @@ with tempfile.TemporaryDirectory(prefix="gmi-blender-e2e-") as tmp:
         bundle_manifest = json.loads((bundle_src / "mod.json").read_text(encoding="utf-8"))
         assert bundle_manifest["replacements"][0]["replaceMaterials"] is False
         assert len(bundle_manifest["replacements"][0]["textures"]) == 3
+
+        # 一键打包成功后，游戏要读取的 mod.json 必须和成品 bundle 并排，
+        # bundle-src 内仍保留一份供 patch 脚本和排错使用。
+        def fake_bundle_patch(_scene, mod_root, output_bundle):
+            assert Path(mod_root) == bundle_src
+            Path(output_bundle).write_bytes(b"test-bundle")
+            return output_bundle
+
+        with patch.object(operators, "_run_bundle_patch", side_effect=fake_bundle_patch):
+            assert bpy.ops.gmi.export_bundle_source(also_patch=True) == {"FINISHED"}
+        output_bundle = package / "test.blender.e2e.bundle"
+        output_manifest = package / "mod.json"
+        assert output_bundle.read_bytes() == b"test-bundle"
+        assert output_manifest.is_file()
+        assert output_manifest.read_bytes() == (bundle_src / "mod.json").read_bytes()
         print("GMI_BLENDER_E2E_OK", bpy.app.version_string)
     finally:
         gakumas_mi.unregister()

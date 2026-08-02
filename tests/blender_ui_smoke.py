@@ -54,6 +54,14 @@ gakumas_mi.register()
 try:
     component = bpy.types.Scene.bl_rna.properties["gmi_component_id"]
     assert [item.identifier for item in component.enum_items] == ["body", "hair"]
+    strategy = operators.GMI_bone_map_item.bl_rna.properties["strategy"]
+    assert [item.identifier for item in strategy.enum_items] == [
+        "auto", "rigid", "integrate", "follow_skirt", "follow_nearest",
+    ]
+    legacy_strategy = bpy.context.scene.gmi_bone_map.add()
+    legacy_strategy["strategy"] = 3
+    assert legacy_strategy.strategy == "follow_skirt"
+    bpy.context.scene.gmi_bone_map.clear()
     assert "panel" in bpy.types.UILayout.bl_rna.functions
 
     ui_source = (ROOT / "gakumas_mi" / "ui.py").read_text(encoding="utf-8")

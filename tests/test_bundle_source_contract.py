@@ -307,7 +307,7 @@ def test_auto_covers_every_naming_family():
 
 
 def test_critical_coverage_gate():
-    target = list(core.CRITICAL_TARGET_BONES) + ["Neck", "Head"]
+    target = list(core.CRITICAL_TARGET_BONES) + ["Spine2"]
     full = {name: name for name in core.CRITICAL_TARGET_BONES}
     assert core.critical_coverage_error(list(full), full, target) is None
     # 手/腿全丢(今天实测的真实事故:整只手钉在 Spine1)必须拦下并点名
@@ -439,6 +439,21 @@ def test_physics_override_precedence():
     # Without the override the same streamer integrates (semantic default).
     default = core.build_accessory_physics_remap(src, tgt, acc)
     assert "Streamer_L_A0" in default["newBones"]
+
+
+def test_follow_nearest_override_uses_nearest_swing_bone():
+    result = core.build_accessory_physics_remap(
+        [{"name": "Petal_A", "position": [0.10, 0.0, 0.0]}],
+        [
+            {"name": "Spine2", "position": [0.10, 0.0, 0.0]},
+            {"name": "Ribbon_S", "position": [0.12, 0.0, 0.0]},
+            {"name": "OtherSwing_S", "position": [0.25, 0.0, 0.0]},
+        ],
+        ["Petal_A"],
+        overrides={"Petal_A": "follow_nearest"},
+    )
+    assert result["bones"] == {"Petal_A": "Ribbon_S"}
+    assert result["strategies"]["Petal_A"] == "override_nearest"
 
 
 def test_source_extra_bone_sidecar():

@@ -164,6 +164,77 @@ def shade_color_linear_mul(base_rgb8, mul_rgb):
     return np.clip(out * 255.0 + 0.5, 0, 255).astype(np.uint8)
 
 
+# 原版身体 albedo 的皮肤色。实测跨角色是同一个常数：atbm/hmsz/fktn/jsna 共 16 套服装、
+# 58,651 个皮肤顶点，4 级量化众数只在 (254,230,218) 与 (254,234,218) 之间摆动，即一个
+# 量化桶以内。每角色的肤色差异走 _RampMap（t_chr_<角色>-base-0000_rmp），不在 albedo 上，
+# 所以这里不需要按角色查表。
+VANILLA_SKIN_TONE = (254, 230, 218)
+SKIN_TONE_QUANT = 4
+
+
+def dominant_tone(rgb8, quant=SKIN_TONE_QUANT):
+    """一组 RGB 采样的主色调 = 按 quant 级量化后的众数。
+
+    不能用均值：皮肤区里画进了阴影/AO 细节，均值会被拖到肤色以下约 28 级
+    （原版 atbm 皮肤众数 (254,230,218)，同一批采样的均值只有 (226,206,199)）。
+    按均值对齐会把整块皮肤压暗并去饱和。
+    """
+    import numpy as np
+    a = np.asarray(rgb8).reshape(-1, 3).astype(np.int64) // quant
+    key = (a[:, 0] << 32) | (a[:, 1] << 16) | a[:, 2]
+    values, counts = np.unique(key, return_counts=True)
+    top = values[counts.argmax()]
+    half = quant // 2
+    return np.array([((top >> 32) & 0xFFFF) * quant + half,
+                     ((top >> 16) & 0xFFFF) * quant + half,
+                     (top & 0xFFFF) * quant + half], dtype=np.float32)
+
+
+def calibrate_skin_tone(base_rgba8, area_mask, sample_rgb,
+                        target=VANILLA_SKIN_TONE, iterations=10, tolerance=0.01):
+    """把 base 的皮肤区在线性光下整体缩放，使其主色调对齐原版肤色。
+
+    sample_rgb  决定「当前肤色是多少」，必须按网格 UV 采样——目标常数就是这么测的。
+                面积统计不行：面积众数会被图集布局和留白带偏，同角色不同服装能差 60 级。
+    area_mask   决定「改哪些 texel」，用光栅化后的皮肤区（含 dilate 外扩），这样 UV 缝隙
+                和外扩填充跟着一起校准，不会在岛边留下色阶。
+
+    只缩放 RGB，alpha 不动（body t0.A 是不透明、hair t0.A 是发丝覆盖率，都不该被动）。
+    返回 (新 base_rgba8, 报告 dict)。
+    """
+    import numpy as np
+    target = np.asarray(target, dtype=np.float32)
+    before = dominant_tone(sample_rgb)
+    # 量化众数对全黑返回的是桶中心而不是 0，所以不能拿 >0 当判据。近黑的采样说明这块
+    # 根本不是皮肤（材质类型标错、或 UV 落在空白区），此时缩放比会炸到几百倍。
+    if before.max() < 2 * SKIN_TONE_QUANT:
+        return base_rgba8, {"calibrated": False,
+                            "reason": f"皮肤采样近黑 {before.round(0).tolist()}，材质类型可能标错"}
+
+    rgb = base_rgba8[..., :3].astype(np.float32) / 255.0
+    sample = np.asarray(sample_rgb, dtype=np.float32).reshape(-1, 3) / 255.0
+    ratio = _srgb_to_linear(target / 255.0) / np.maximum(_srgb_to_linear(before / 255.0), 1e-6)
+    for _ in range(iterations):
+        scaled_sample = _linear_to_srgb(np.clip(_srgb_to_linear(sample) * ratio, 0.0, 1.0))
+        current = dominant_tone(scaled_sample * 255.0)
+        if np.abs(target / np.maximum(current, 1e-5) - 1.0).max() < tolerance:
+            break
+        ratio = ratio * (_srgb_to_linear(target / 255.0)
+                         / np.maximum(_srgb_to_linear(np.maximum(current, 1.0) / 255.0), 1e-6))
+
+    out = base_rgba8.copy()
+    scaled = _linear_to_srgb(np.clip(_srgb_to_linear(rgb) * ratio, 0.0, 1.0))
+    out[area_mask, :3] = np.clip(scaled[area_mask] * 255.0 + 0.5, 0, 255).astype(np.uint8)
+    after = dominant_tone(out[area_mask][:, :3] if area_mask.any() else out[..., :3])
+    return out, {
+        "calibrated": True,
+        "before": before.round(1).tolist(),
+        "after": after.round(1).tolist(),
+        "target": target.tolist(),
+        "texels": int(area_mask.sum()),
+    }
+
+
 def rasterize_material_ids(uv_tris, mat_ids, size, dilate=8):
     """把每个三角形按 UV 栅格化成材质槽 ID 图(top-down,V 翻转)。
 
@@ -2531,9 +2602,13 @@ def build_bone_remap(source_bones, target_bones, parent_by_name=None,
 # 任何全身网格都必须有权重的承重关节。少一个 = 源骨名没映射上，静止看着正常、
 # 进游戏那块跟着别的骨乱跑（实测过：整只手 100% 钉在 Spine1）。
 CRITICAL_TARGET_BONES = (
-    "Hips", "Spine",
-    "LeftArm", "LeftForeArm", "LeftHand", "LeftUpLeg", "LeftLeg", "LeftFoot",
-    "RightArm", "RightForeArm", "RightHand", "RightUpLeg", "RightLeg", "RightFoot",
+    # Spine2 故意不在闸门里:游戏有三节脊椎,Auto Rig Pro 等源只有两节,
+    # 拦它等于误伤所有两节脊椎的源。Spine1 有就够定位躯干映射没跑偏。
+    "Hips", "Spine", "Spine1", "Neck", "Head",
+    "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand",
+    "LeftUpLeg", "LeftLeg", "LeftFoot", "LeftToeBase",
+    "RightShoulder", "RightArm", "RightForeArm", "RightHand",
+    "RightUpLeg", "RightLeg", "RightFoot", "RightToeBase",
 )
 
 
@@ -2599,9 +2674,9 @@ def build_accessory_physics_remap(
     always correctable without touching code (the general escape hatch). Strategies:
 
       - ``integrate``      新骨 + 自己的 ActorSwing 链（自由悬垂：飘带/蝴蝶结）
+      - ``follow_nearest`` 蹭最近摇物骨；超过最大距离则刚性跟父骨
       - ``follow_skirt``   蹭最近**裙摆**摇物骨，无视距离（裙摆镶边：花边）
       - ``follow:<bone>``  蹭指定目标骨
-      - ``follow_nearest`` / ``follow:<bone>``  蹭指定摇物骨（仅 override）
       - ``rigid``          无物理，跟源父骨映射到的游戏骨
 
     ``overrides`` = ``{骨名或前缀: 策略}``（作者显式，最高优先；前缀取最长匹配）。

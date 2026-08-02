@@ -107,12 +107,15 @@ def draw_texture_step(layout, scene, context):
         co.label(text="co 部件用自己的贴图与 UV，不共用身体那套", icon="INFO")
 
     generate = layout.box()
-    generate.label(text="没有 t1/t4？按材质槽类型生成", icon="NODE_MATERIAL")
+    generate.label(text="按材质槽类型处理贴图", icon="NODE_MATERIAL")
     generate.label(text="需要先填 t0 并标好上方材质类型；结果自动填进贴图栏")
+    generate.label(text="生成 t1/t4；开肤色对齐时另存一份校准过的 t0，不改你的原文件")
+    generate.prop(scene, "gmi_skin_calibrate")
     generate.prop(scene, "gmi_form_shading")
     if scene.gmi_form_shading:
         generate.prop(scene, "gmi_form_strength")
-    generate.operator("gmi.bake_material_maps", text="按材质生成 t1 / t4", icon="NODE_MATERIAL")
+    generate.operator(
+        "gmi.bake_material_maps", text="按材质生成 t1/t4 并校准肤色", icon="NODE_MATERIAL")
 
     preview = layout.box()
     preview.label(text="可选：在 Blender 里近似预览游戏材质")
@@ -297,6 +300,8 @@ class GMI_UL_bone_map(bpy.types.UIList):
         mass = info.row()
         mass.scale_x = 0.35
         mass.label(text=f"{item.mass:.2f}%")
+        inspect = row.operator("gmi.show_bone_weights", text="", icon="BRUSH_DATA")
+        inspect.source = item.source
         row.prop_search(item, "target", context.scene, "gmi_bone_targets",
                         text="", icon="BONE_DATA")
         # 填了目标骨就是确定映射,装饰物理策略对它没意义,不画

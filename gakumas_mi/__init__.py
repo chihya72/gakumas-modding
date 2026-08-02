@@ -125,7 +125,7 @@ def register():
         name="装饰物理覆盖", subtype="FILE_PATH",
         description="可选 JSON {装饰骨名或前缀: 策略}，覆盖自动分类。"
                     "策略：integrate=自己的摇物物理(飘带/蝴蝶结)、follow_skirt=蹭最近裙摆(花边)、"
-                    "follow:<目标骨>=蹭指定骨、rigid=无物理跟父骨。"
+                    "follow_nearest=蹭最近摇物骨、follow:<目标骨>=蹭指定骨、rigid=无物理跟父骨。"
                     "自动分类猜错时用它兜底，前缀取最长匹配(如 Lace 覆盖 Lace_R_*)",
     )
     bpy.types.Scene.gmi_bone_map = bpy.props.CollectionProperty(
@@ -166,7 +166,8 @@ def register():
     bpy.types.Scene.gmi_base_color_file = StringProperty(
         name="基础色 t0", subtype="FILE_PATH",
         description="必填。角色的固有色贴图，PNG 或 DDS，必须为正方形。"
-                    "留空不报错，但 mod.ini 不会生成 ps-t0 → 游戏沿用原贴图，颜色整体错乱",
+                    "留空不报错，但 mod.ini 不会生成 ps-t0 → 游戏沿用原贴图，颜色整体错乱。"
+                    "开「肤色对齐原版」时，这栏会被换成校准后的副本，你的原文件不动",
     )
     bpy.types.Scene.gmi_hair_use_base_alpha = BoolProperty(
         name="使用 t0.A 发丝覆盖率", default=True,
@@ -177,13 +178,13 @@ def register():
         name="混合遮罩 t1", subtype="FILE_PATH",
         description="线性打包遮罩：R=toon 阴影阈值 / G=光滑度 / B=金属度 / "
                     "A=镜面/间接/HHL 可见性。当前不替换 hair t6，发型安全预设把 A 归零。"
-                    "没有现成图就留空，用下方「按材质生成 t1/t4」",
+                    "没有现成图就留空，用下方「按材质生成 t1/t4 并校准肤色」",
     )
     bpy.types.Scene.gmi_shade_color_file = StringProperty(
         name="暗面材质 t4/sdw", subtype="FILE_PATH",
         description="暗面颜色图：RGB=基础色的暗化版（布料约 ×0.45、皮肤约 ×0.78），"
                     "A=皮肤二值遮罩——是数据不是透明度，看图软件里显示成透明属正常。"
-                    "没有现成图就留空，用「按材质生成 t1/t4」",
+                    "没有现成图就留空，用「按材质生成 t1/t4 并校准肤色」",
     )
     bpy.types.Scene.gmi_hairprop_base_color_file = StringProperty(
         name="发饰基础色 t0", subtype="FILE_PATH",
@@ -193,7 +194,7 @@ def register():
     bpy.types.Scene.gmi_hairprop_packed_mask_file = StringProperty(
         name="发饰混合遮罩 t1", subtype="FILE_PATH",
         description="发饰的线性打包遮罩；A 门控镜面/间接光，安全预设为 0。"
-                    "留空可用「按材质生成 t1/t4」对激活的发饰网格生成",
+                    "留空可用「按材质生成 t1/t4 并校准肤色」对激活的发饰网格生成",
     )
     bpy.types.Scene.gmi_hairprop_shade_color_file = StringProperty(
         name="发饰暗面材质 t4/sdw", subtype="FILE_PATH",
@@ -269,6 +270,13 @@ def register():
         ],
         default="DARK",
     )
+    bpy.types.Scene.gmi_skin_calibrate = BoolProperty(
+        name="肤色对齐原版", default=True,
+        description="按材质类型为「皮肤」的区域，把 t0 的肤色缩放到原版身体的肤色 "
+                    "(254,230,218)。脸和头发用的是原版贴图，不对齐脖子上会有一道色差断层。"
+                    "实测该肤色跨角色相同（角色差异走 ramp，不在 t0）。"
+                    "校准后的 t0 会另存并自动填回「基础色 t0」，不改你的原文件",
+    )
     bpy.types.Scene.gmi_form_shading = BoolProperty(
         name="几何AO软化阴影", default=False,
         description="生成 t1 时从网格几何烘 AO，只对凹陷缝隙（腋下/裆部/衣褶内）加深阴影；"
@@ -329,7 +337,7 @@ def unregister():
         "gmi_opacity_texture_file", "gmi_opacity_packed_mask_file", "gmi_opacity_shade_color_file",
         "gmi_neutral_material", "gmi_outline_width_mode", "gmi_vertex_color_mode",
         "gmi_hair_outline_tier",
-        "gmi_form_shading", "gmi_form_strength",
+        "gmi_form_shading", "gmi_form_strength", "gmi_skin_calibrate",
         "gmi_package_name", "gmi_author", ):
         if hasattr(bpy.types.Scene, name):
             delattr(bpy.types.Scene, name)
