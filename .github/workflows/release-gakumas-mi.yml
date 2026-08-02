@@ -42,6 +42,15 @@ jobs:
             exit 1
           fi
 
+      # 发版三件套的第三件：CHANGELOG 必须有对应版本段（CONTRIBUTING §5）。
+      # 缺了不会让打包失败，但会发出一个没有变更说明的 Release，所以在这里挡住。
+      - name: 校验 CHANGELOG 有本版版本段
+        run: |
+          if ! grep -qE "^## ${{ steps.ver.outputs.version }}( |$)" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md 缺少 '## ${{ steps.ver.outputs.version }}' 版本段"
+            exit 1
+          fi
+
       - name: 打包插件 zip
         run: python tools/package_blender_addon.py -o "dist/gakumas_mi-${{ steps.ver.outputs.version }}.zip"
 

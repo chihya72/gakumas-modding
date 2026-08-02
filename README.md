@@ -1,35 +1,53 @@
 # GakumasMI
 
-面向《学园偶像大师》（学马仕 / Gakumas）的 **Blender + 3DMigoto 视觉 Mod 工具链**：Mod 作者
-只用 Blender + 本项目插件就能换装 / 换模，**不装 Unity、不做 AssetBundle、不写 3DMigoto 配置**；
-玩家侧只需装运行环境（`3dmigoto-gkms` + `mod-manager`，一个安装包搞定）。只做视觉 Mod（模型 /
-贴图 / 材质 / 显隐），不碰文本汉化、逻辑、数值。
+面向《学园偶像大师》（学马仕 / Gakumas）的 **Blender 视觉 Mod 工具链**：Mod 作者只用
+Blender + 本项目插件就能换装 / 换模，**不装 Unity、不写 3DMigoto 配置**。只做视觉 Mod
+（模型 / 贴图 / 材质 / 显隐），不碰文本汉化、逻辑、数值。
 
-> **状态（v0.7.8，收敛/维护态）**：身体与发型（含 co/配套发饰）的换模 + 动画 + 贴图 + 多 mod
-> 共存完整闭环已实机验证，Mod Manager 已发布。核心算法冻结；真半透明、表情和 LOD 暂不开展。状态与
-> 计划见 [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md)，
-> 版本变更见 [CHANGELOG.md](CHANGELOG.md)。
+> **状态（插件 v0.9.0）**：插件只做 **AB（AssetBundle）路线**，3DMigoto 逆蒙皮的传权与导出
+> 已整体移除。身体与发型（含 co/配套发饰）的换模 + 贴图 + 骨映射闭环已实机验证；
+> 0.9.0 这批改动**多数只过了离线与 Blender headless 测试，没有人在真 Blender 面板里点过**，
+> 逐项验证等级见 [CHANGELOG.md](CHANGELOG.md) 顶部与
+> [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md)。
 
 ## 核心思路
 
-学马仕是 Unity **CPU 蒙皮** 游戏：抓帧拿到的 `VB0` 是已蒙皮的当前姿势，没有骨骼/权重/T-pose，
-所以不能照搬 GIMI/WWMI。解法是三层数据：**静态结构**（骨骼/权重/bindpose，来自 AssetStudio
-`Geo_Body.json`）+ **每帧动画**（实时 `VB0` 经 `RecoverMatricesCS` 反解 152 个矩阵）+ **注入**
-（hash 覆盖 + `SkinCustomCS` 重蒙皮回原格式）。已实机验证与游戏动态 `VB0` 逐字节一致（RMS ≈ 1e-6）。
-原理、验证与已排除路线见
-[research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) 与
-[research/inverse-skin-matrix-recovery.md](research/inverse-skin-matrix-recovery.md)。
+学马仕角色网格是 Unity **CPU 蒙皮**，抓帧拿到的 `VB0` 是已蒙皮的当前姿势，没有骨骼/权重/
+T-pose，所以不能照搬 GIMI/WWMI。现在的解法**不去逆解**：把作者的网格作为真正的 Unity 资产
+打成 AssetBundle 交给游戏，让**引擎自己蒙皮**。
+
+- **作者模型自带的权重原样保留**，插件只把骨名换成游戏骨名，不做权重传递；
+- 骨架永远是游戏原版那套：不新建骨、不改 bindpose（实测同名骨 bindpose 逐元素偏差 0）；
+- 骨名认不出来时由作者在「骨骼映射表」里点选，覆盖率不取决于插件认识多少种命名规范；
+- 导出前查 14 个承重关节有没有拿到权重，缺任一根拒绝导出并点名。
+
+3DMigoto 在本工具链里**只剩抓帧工具**这一个角色——做配置档必须用它抓帧。原理、验证与
+已排除路线见 [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md)。
 
 ## 仓库结构
 
 ```text
-gakumas_mi/     作者用 Blender 插件（导入 / 转权 / 校验 / 导出）
-tools/          离线脚本（AssetStudio 导出、逆算子构建、配置档抽取、打包）
+gakumas_mi/     作者用 Blender 插件（导入 / 骨映射 / 材质 / 导出 AB bundle）
+tools/          离线脚本（AssetStudio 导出、模板构建、配置档抽取、bundle 补丁、打包）
 profiles/       各角色/服装配置档    tests/  冒烟与契约测试    research/  研究记录与路线
-3dmigoto-gkms/  游戏 mod 插件（自编译补丁版 d3d11.dll + d3dx.ini + ShaderFixes）
+3dmigoto-gkms/  抓帧用的 3DMigoto 运行环境（自编译补丁版 d3d11.dll + d3dx.ini + ShaderFixes）
 mod-manager/    使用者侧 Mod 包管理器（WPF/Stylet，随 3dmigoto-gkms 发布）
-ab-route-handoff/  AB 路线交接包（IP 服装→学马：管线脚本 + 插件源码 + 新骨物理规范）
+ab-route-handoff/  AB 路线的数据侧脚本与历史交接记录
 ```
+
+## 同级仓库（不属于本仓库，各自独立 Git）
+
+游戏侧运行时与游戏内 UI 拆在父目录下的两个独立仓库，本仓库不做 submodule、不复制其源码：
+
+| 目录 | 产物 | 职责 |
+|---|---|---|
+| `../gakumas-mod-runtime/` | `xinput1_3.dll` | 扫描本地 Mod、拦截资源加载、替换 Mesh/骨架/贴图，并提供 Runtime API v1 |
+| `../gakumas-in-game-mod-manager/` | `xinput9_1_0.dll` | 游戏内 Mod 管理 UI，通过 Runtime API 读写开关 |
+
+插件导出的 `.bundle` + `mod.json` 放进 `gakumas-local/local-files/mods/<mod-id>/`。
+该目录布局同时被 chinosk6 的 `gkms-localify-dmm` 插件和上表的 `gakumas-mod-runtime` 读取；
+`gakumas-mod-runtime` 另外要求骨架 sidecar 带 `runtimeProtocol` 与 `buildId`。两个运行时都
+在演进中，具体放哪个见 [gakumas_mi/README.md](gakumas_mi/README.md)。
 
 ## 文档
 
@@ -37,16 +55,19 @@ ab-route-handoff/  AB 路线交接包（IP 服装→学马：管线脚本 + 插�
 |---|---|
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 仓库规范（新建文件前必读） |
 | [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) | 进度 / 完成度 / 计划（**最新状态以此为准**） |
-| [research/step3-texture-input-guide.md](research/step3-texture-input-guide.md) | 步骤③ Body / Hair / HairProp 贴图路径、通道和准备要求 |
-| [ab-route-handoff/README.md](ab-route-handoff/README.md) | AB（AssetBundle）路线：IP 服装无损嫁接 + 新骨摆动物理的交接包 |
+| [research/step3-texture-input-guide.md](research/step3-texture-input-guide.md) | 步骤② Body / Hair / HairProp 贴图路径、通道和准备要求 |
+| [ab-route-handoff/README.md](ab-route-handoff/README.md) | AB 路线的数据侧脚本与新骨摆动物理记录 |
 | [gakumas_mi/README.md](gakumas_mi/README.md) · [3dmigoto-gkms/README.md](3dmigoto-gkms/README.md) · [mod-manager/README.md](mod-manager/README.md) | 三个子项目各自的安装与用法 |
 
-## 致谢与上游开源
+## 许可
+
+本仓库自有代码见 [LICENSE](LICENSE)；第三方组件与再分发的二进制见
+[third-party-notices.md](third-party-notices.md)。
 
 游戏注入层基于开源项目 **3DMigoto**（[bo3b/3Dmigoto](https://github.com/bo3b/3Dmigoto)）：
-`3dmigoto-gkms/d3d11.dll` 是基于其 **v1.4.9** 自编译的补丁版（修学马仕竖横屏 live 切换闪屏，见
-[FLIP-RESIZE-PATCH.md](3dmigoto-gkms/FLIP-RESIZE-PATCH.md)）；`nvapi64.dll`/`d3dcompiler_47.dll`
-与 `ShaderFixes/` 亦取自其 v1.4.9 / 生态。许可以其[官方仓库](https://github.com/bo3b/3Dmigoto)为准。
+`3dmigoto-gkms/d3d11.dll` 是基于其 **v1.4.9** 自编译的补丁版（修学马仕竖横屏 live 切换闪屏，
+补丁源码与重编译步骤见 [FLIP-RESIZE-PATCH.md](3dmigoto-gkms/FLIP-RESIZE-PATCH.md)）；
+`nvapi64.dll`/`d3dcompiler_47.dll` 与 `ShaderFixes/` 亦取自其 v1.4.9 / 生态。
 感谢 3DMigoto 社区与 AssetStudio 等上游工具。
 
 ## 风险声明

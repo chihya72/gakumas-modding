@@ -7,15 +7,15 @@
 
 | 位置 | 职责 | 新文件落点规则 |
 |---|---|---|
-| `gakumas_mi/` | Blender 作者插件（产品线 1，版本 0.7.x） | 插件代码/着色器/预设只放这里 |
-| `3dmigoto-gkms/` | 游戏 mod 插件（产品线 2，版本 0.4.x） | d3d11.dll、d3dx.ini、ShaderFixes |
+| `gakumas_mi/` | Blender 作者插件（产品线 1，版本 0.9.x） | 插件代码/着色器/预设只放这里 |
+| `3dmigoto-gkms/` | 抓帧用 3DMigoto 运行环境（产品线 2，版本 0.6.x） | d3d11.dll、d3dx.ini、ShaderFixes |
 | `mod-manager/` | 使用者侧包管理器（随产品线 2 发布） | `src/` C# 代码、`tests/` smoke、使用说明放 README |
 | `tools/` | 离线脚本（导出/构建/审计/打包） | 一个脚本一个文件，snake_case |
 | `tests/` | Python 回归/冒烟测试 | `test` 语义文件名，CI 可跑的进 `ci.yml` |
 | `profiles/` | 角色/服装配置档 | `<actor>-<costume>/` 一档一目录 |
 | `experiments/` | 已验证但非主线的探索代码 | 一条路线一个子目录，必须带 README |
 | `research/` | 研究文档与抓帧证据数据 | 见第 3 节文档规范 |
-| 仓库根目录 | **只允许** `README.md`、`CHANGELOG.md`、`CONTRIBUTING.md` 与 dot 配置文件 | **禁止新增其它根目录文件** |
+| 仓库根目录 | **只允许** `README.md`、`CHANGELOG.md`、`CONTRIBUTING.md`、`LICENSE`、`third-party-notices.md` 与 dot 配置文件 | **禁止新增其它根目录文件**（`LICENSE` 必须在根，GitHub 才能识别） |
 
 产品文档跟产品走：某产品线的设计/使用文档放该产品目录（如
 `3dmigoto-gkms/FLIP-RESIZE-PATCH.md`）；跨产品的研究、抓帧证据、路线记录才进 `research/`。
@@ -28,12 +28,13 @@ Mod 管理器安装包只放 `dist/`。
 
 ### 外层工作区边界
 
-本仓库只占用 `D:\GIT\gakumas-modding\gakumas-modding`。其父目录下另外两个一级目录不是本仓库内容：
+本仓库只占用工作区里的 `gakumas-modding/` 一级目录。其父目录下另外三个一级目录不是本仓库内容：
 
 | 同级目录 | 职责 | 边界 |
 |---|---|---|
-| `..\mod-workspace\` | 本地 IP/SCSP 解包输入、Mod 工作文件、Blend、成品和受保护数据备份 | 不纳入本仓库 Git，不提交游戏提取资产 |
-| `..\gakumas-mod-runtime\` | 独立的游戏 DLL runtime 源码与构建 | 使用独立 Git，不复制进本仓库、不设为 submodule |
+| `..\mod-workspace\` | 本地 IP/SCSP 解包输入、Mod 工作文件、Blend、成品和受保护数据备份 | 不纳入 Git，不提交游戏提取资产 |
+| `..\gakumas-mod-runtime\` | 游戏运行时 `xinput1_3.dll` 源码与构建 | 独立 Git（GPL-3.0），不复制进本仓库、不设为 submodule |
+| `..\gakumas-in-game-mod-manager\` | 游戏内 Mod 管理 UI `xinput9_1_0.dll` 源码与构建 | 独立 Git（GPL-3.0）；编译依赖 `..\gakumas-mod-runtime\` 的 premake 与已编译 `minhook.lib` |
 
 跨目录工具不得假定旧的绝对路径；迁移完成后应通过命令行参数或集中配置定位本地数据。
 公开仓库文档只描述接口和工作流，不复制 `mod-workspace` 的私有资产清单。
@@ -77,8 +78,8 @@ Mod 管理器安装包只放 `dist/`。
 
 ## 5. 版本与发布规范
 
-- **版本线独立，绝不同步**：`gakumas_mi`（Blender 插件 0.7.x）与 `3dmigoto-gkms`
-  （游戏插件 0.4.x）各自演进；`mod-manager` 跟随 `3dmigoto-gkms` 的版本与 tag。
+- **版本线独立，绝不同步**：`gakumas_mi`（Blender 插件 0.9.x）与 `3dmigoto-gkms`
+  （0.6.x）各自演进；`mod-manager` 跟随 `3dmigoto-gkms` 的版本与 tag。
 - Release tag 用产品前缀：`gakumas-mi-vX.Y.Z` / `3dmigoto-gkms-vX.Y.Z`；
   Release 标题写明组件，不用笼统的 "GakumasMI vX"。
 - gakumas-mi 发版三件套：`gakumas_mi/__init__.py` 的 `bl_info["version"]` +
