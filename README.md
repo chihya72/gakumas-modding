@@ -69,7 +69,6 @@ chinosk6 的 `gkms-localify-dmm` 读的是它自己的 `gakumas-local/local-file
 | [docs/wiki/Home.md](docs/wiki/Home.md) | **作者使用手册**：环境、概念、三步工作流、发型/透明专题、排错 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 仓库规范（新建文件前必读） |
 | [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) | 进度 / 完成度 / 计划（**最新状态以此为准**） |
-| [research/step3-texture-input-guide.md](research/step3-texture-input-guide.md) | 步骤② Body / Hair / HairProp 贴图路径、通道和准备要求 |
 | [research/ab-route-notes.md](research/ab-route-notes.md) | AB 路线的数据侧脚本与新骨摆动物理记录 |
 | [gakumas_mi/README.md](gakumas_mi/README.md) · [3dmigoto_gkms/README.md](3dmigoto_gkms/README.md) | 两个子项目各自的安装与用法 |
 

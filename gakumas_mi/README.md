@@ -404,7 +404,8 @@ hair 与 body 共用主光照框架，但原图作者规则、附加 HHL pass �
 - **t0 Alpha**：普通 PNG 通常隐式带 A=255，但原生 hair 大部分区域接近 0；它是刘海 coverage，
   不是普通透明度。0.7.8 默认保留作者 Alpha，需要禁用 Coverage 时再关闭「使用 t0.A 发丝覆盖率」。
   `Hair21_D.png` 这类需要眉眼透出的图应保持开启。HairProp 始终保留作者 Alpha。完整的输入路径和准备要求见
-  [`research/step3-texture-input-guide.md`](../research/step3-texture-input-guide.md)。
+  [`docs/wiki/5-步骤②-材质与贴图.md`](../docs/wiki/5-步骤②-材质与贴图.md) 与
+  [`docs/wiki/7-发型与发饰.md`](../docs/wiki/7-发型与发饰.md)。
 - **t1 PackedMask**：R=toon 阈值、G=光滑度、B=金属度、A=镜面/间接/HHL 可见性门控。
   当前插件不替换 t6 发丝高光图，所以自定义 UV 用 A=0 屏蔽旧 HHL；安全中性预设为
   `(67,32,0,0)`，并不表示所有原版 hair 都是常量图。
