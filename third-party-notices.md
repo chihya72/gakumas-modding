@@ -19,8 +19,13 @@ GPL-3.0 要求随二进制提供对应的完整源码。本仓库的 `d3d11.dll`
 [`3dmigoto_gkms/FLIP-RESIZE-PATCH.md`](3dmigoto_gkms/FLIP-RESIZE-PATCH.md)，
 按该文档在上游 v1.4.9 源码树上可逐字复现本二进制。
 
-> ⚠ **发布前待办**：GPL-3.0 更规范的做法是提供可直接取用的源码分支（fork 仓库或
-> 完整 source tarball），而不是只给补丁说明。公开发布前应补上 fork 链接。
+> **本仓库的 corresponding source = 上游 v1.4.9 源码 + 上面那份补丁文档。**
+> 上游源码在 <https://github.com/bo3b/3Dmigoto> 公开可取，版本已固定为 v1.4.9；
+> `FLIP-RESIZE-PATCH.md` 写明了改动的确切文件、插入位置、改动内容和重编译命令，
+> 按它可在上游源码树上**逐字复现**本仓库分发的 `d3d11.dll`。改动只有一处、十余行，
+> 以「上游 + 完整补丁」的形式提供是发行版常见做法，不另开 fork 仓库。
+>
+> 需要一份可直接 clone 的完整源码树，开 issue 说明即可。
 
 ## 发布包在构建时取用、不入库的二进制
 
