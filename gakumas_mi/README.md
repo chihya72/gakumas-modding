@@ -218,8 +218,8 @@ python tools\export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>" --lim
 
 把 mod 网格作为真正的 Unity 资产交给游戏侧运行时，让引擎原生蒙皮，于是描边/透明/贴图/物理
 **由引擎正确**，还能带新物理骨。代价是多一个打包环节，且游戏侧装的是运行时 DLL 而不是 3Dmigoto。
-与已移除的 3Dmigoto 路线的历史对比见
-[`research/retired-routes.md`](../research/retired-routes.md)。
+与已移除的 3Dmigoto 路线的对比，以及为什么排除它，见
+[`research/lessons-learned.md`](../research/lessons-learned.md)。
 
 **前置**（缺一不可）：
 

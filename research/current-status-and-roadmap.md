@@ -64,7 +64,7 @@ GakumasMI 已打通 Blender → 游戏侧运行时 → 游戏的换模闭环（�
   ~~3DMigoto 时代靠发饰 `IB hash + firstIndex` 做帧内 latch、每帧末由 `[Present]` 清零~~
   （随 3DMigoto 路线一起移除，留作历史）。
 
-数学验证见 [`retired-routes.md`](retired-routes.md)，材质边界见
+已排除路线与踩过的坑见 [`lessons-learned.md`](lessons-learned.md)，材质边界见
 [`transparent-material-status.md`](transparent-material-status.md)，发型资产、制作流程与逐 pass/逐通道逆向见
 [`hair-pipeline.md`](hair-pipeline.md)。
 

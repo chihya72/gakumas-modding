@@ -8,7 +8,7 @@
 > [`current-status-and-roadmap.md`](current-status-and-roadmap.md)。
 > 本文 2026-08-02 砍掉了与它重复的状态段和逐日进度时间线（git 历史里有）。
 >
-> 关联：[`retired-routes.md`](retired-routes.md)（为什么不走 3DMigoto / IL2CPP）、
+> 关联：[`lessons-learned.md`](lessons-learned.md)（为什么不走 3DMigoto / IL2CPP）、
 > [`ab-route-notes.md`](ab-route-notes.md)（运行时机制与物理骨规范）。
 
 ## 0. 一句话目标

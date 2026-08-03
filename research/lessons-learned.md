@@ -15,6 +15,16 @@
 
 3DMigoto 本身没被放弃——它现在唯一的角色是抓帧工具。
 
+三条仍然成立的副产物，别跟着路线一起忘掉：
+
+- **低权重骨不可观测**。逆解时期算出设计矩阵 588 个活跃列的数值秩只有 585——影响 3 个顶点、
+  总权重 0.048 的骨在数值上不可辨识。这个判据活到了今天，现在叫 `unobservableBones`。
+- **il2cpp 方法重载必须按参数类型名签名解析**。按「名字 + 参数个数」找会静默取到错误的
+  重载（同 argc 的重载很常见）。
+- 逆解与重蒙皮的两个 compute shader 已随 `experiments/` 删除，需要时从 git 历史取
+  （`git show b991250:experiments/inverse-skin/RecoverMatricesCS.hlsl`）；注意它们把顶点数
+  写死在一个已删除的样本上，不是可直接复用件。
+
 ---
 
 ## 2. 已作废且有害的旧做法
@@ -88,7 +98,6 @@
 
 ---
 
-原始记录：三条路线的完整论证见 [`retired-routes.md`](retired-routes.md)；外部模型转换的
-逐步规范见 [`../docs/wiki/10-外部模型转换实战规范.md`](../docs/wiki/10-外部模型转换实战规范.md)；
+原始记录：外部模型转换的逐步规范见 [`../docs/wiki/10-外部模型转换实战规范.md`](../docs/wiki/10-外部模型转换实战规范.md)；
 发型逐通道逆向见 [`hair-pipeline.md`](hair-pipeline.md)；摆动物理见
 [`ab-route-notes.md`](ab-route-notes.md)。
