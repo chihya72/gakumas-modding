@@ -10,7 +10,7 @@ Input layout（原始 AB 与导出库同放仓库外的 mod-workspace）:
     mdl_chr_amao-cstm-0000_body
     mdl_chr_hski-cstm-0000_body
 
-Output layout（库有数 GB，落在仓库外的 mod-workspace，与 templates/unity 同级）:
+Output layout（库有数 GB，落在仓库外的 mod-workspace，与 libraries/templates 同级）:
   ../mod-workspace/libraries/assetstudio-body-json/
     mdl_chr_amao-cstm-0000_body/
       Geo_Body.json

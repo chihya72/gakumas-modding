@@ -445,7 +445,7 @@ geojson/bundle 侧:
 - Blender 导出回归：`blender --background --factory-startup --python-exit-code 1 --python tests/blender_smoke.py`
 - Blender UI 回归：`blender --background --factory-startup --python-exit-code 1 --python tests/blender_ui_smoke.py`
 - 插件 Release 编译：`MSBuild build\\gakumas_mod_plugin.sln /p:Configuration=Release /p:Platform=x64`
-- 插件运行日志：游戏目录下 `gakumas-local/mod-plugin.log`
+- 插件运行日志：游戏目录下 `gakumas-mod/mod-plugin.log`
 - **崩溃二分已完成、结论见「进度」段(不内嵌合成对象)**，该任务作废，别再重做。
 - 离线量化闸门：`blender --background <blend> --python tools/simulate_ab_skinning.py -- <remap.json>`（pose 游戏骨架弯手指，量手指区 edge-stretch，参考体为已知正确基线）。**改法先离线量再让作者导出。**⚠该指标相对 rest，若 rest 本身被改坏它会假性变好，必须同时看几何/目视。
 - prep 侧闸门与教训见 `ai-model-workspace/external-model-conversion-workflow.md` §0-3b / §2-6 / §5（⭐v3 条目）。

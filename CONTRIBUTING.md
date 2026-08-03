@@ -34,9 +34,8 @@ Blender 插件 ZIP 和抓帧环境安装包只放 `dist/`。
 | 同级目录 | 职责 | 边界 |
 |---|---|---|
 | `..\mod-workspace\` | 本地 IP/SCSP 解包输入、Mod 工作文件、Blend、成品和受保护数据备份 | 不纳入 Git，不提交游戏提取资产 |
-| `..\mod-workspace\libraries\` | AssetStudio 导出的 body / hair Mesh JSON 资源库（约 7.8 GB） | 与 `templates\unity` 同级同待遇：插件与 `build_phase3_templates.py` 直接读，永不入库，清理前须核对备份 |
+| `..\mod-workspace\libraries\` | AssetStudio 导出的 body / hair Mesh JSON 资源库（约 7.8 GB） | 与 `libraries\templates` 同级同待遇：插件与 `build_phase3_templates.py` 直接读，永不入库，清理前须核对备份 |
 | `..\gakumas-mod-runtime\` | 游戏运行时 `xinput1_3.dll` 源码与构建 | 独立 Git（GPL-3.0），不复制进本仓库、不设为 submodule |
-| `..\gakumas-in-game-mod-manager\` | 游戏内 Mod 管理 UI `xinput9_1_0.dll` 源码与构建 | 独立 Git（GPL-3.0）；编译依赖 `..\gakumas-mod-runtime\` 的 premake 与已编译 `minhook.lib` |
 
 跨目录工具不得假定旧的绝对路径；迁移完成后应通过命令行参数或集中配置定位本地数据。
 公开仓库文档只描述接口和工作流，不复制 `mod-workspace` 的私有资产清单。

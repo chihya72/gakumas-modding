@@ -20,7 +20,7 @@
 ③ 核对骨骼映射表 ──→ 导出并打包 bundle
                           │
                           ▼
-   .bundle + mod.json 放进 gakumas-local\local-files\mods\<模组标识>\
+   .bundle + mod.json 放进 gakumas-mod\mods\<模组标识>\
 ```
 
 > 📷 **待截图**：`images/quickstart-overview.png` —— 三步面板依次展开的拼图，或一张流程示意。
@@ -65,10 +65,13 @@
 导出得到 `.bundle` + `mod.json`，放进：
 
 ```text
-<游戏目录>\gakumas-local\local-files\mods\<你的模组标识>\
+<游戏目录>\gakumas-mod\mods\<你的模组标识>\
 ```
 
 进游戏，在**游戏内 Mod 管理**页面打开开关。细节见 [[6-步骤③-导出AB bundle]]。
+
+> 装的是 chinosk6 的 `gkms-localify-dmm` 而不是 Mod Runtime 的话，目录是它自己的
+> `<游戏目录>\gakumas-local\local-files\mods\<你的模组标识>\`，也没有游戏内管理页。
 
 ---
 

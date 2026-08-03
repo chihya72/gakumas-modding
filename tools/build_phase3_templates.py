@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BODY_JSON = ROOT.parent / "mod-workspace" / "libraries" / "assetstudio-body-json"
 HAIR_JSON = ROOT.parent / "mod-workspace" / "libraries" / "assetstudio-hair-json"
 DEFAULT_UNITY_PROJECT = ROOT.parent / "mod-workspace" / "pipelines" / "ip" / "unity-template-builder"
-DEFAULT_TEMPLATE_LIBRARY = ROOT.parent / "mod-workspace" / "templates" / "unity"
+DEFAULT_TEMPLATE_LIBRARY = ROOT.parent / "mod-workspace" / "libraries" / "templates"
 TEXTURE_ROOT = ROOT / ".local" / "p3-textures"
 
 
@@ -466,7 +466,7 @@ def main() -> int:
             )
         # Do not mutate the stable plug-in library until every Unity batch has
         # completed.  A failed later batch therefore cannot leave mixed
-        # generations in templates/unity.
+        # generations in libraries/templates.
         for source in built_sources:
             target = output_dir / source.name
             temporary = output_dir / f".{source.name}.tmp"

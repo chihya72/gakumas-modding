@@ -68,6 +68,8 @@ Left|Right UpLeg / Leg / Foot
 目标 body / hair 的 **R32 模板 `.bundle`** 文件。模板是工具作者一次性批量产的（530 个 body +
 378 个 hair），按目标资源名取对应的那个，例如换 `mdl_chr_atbm-cstm-0140_body` 就选同名模板。
 
+模板整包**在百度网盘提供**（`r32-templates-*.zip`），不在 GitHub 仓库里，见 [[1-环境准备与安装]] 1.1「网盘素材包」。
+
 **留空也能导出**，只是只出 `bundle-src\`（中间产物），不会打成成品 `.bundle`。
 
 ### `外部 Python`
@@ -140,10 +142,13 @@ python -c "import sys;print(sys.executable)"
 把整个 `<模组标识>\` 目录放进：
 
 ```text
-<游戏目录>\gakumas-local\local-files\mods\
+<游戏目录>\gakumas-mod\mods\
 ```
 
 进游戏 → 主页菜单 → **Mod 管理** → 在「服装 / 发型」分页里打开开关。开关会同时改**当前会话**和下次启动的配置。
+
+> 用 chinosk6 的 `gkms-localify-dmm` 加载则是它自己的 `<游戏目录>\gakumas-local\local-files\mods\`，
+> 没有游戏内管理页。两个目录互不读取，别放错。
 
 > 同一件服装 / 同一个发型**只允许一个 mod 开启**。已有 mod 开着时新的会被拒绝并显示占用者。
 
@@ -161,7 +166,7 @@ python -c "import sys;print(sys.executable)"
 | 进游戏没描边 / 颜色错乱 | 顶点 COLOR / 贴图问题 | 见 [[9-常见问题与排错]] |
 | 进游戏模型错位 | 作者模型没对齐参考身体 | 见 [[4-步骤①-准备配置档]] |
 
-排查时保留 `bundle-src\` 和 runtime 的 `gakumas-local\mod-plugin.log`，日志会写明命中了哪个 renderer、替换了几个目标。
+排查时保留 `bundle-src\` 和 runtime 的 `gakumas-mod\mod-plugin.log`，日志会写明命中了哪个 renderer、替换了几个目标。
 
 ---
 

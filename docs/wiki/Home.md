@@ -40,7 +40,7 @@
 
 - **Blender 4.2 LTS**（作者侧；4.5 LTS 亦有 CI 覆盖）
 - **抓帧环境**：`3dmigoto_gkms` 抓帧包 —— 只用来按 F8 抓一帧做配置档，**不加载 mod**
-- **玩家侧运行环境**：`xinput1_3.dll`（Mod Runtime，加载 AB bundle）+ `xinput9_1_0.dll`（游戏内 Mod 管理 UI）
+- **玩家侧运行环境**：`xinput1_3.dll`（Mod Runtime，加载 AB bundle，内含游戏内 Mod 管理 UI）
 
 ## 风险声明
 

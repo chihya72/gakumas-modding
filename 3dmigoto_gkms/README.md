@@ -4,8 +4,8 @@
 给 mod 作者抓帧（F8 Frame Analysis）**，用来生成 GakumasMI 插件的配置档。
 
 > **不加载 mod。**换模已整体转到 AB bundle 路线：由同级仓库
-> [`gakumas-mod-runtime`](../README.md#同级仓库不属于本仓库各自独立-git) 的
-> `xinput1_3.dll` 加载，游戏内开关由 `xinput9_1_0.dll` 提供，都与本加载器无关。
+> [`gakumas-mod-runtime`](../README.md#同级仓库不属于本仓库独立-git) 的
+> `xinput1_3.dll` 加载，游戏内开关也由它提供，都与本加载器无关。
 > `d3dx.ini` 里的 `include_recursive = Mods` 已注释掉，`Mods/` 目录也已删除。
 >
 > 一并废弃的还有旧的 WPF Mod 管理器（原 `mod-manager/`），它管的是 3DMigoto 包格式，

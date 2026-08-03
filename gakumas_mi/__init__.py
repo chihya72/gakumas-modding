@@ -41,7 +41,7 @@ def _default_body_json_dir():
     bundled = Path(__file__).resolve().parent / "resources" / "assetstudio-body-json"
     if bundled.is_dir():
         return str(bundled)
-    # 开发机回退：JSON 资源库有 7.8 GB，放在仓库外的 mod-workspace 里，与 templates/unity 同级。
+    # 开发机回退：JSON 资源库有 7.8 GB，放在仓库外的 mod-workspace 里，与 libraries/templates 同级。
     repo_root = Path(__file__).resolve().parents[1]
     development = repo_root.parent / "mod-workspace" / "libraries" / "assetstudio-body-json"
     return str(development) if development.is_dir() else ""

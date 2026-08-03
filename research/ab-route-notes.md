@@ -46,7 +46,7 @@ chinosk6 `gkms-localify-dmm` 插件如何把 mod 网格塞进游戏。理解这�
 ### 加载链
 
 1. `version.dll`/`xinput1_3.dll` 代理注入 → IL2CPP runtime。
-2. 扫 `gakumas-local/local-files/mods/<id>/mod.json`,注册替换规则(bundle 懒加载)。
+2. 扫 `gakumas-mod/mods/<id>/mod.json`,注册替换规则(bundle 懒加载)。
 3. Hook AssetBundle 加载,命中原始资源名(如 `mdl_chr_hmsz-cstm-0000_body`)→ 加载 mod prefab。
 4. 配对 renderer(targetRenderer↔modRenderer,按名),对每对做换网格。
 

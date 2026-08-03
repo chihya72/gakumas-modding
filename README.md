@@ -47,19 +47,20 @@ blender-addon/gakumas_mi-<版本>.zip   Blender「从磁盘安装」选它
 还需要自己装 Python 3.10+ 并 `pip install UnityPy Pillow`（导出时打包 bundle 用，
 不能用 Blender 自带的）。完整步骤见 [docs/wiki/Home.md](docs/wiki/Home.md)。
 
-## 同级仓库（不属于本仓库，各自独立 Git）
+## 同级仓库（不属于本仓库，独立 Git）
 
-游戏侧运行时与游戏内 UI 拆在父目录下的两个独立仓库，本仓库不做 submodule、不复制其源码：
+游戏侧运行时在父目录下的一个独立仓库，本仓库不做 submodule、不复制其源码：
 
 | 目录 | 产物 | 职责 |
 |---|---|---|
-| `../gakumas-mod-runtime/` | `xinput1_3.dll` | 扫描本地 Mod、拦截资源加载、替换 Mesh/骨架/贴图，并提供 Runtime API v1 |
-| `../gakumas-in-game-mod-manager/` | `xinput9_1_0.dll` | 游戏内 Mod 管理 UI，通过 Runtime API 读写开关 |
+| `../gakumas-mod-runtime/` | `xinput1_3.dll` | 扫描本地 Mod、拦截资源加载、替换 Mesh/骨架/贴图，提供 Runtime API v1，并内含游戏内 Mod 管理 UI |
 
-插件导出的 `.bundle` + `mod.json` 放进 `gakumas-local/local-files/mods/<mod-id>/`。
-该目录布局同时被 chinosk6 的 `gkms-localify-dmm` 插件和上表的 `gakumas-mod-runtime` 读取；
-`gakumas-mod-runtime` 另外要求骨架 sidecar 带 `runtimeProtocol` 与 `buildId`。两个运行时都
-在演进中，具体放哪个见 [gakumas_mi/README.md](gakumas_mi/README.md)。
+游戏内管理 UI 曾经是独立的 `xinput9_1_0.dll`，现已并进同一个 `xinput1_3.dll`，玩家只装一个文件。
+
+插件导出的 `.bundle` + `mod.json` 放进 `gakumas-mod/mods/<mod-id>/`；
+`gakumas-mod-runtime` 另外要求骨架 sidecar 带 `runtimeProtocol` 与 `buildId`。
+chinosk6 的 `gkms-localify-dmm` 读的是它自己的 `gakumas-local/local-files/mods/<mod-id>/`，
+两个目录互不读取，具体放哪个见 [gakumas_mi/README.md](gakumas_mi/README.md)。
 
 ## 文档
 

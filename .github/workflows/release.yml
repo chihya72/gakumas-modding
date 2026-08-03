@@ -125,7 +125,7 @@ jobs:
              它只抓帧，不加载 mod。d3dx.ini 若已存在，别覆盖你自己的那份。
 
           做出来的 .bundle + mod.json 放进
-             <游戏目录>\gakumas-local\local-files\mods\<模组标识>\
+             <游戏目录>\gakumas-mod\mods\<模组标识>\
           换模由另外两个 DLL 负责，不在本包内。
 
           完整教程见项目 docs/wiki/。
@@ -169,8 +169,8 @@ jobs:
           - `3dmigoto_gkms/` —— 抓帧环境，整个拷进游戏根目录，进游戏按 F8 抓帧做配置档。
             **它只抓帧，不加载 mod。**
 
-          换模运行时（`xinput1_3.dll`）与游戏内 Mod 管理 UI（`xinput9_1_0.dll`）是独立项目，
-          不在本包内。详细步骤见仓库 `docs/wiki/`。""" % (version, version))
+          换模运行时 `xinput1_3.dll`（内含游戏内 Mod 管理 UI）是独立项目，不在本包内。
+          详细步骤见仓库 `docs/wiki/`。""" % (version, version))
           PY
           # 上一个版本 → Full Changelog 比较链接（兼容合并前的 gakumas-mi-v* 旧线）
           prev=$(git tag -l 'v*' --sort=-version:refname \

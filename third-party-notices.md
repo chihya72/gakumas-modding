@@ -52,5 +52,5 @@ Release 下载后打进 `gakumas-mod-toolkit-<版本>.zip`，本仓库不提交�
 
 ## 同级仓库
 
-`../gakumas-mod-runtime/` 与 `../gakumas-in-game-mod-manager/` 是独立仓库，各自带
-LICENSE 与（runtime 侧的）third-party notices，其依赖不在本文范围内。
+`../gakumas-mod-runtime/` 是独立仓库，自带 LICENSE 与 third-party notices，
+其依赖不在本文范围内。

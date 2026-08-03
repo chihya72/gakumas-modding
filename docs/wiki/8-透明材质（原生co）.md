@@ -43,9 +43,9 @@
 2. 导入作者模型并对齐后，在材质列表把需要透明的材质槽设为 **原生 co**；
 3. 在「不透明 body / m_bdy」填 body 的 t0/t1/t4；只要有任一槽设为原生 co，还必须在「原生 co / m_bdyco」填 co 的 t0（有 co 的 t1/t4 也填这里）。body 与 co 各走各自 UV、尺寸和贴图，互不干涉；
 4. 点 `导出并打包 bundle（一键，需外部 Python）`，把整个 `<模组标识>\` 目录放进
-   `<游戏目录>\gakumas-local\local-files\mods\`；
+   `<游戏目录>\gakumas-mod\mods\`；
 5. 进游戏在 **Mod 管理**页打开开关，观察：透明 / 镂空是否正常、有无残留或亮度叠加。
-   不正常时保留 `bundle-src\` 与 runtime 的 `gakumas-local\mod-plugin.log` 用于排查。
+   不正常时保留 `bundle-src\` 与 runtime 的 `gakumas-mod\mod-plugin.log` 用于排查。
 
 > 📷 **待截图**：`images/co-ingame.png` —— 透明 / 镂空部件在游戏内的正确显示效果。
 

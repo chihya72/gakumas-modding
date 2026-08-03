@@ -172,7 +172,7 @@ python tools\export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>" --ske
 因此 500+ 套全部可用。
 
 `Body JSON资源库`（约 4.5 GB）作为**单独资源包**发布，不打进插件 zip。开发环境默认指向
-仓库外的 `../mod-workspace/libraries/assetstudio-body-json/`（与 `templates/unity` 同级）；
+仓库外的 `../mod-workspace/libraries/assetstudio-body-json/`（与 `libraries/templates` 同级）；
 实际使用时把资源包目录路径填进插件「选项2」即可。
 
 调试前几个文件：
@@ -229,7 +229,7 @@ python tools\export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>" --lim
 - 作者模型已按游戏骨架**对齐并烘成 rest 姿势**（镜像 / 缩放 / A→T retarget 属作者
   基本功，插件不代做）；
 - 目标 body/hair 的 **R32 模板 bundle**（工作区默认库：
-  `../mod-workspace/templates/unity`；由 `tools/build_phase3_templates.py` 批量生成）；
+  `../mod-workspace/libraries/templates`；由 `tools/build_phase3_templates.py` 批量生成）；
 - 游戏侧装 **chinosk6 插件**（`gkms-localify-dmm`）替代 3Dmigoto，**一次性**。
 
 **作者流程**：
@@ -251,8 +251,8 @@ python tools\export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>" --lim
    **无需 Unity、无需手敲命令行，也无需再从 `bundle-src` 手动移动 `mod.json`。**
    - 只想要中间产物时，点 `导出 bundle 源`（不打包），再自行跑
      `python tools/patch_unity_bundle.py --template <模板.bundle> --mod-root <bundle源目录> --output <成品.bundle>`。
-3. 把成品 `.bundle` + `mod.json` 放进 chinosk6 插件的
-   `gakumas-local/local-files/mods/<id>/` 目录。
+3. 把成品 `.bundle` + `mod.json` 放进 Mod Runtime 的 `gakumas-mod/mods/<id>/` 目录
+   （chinosk6 的 `gkms-localify-dmm` 用的是它自己的 `gakumas-local/local-files/mods/<id>/`）。
 4. 进游戏换装验证；插件日志 `mod-plugin.log` 有 `meshApplied` / `textureApplied` /
    `matchedBones` / `droppedInfluences` 诊断行可对照排错。
 
@@ -455,8 +455,8 @@ Hair 与 HairProp 的「按材质生成 t1/t4」必须分别激活对应作者�
 3. 在「不透明 body / m_bdy」里填 body 的 `t0/t1/t4`。如果有任一材质槽设为 **原生co**，
    还必须在「原生 co / m_bdyco」里填 co 的 t0；有 co 的 t1/t4 时也填到同一区块。body
    与 co 各走各自 UV、atlas 尺寸和 t1/t4，互不干涉。
-4. 点 `导出并打包 bundle`，把成品 `.bundle` + `mod.json` 放进 chinosk6 插件的
-   `gakumas-local/local-files/mods/<id>/`。
+4. 点 `导出并打包 bundle`，把成品 `.bundle` + `mod.json` 放进 Mod Runtime 的
+   `gakumas-mod/mods/<id>/`。
 5. 进游戏观察：轮廓外透明/镂空是否显示、是否有原版 co 段残留、是否亮度叠加。若不正常，
    保留 `bundle-src` 与 `mod-plugin.log` 用于排查。
 
