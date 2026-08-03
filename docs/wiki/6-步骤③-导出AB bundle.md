@@ -45,13 +45,15 @@
 
 ## 6.2 承重关节闸门（会拦住你的那个东西）
 
-导出前插件会检查 **14 个承重关节**有没有拿到权重：
+导出前插件会检查 **21 个承重关节**有没有拿到权重：
 
 ```text
-Hips / Spine
-Left|Right Arm / ForeArm / Hand
-Left|Right UpLeg / Leg / Foot
+Hips / Spine / Spine1 / Neck / Head
+Left|Right Shoulder / Arm / ForeArm / Hand
+Left|Right UpLeg / Leg / Foot / ToeBase
 ```
+
+`Spine2` 故意不在闸门里：游戏有三节脊椎，Auto-Rig Pro 等源只有两节，拦它等于误伤所有两节脊椎的源。
 
 **缺任一根直接拒绝导出，并点名是哪根。**这条闸门存在的原因是实战教训：源骨名认不出来时，旧版是**导出成功、进游戏才发现废了**——整只手被钉在 `Spine1`、上臂挂在袖子的摇物骨上，全程零警告。
 
@@ -132,7 +134,8 @@ python -c "import sys;print(sys.executable)"
 
 ## 6.5 发型 + 发饰：合并成一个包
 
-- **只有发型作者网格**：导出只替换 `Geo_Hair` 并保留原配套发饰，同时用 hairprop 特征精确限定目标；
+- **只有发型作者网格**：导出只替换 `Geo_Hair` 并保留原配套发饰。多套发型共用同一基础网格时，
+  步骤①匹配配置档那一步会用同帧 `Geo_HairProp` 的顶点数选中正确的目标资源；
 - **同时准备了发饰作者网格**：点一次导出，插件自动把 `Geo_Hair` + `Geo_HairProp` 合并为**一个完整包**。
 
 详见 [[7-发型与发饰]]。

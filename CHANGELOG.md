@@ -116,7 +116,7 @@
 - 同一张表第二列是**装饰骨物理策略**（自动/刚性跟父骨/自建摇物链/跟裙摆），替代手写
   `physics-override.json`；实测与手写 JSON 结果逐条一致。骨映射与装饰物理存在同一份
   JSON 的 `bones` / `physics` 两个键里。
-- **硬闸门**：14 个承重关节（Hips/Spine/左右 Arm-ForeArm-Hand-UpLeg-Leg-Foot）任一没拿到
+- **硬闸门**：21 个承重关节（Hips/Spine/Spine1/Neck/Head、左右 Shoulder-Arm-ForeArm-Hand 与 UpLeg-Leg-Foot-ToeBase）任一没拿到
   权重就拒绝导出并点名。此前源骨名认不出来时是**导出成功、进游戏才废**（实测整只手 100%
   被钉在 `Spine1`、上臂挂在袖子摇物骨上，全程零警告）。判据只看游戏侧，与源命名无关；
   与目标骨架取交集，所以发型/发饰导出永不触发（实测交集为 0）。

@@ -1,8 +1,8 @@
 # GakumasMI Blender 插件 0.9.0
 
-当前状态：开发预览版。材质槽位已改为**运行时靠全局 body 地标贴图自动判布局**
-（0.7.2，弃用 0.7.1 的逐 PS `slotVariants` 枚举），作者只出 base/mask/shade 三张贴图、
-永不碰 PS hash，新场景/服装/角色自动覆盖。建配置档已收敛为**一键流程**：选择制作目标，
+当前状态：开发预览版。作者只出 base/mask/shade 三张贴图，**永不碰 PS hash 或寄存器槽位**——
+AB 路线的贴图由运行时按 `rendererName + materialSlot + property` 语义替换，新场景/服装/角色
+自动覆盖。（3DMigoto 时代靠全局 body 地标贴图在 draw-time 判槽位布局的那套已随该路线移除。）建配置档已收敛为**一键流程**：选择制作目标，
 填「抓帧目录」+ 对应「网格 JSON 资源库」，点 `生成完整配置档` 即可一次产出
 **①注入信息 + ②结构数据 + ③逆算子** 的完整配置档。
 
@@ -216,10 +216,10 @@ python tools\export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>" --lim
 
 ### 3. 导出 AB bundle
 
-把 mod 网格作为真正的 Unity 资产交给 chinosk6 插件，让引擎原生蒙皮，于是描边/透明/贴图/物理
-**由引擎正确**，还能带新物理骨。代价是多一个打包环节，且游戏侧用 chinosk6 插件而不是 3Dmigoto。
+把 mod 网格作为真正的 Unity 资产交给游戏侧运行时，让引擎原生蒙皮，于是描边/透明/贴图/物理
+**由引擎正确**，还能带新物理骨。代价是多一个打包环节，且游戏侧装的是运行时 DLL 而不是 3Dmigoto。
 与已移除的 3Dmigoto 路线的历史对比见
-[`research/3dmigoto-vs-ab-route.md`](../research/retired-routes.md)。
+[`research/retired-routes.md`](../research/retired-routes.md)。
 
 **前置**（缺一不可）：
 
@@ -230,7 +230,9 @@ python tools\export_all_body_json.py --assetstudio "<AssetStudio.CLI.exe>" --lim
   基本功，插件不代做）；
 - 目标 body/hair 的 **R32 模板 bundle**（工作区默认库：
   `../mod-workspace/libraries/templates`；由 `tools/build_phase3_templates.py` 批量生成）；
-- 游戏侧装 **chinosk6 插件**（`gkms-localify-dmm`）替代 3Dmigoto，**一次性**。
+- 游戏侧装运行时替代 3Dmigoto，**一次性**：首选同级仓库的 **`gakumas-mod-runtime`**
+  （`xinput1_3.dll`，自带游戏内 Mod 管理 UI）；chinosk6 的 `gkms-localify-dmm` 也能加载，
+  但用它自己的目录且没有管理界面。
 
 **作者流程**：
 
@@ -371,7 +373,7 @@ HSKI Body 已验证的身体贴图语义：
 
 1. `基础色 t0` 填单图 atlas PNG。
 2. 只把外部阴影阈值图填到 `t1.R 阴影阈值`；`t1.G/B/A` 先留空。
-3. 在步骤③的「材质槽设置」区选择 `皮肤 / 布料 / 皮鞋 / 金属...`；身体材质同时在这里选择
+3. 在步骤②的「材质槽设置」区选择 `皮肤 / 布料 / 皮鞋 / 金属...`；身体材质同时在这里选择
    `不透明 / 原生 co`，再点 `按材质生成 t1/t4 并校准肤色`。
 4. 若暗面范围不对，先调整 `t1.R` 的黑白点 / 输出范围或材质行的 `明暗`，不要把 Rmask 直接塞满 `t1.G/B/A`。
 
@@ -397,7 +399,7 @@ HSKI Body 已验证的身体贴图语义：
 
 hair 与 body 共用主光照框架，但原图作者规则、附加 HHL pass 和顶点参数分布不同。制作目标选
 「发型（hair）」后插件使用以下**安全作者默认值**；完整逆向见
-[`../research/hair-shader-analysis.md`](../research/hair-pipeline.md)：
+[`../research/hair-pipeline.md`](../research/hair-pipeline.md)：
 
 - **t0 Alpha**：普通 PNG 通常隐式带 A=255，但原生 hair 大部分区域接近 0；它是刘海 coverage，
   不是普通透明度。0.7.8 默认保留作者 Alpha，需要禁用 Coverage 时再关闭「使用 t0.A 发丝覆盖率」。

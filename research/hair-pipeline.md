@@ -279,7 +279,7 @@ hairprop cutout、普通 body 的 alpha 经验混为一谈。
 
 三个当前 Hair 样本的全图 Alpha 统计进一步说明安全默认值应为 0：ttmr 有 99.214% 像素为
 0，jsna 有 97.560%，fktn 有 94.892%。非零值只集中在少量发片/条带区域；普通 RGB PNG
-隐式带入的 A=255 不等价于原生 hair。插件步骤③的具体处理方案见
+隐式带入的 A=255 不等价于原生 hair。插件步骤②的具体处理方案见
 [`hair-pipeline.md`](hair-pipeline.md)。
 
 #### 5.2 t1：Def / PackedMask

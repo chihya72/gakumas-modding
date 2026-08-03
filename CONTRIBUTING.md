@@ -29,12 +29,12 @@ Blender 插件 ZIP 和抓帧环境安装包只放 `dist/`。
 
 ### 外层工作区边界
 
-本仓库只占用工作区里的 `gakumas-modding/` 一级目录。其父目录下另外三个一级目录不是本仓库内容：
+本仓库只占用工作区里的 `gakumas-modding/` 一级目录。其父目录下另外两个一级目录不是本仓库内容：
 
 | 同级目录 | 职责 | 边界 |
 |---|---|---|
 | `..\mod-workspace\` | 本地 IP/SCSP 解包输入、Mod 工作文件、Blend、成品和受保护数据备份 | 不纳入 Git，不提交游戏提取资产 |
-| `..\mod-workspace\libraries\` | AssetStudio 导出的 body / hair Mesh JSON 资源库（约 7.8 GB） | 与 `libraries\templates` 同级同待遇：插件与 `build_phase3_templates.py` 直接读，永不入库，清理前须核对备份 |
+| `..\mod-workspace\libraries\` | Mesh JSON 资源库 + 908 个 Unity 模板 + 原始 body AB（合计约 24 GB） | 插件与 `build_phase3_templates.py` 直接读，永不入库，清理前须核对备份；`all_body/` 以外三项已发到百度网盘供作者下载 |
 | `..\gakumas-mod-runtime\` | 游戏运行时 `xinput1_3.dll` 源码与构建 | 独立 Git（GPL-3.0），不复制进本仓库、不设为 submodule |
 
 跨目录工具不得假定旧的绝对路径；迁移完成后应通过命令行参数或集中配置定位本地数据。
@@ -42,7 +42,7 @@ Blender 插件 ZIP 和抓帧环境安装包只放 `dist/`。
 
 ## 2. 命名规范
 
-- **目录**：普通目录用 kebab-case（`docs/wiki`、`ab-route-handoff`）；
+- **目录**：普通目录用 kebab-case（`docs/wiki`）；
   Python 包用 snake_case（`gakumas_mi`）。**`3dmigoto_gkms` 也用 snake_case** ——
   它在发布包里原样出现，与 `gakumas_mi` 并排，两者风格保持一致。
 - **文件**：Python `snake_case.py`；PowerShell `kebab-case.ps1`；
@@ -59,7 +59,7 @@ Blender 插件 ZIP 和抓帧环境安装包只放 `dist/`。
 | 文档 | 权威范围 |
 |---|---|
 | `README.md` | 项目总览、仓库结构、工作流入口 |
-| `CHANGELOG.md` | Blender 插件（gakumas-mi）逐版本变更；release workflow 从它生成 notes，**不可移动** |
+| `CHANGELOG.md` | Blender 插件（gakumas-mi）逐版本变更；release workflow 校验本版版本段存在（notes 正文取自 tag 注解），**不可移动** |
 | `research/current-status-and-roadmap.md` | 当前状态、完成度、后续计划 |
 | `research/README.md` | research 目录索引 |
 

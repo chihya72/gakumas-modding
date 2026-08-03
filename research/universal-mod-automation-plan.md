@@ -129,7 +129,7 @@ mod 顶点组 ──分类──┤                                             
 3b. 作者在「骨骼映射表」填过的行**优先级最高**，盖过预设与外部 JSON。
 4. 仍无 → 沿源骨架父链找第一个目标骨(装饰骨走 Track B,不在此)。
 5. 零权重空组 → 父骨兜底(仅过校验)。
-- **验收**:导出无 `Unmapped weighted bones`;权重值与源逐点相等(抽样);**14 个承重关节都拿到
+- **验收**:导出无 `Unmapped weighted bones`;权重值与源逐点相等(抽样);**21 个承重关节都拿到
   权重**（闸门，缺任一根拒绝导出并点名）。
 
 ### P2. 身体/装饰分类 ✅
@@ -285,7 +285,7 @@ fuyuko 的失败性质不是"某步没自动",而是**坏数据静默通过导�
 
 ### 基础设施
 - **R32 模板库**:每个目标 body 一个 `template_mdl_chr_<id>_body.bundle`,工具作者一次性产(Unity 2A 或 `tools/build_phase3_templates.py`)。作者只选不建。
-- **游戏侧插件**:需支持运行时建新骨 + 挂 ActorSwing 物理(P4)。当前 `D:\GIT\git.chinosk6.cn\gkms-localify-dmm` 的 `ModRuntime.cpp` 已支持，Release x64 已本地部署并有实机日志；但整个插件改动仍未整理成可上游/分发的提交。
+- **游戏侧插件**:需支持运行时建新骨 + 挂 ActorSwing 物理(P4)。同级仓库 `../gakumas-mod-runtime/` 的 `src/runtime/ModRuntime.cpp` 已支持，Release x64 已部署并有实机日志。
 - **模板结构**:普通 R32 模板可覆盖同骨和新增装饰骨换装。UnityPy **不得插入合成 GameObject/Transform**；模板缺失的新骨槽临时指向 root，游戏侧插件再按 sidecar 创建真实骨并替换整组 `m_Bones`。
 
 ### 问题状态（2026-07-27）
@@ -297,7 +297,7 @@ fuyuko 的失败性质不是"某步没自动",而是**坏数据静默通过导�
 6. **源飘带被目标摆动骨吞并 ✅**：导出和运行时建链已修，明确的源悬挂链会保留父子关系并生成 `newBones/extraSwingBones`。最新实机日志为 `Chain tips attached: 10/10`、`createdBones=26`、`swingPrepared=36`，并成功建立 3/4/5 层链；当前 RC1 fuyuko sidecar 的摇物骨为 `26 / 13 左 / 13 右`，左右结构对称，历史上的“左动右不动/整根飘带不联动”已关闭。
 7. **Unity 6 加载新增骨 bundle 崩溃 ✅**：AABB 数量不一致曾被修复，但不是最终根因。真正根因是 UnityPy 向 bundle 合成 GameObject/Transform；现已删除合成路径，缺失骨槽回退 root，由运行时按 sidecar 建骨。fuyuko 已能加载、graft、替换网格和贴图。
 
-当前 Python 全套测试为 `26 passed`；0.9.0 插件已完成真 Blender 面板和 UI→导出→实机闭环。`atbm-0140` 与 fuyuko 日志已通过结构、权重和多层物理链构建检查；fuyuko 左右摆动问题已由 runtime 三连修复并在 RC1 实机样本中关闭。两个工作树均有未上游的提交边界，插件仓库由作者自行处理，不属于本主仓库后续开发。
+当前 Python 全套测试为 `30 passed`；0.9.0 插件已完成真 Blender 面板和 UI→导出→实机闭环。`atbm-0140` 与 fuyuko 日志已通过结构、权重和多层物理链构建检查；fuyuko 左右摆动问题已由 runtime 三连修复并在 RC1 实机样本中关闭。两个工作树均有未上游的提交边界，插件仓库由作者自行处理，不属于本主仓库后续开发。
 
 ---
 
@@ -353,7 +353,7 @@ fuyuko 的失败性质不是"某步没自动",而是**坏数据静默通过导�
 - [x] 两个仓库提交边界已落盘，工作树当前干净；插件仓库仍未能推送到远端（HTTPS 认证阻塞）
 - [x] `pytest` + Blender headless 回归已通过；CI/远端可见性仍待插件仓库认证恢复
 - [x] 装饰策略翻转已落地；runtime 版本协议 + `buildId` 已生效；README 边界已写
-- [x] **RC 已完成一次真实 UI → 导出 → 实机闭环**，发布关键 B 项已完成实测转 A；证据已归档到 `research/rc1-evidence-20260727.md`
+- [x] **RC 已完成一次真实 UI → 导出 → 实机闭环**，发布关键 B 项已完成实测转 A（证据快照含本机私有路径，公开仓库化时已删除，结论保留）
 - [x] 开头状态表已按最新实测更新；剩余 B 项均不是首发阻塞
 - [ ] **插件提交已推到可访问仓库**（由作者手动完成；合并 main 与分发同批进行）
 
@@ -389,7 +389,7 @@ fuyuko 的失败性质不是"某步没自动",而是**坏数据静默通过导�
 
 | 排序 | 项目 | 当前状态 | 转 A 的最小证据 | 优先级 | 难度 | 可实现性 | 依赖 / 备注 |
 |---:|---|---|---|---|---|---|---|
-| 1 | 真 Blender 面板的骨骼映射表 | **A 实证；已归档** | 从 RC ZIP 全新安装；扫描、修改、保存、加载；用表单产出一个进游戏的 mod | P0 | 中 | 高 | 本轮已执行，证据见 `research/rc1-evidence-20260727.md` |
+| 1 | 真 Blender 面板的骨骼映射表 | **A 实证；已归档** | 从 RC ZIP 全新安装；扫描、修改、保存、加载；用表单产出一个进游戏的 mod | P0 | 中 | 高 | 本轮已执行（证据快照随文档整合删除） |
 | 2 | 14 承重关节闸门 | **A 实证** | 真作者会话中故意缺映射时被拦，补齐后放行，并确认提示准确 | P0 | 低 | 高 | 本轮已故意破坏 `Spine` 并恢复放行 |
 | 3 | 装饰策略与物理归属 | **A 实证；已归档** | 先完成“跟源父骨”默认策略翻转，再用真实服装确认飘带/蝴蝶结/裙摆不乱挂 | P0 | 中 | 中 | 两套当前 Mod 已进游戏；不要求手感完美 |
 | 4 | 新骨链的最低限度实机行为 | **A 实证；已归档** | 游戏中确认加载不崩、链条被注册、左右件有基本摆动；保留“手感未调完” | P0 | 中 | 中 | 日志有 `createdBones`/`swingPrepared`；画面结论见 RC1 证据 |
@@ -439,12 +439,12 @@ geojson/bundle 侧:
 
 ## 11. 接手入口
 
-- GakumasMI 仓库：`D:\GIT\gakumas-modding`
-- 游戏侧插件仓库：`D:\GIT\git.chinosk6.cn\gkms-localify-dmm`
-- **主回归（最常用）**：`python -m pytest tests/ -q`（当前 24 passed）
+- 游戏侧运行时仓库：同级的 `../gakumas-mod-runtime/`（产物 `xinput1_3.dll`）
+- **主回归（最常用）**：`python -m pytest tests/ -q`（当前 30 passed）
 - Blender 导出回归：`blender --background --factory-startup --python-exit-code 1 --python tests/blender_smoke.py`
 - Blender UI 回归：`blender --background --factory-startup --python-exit-code 1 --python tests/blender_ui_smoke.py`
-- 插件 Release 编译：`MSBuild build\\gakumas_mod_plugin.sln /p:Configuration=Release /p:Platform=x64`
+- 运行时 Release 编译（在 `../gakumas-mod-runtime/`）：`.\generate.bat` 后
+  `msbuild build\gakumas_mod_runtime.sln /p:Configuration=Release /p:Platform=x64`
 - 插件运行日志：游戏目录下 `gakumas-mod/mod-plugin.log`
 - **崩溃二分已完成、结论见「进度」段(不内嵌合成对象)**，该任务作废，别再重做。
 - 离线量化闸门：`blender --background <blend> --python tools/simulate_ab_skinning.py -- <remap.json>`（pose 游戏骨架弯手指，量手指区 edge-stretch，参考体为已知正确基线）。**改法先离线量再让作者导出。**⚠该指标相对 rest，若 rest 本身被改坏它会假性变好，必须同时看几何/目视。
