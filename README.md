@@ -4,10 +4,11 @@
 Blender + 本项目插件就能换装 / 换模，**不装 Unity、不写 3DMigoto 配置**。只做视觉 Mod
 （模型 / 贴图 / 材质 / 显隐），不碰文本汉化、逻辑、数值。
 
-> **状态（插件 v0.9.0）**：插件只做 **AB（AssetBundle）路线**，3DMigoto 逆蒙皮的传权与导出
-> 已整体移除。身体与发型（含 co/配套发饰）的换模 + 贴图 + 骨映射闭环已实机验证；
-> 0.9.0 这批改动**多数只过了离线与 Blender headless 测试，没有人在真 Blender 面板里点过**，
-> 逐项验证等级见 [CHANGELOG.md](CHANGELOG.md) 顶部与
+> **状态（插件 v0.9.1）**：插件只做 **AB（AssetBundle）路线**，3DMigoto 逆蒙皮的传权与导出
+> 已整体移除。身体与发型（含 co/配套发饰）的换模 + 贴图 + 骨映射闭环已实机验证：三步面板
+> 从发布 ZIP 全新安装走通，并产出了三个进游戏的成品 mod（`atbm-cstm-0140` / `fktn-othr-0002`
+> / `ttmr-cstm-0111`）。八家骨名预设里 MMD 与 SCSP 有真实模型样本，另外六家只按公开命名
+> 规范写成、没拿到对应模型，认不出来时走面板逐行点选。逐项验证等级见
 > [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md)。
 
 ## 核心思路
