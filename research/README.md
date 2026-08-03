@@ -14,6 +14,7 @@
 | [`hair-pipeline.md`](hair-pipeline.md) | 发型/发饰：资产结构、制作流程、踩坑总表 + shader 逐通道逆向证据 |
 | [`transparent-material-status.md`](transparent-material-status.md) | 原生 `m_bdyco` 镂空路线与透明边界 |
 | [`retired-routes.md`](retired-routes.md) | 已排除的三条路线（3DMigoto 逆蒙皮 / PC IL2CPP 注入 / 照搬 GIMI）及其原因 |
+| [`lessons-learned.md`](lessons-learned.md) | **反面教训汇总**：做错过什么、为什么错、结论是什么（动手前先扫一眼） |
 
 抓帧操作已并入 [`../3dmigoto_gkms/README.md`](../3dmigoto_gkms/README.md)（产品文档跟产品走）。
 
