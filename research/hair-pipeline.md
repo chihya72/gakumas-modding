@@ -17,11 +17,9 @@
 
 更新时间：2026-07-14 · 状态：**路线已实机验证**（hski 兔耳换色/换网格 + 圆香花饰移植 hmsz 均通过）
 
-> 发饰是继 body 之后第一个打通的多组件替换目标。核心结论：**发饰替换与 body 替换同构**，
-> 复用同一条逆解链（抓帧提取 → 库匹配 → 逆算子 → compute 重蒙皮 → draw 替换），
-> 生成器（`write_inverse_skin_package`）零改动即可出包。
-> 发型本体（`Geo_Hair`，组件 `hair`）走完全同一条链，2026-07-13 已实机验证
-> （hmsz-hair-0023 圆香波波头）；hair 组件的贴图/顶点色语义与 body 不同，见 §6。
+> **发饰替换与 body 替换同构**：同一条导出链，只是组件与资源库不同，发型本体
+> （`Geo_Hair`）与发饰（`Geo_HairProp`）都已实机验证。hair 组件的贴图/顶点色语义与 body
+> 不同，见 §4 与第二部分。
 
 ## 1. 资产组织（实测事实，2026-07-13 修订）
 
@@ -45,18 +43,14 @@
   挑染发丝（包围盒覆盖整个头部 y 1.13–1.63）。**替换 = 整个 Prop 网格被替换**，
   自定义发饰若不带这些发丝件，原发丝会一并消失——作者必须知情。
 
-### 1.1 共享基础 hair 的精确选择
+### 1.1 多个发型共享同一基础 hair
 
-- 多个发型可能共享同一个 `Geo_Hair` IB；只按 hair IB hash 替换会把它们全部变成同一个
-  Mod 发型。
-- hmsz 的抓帧对比已验证：`hair-0007` 的 hairprop 是 `08fee0bf`（20,784 indices，
-  sections `0/12300, 12300/3528, 15828/4956`），`hair-0023` 是 `d9cfd2ab`
-  （20,289 indices，主 section `7989/12300`），而两者 hair 都命中同一个共享基础 hair。
-- 完整发型包的 hair override 必须先匹配配套 hairprop 的 `IB hash + firstIndex`，再替换共享
-  hair；manifest 另记录 `indexCount` 供审计。未匹配的 C 发饰不设置选择器，hair 和 hairprop
-  都保持原版。
-- 如果两个发型的 hairprop 运行时特征也完全相同，则无法在 3DMigoto 中继续区分；该包只能
-  按共享基础 hair 发布并明确接受广泛影响。
+多款发型可能共用同一个 `Geo_Hair` 基础网格，只有蒙皮骨架不同。AB 路线在**配置档匹配阶段**
+用同帧 `Geo_HairProp` 的顶点数消歧（`core.py` 的 `_disambiguate_hair_by_hairprop`）；两套发型
+若基础网格与发饰特征都相同则无法区分，这时要在「目标资源」填完整资源名。
+
+> 原先记录在这里的「按 hairprop `IB hash + firstIndex` 做帧内 latch」是 3DMigoto 时代的
+> 做法，已随该路线移除。
 
 ## 2. 注入与材质（兔耳抓帧 FrameAnalysis-2026-07-12-041807 验证）
 
@@ -71,57 +65,17 @@
 | 额外槽 | t5=ramp（1024×4，沿用原版）、t6=hhl 占位（4×4 dummy） | 作者仍只出 3 张图 |
 | 贴图族命名 | `t_chr_<id>_hir_col_alp / hir_def / hir_sdw / hir_hhl / rmp` + `hirco_*` | 对应 bdy 系 |
 
-注意：贴图 hash 直换不触发（本游戏通病），必须由 ShaderOverride 的
-`checktextureoverride = ib` 带起 IB hash 的 TextureOverride——生成器输出的 mod.ini 已内置。
-
 ## 3. 制作流程
 
-与 body 完全同一条链，只是 `component` 与资源库不同：
+作者操作看 [`../docs/wiki/7-发型与发饰.md`](../docs/wiki/7-发型与发饰.md)。原先写在这里的
+是 3DMigoto 逆解链（抓帧 → 逆算子 → compute 重蒙皮 → draw override → `mod.ini`），
+已随该路线整体移除。
 
-1. **建发饰 JSON 资源库**（一次性）：
-   ```
-   python tools/export_all_body_json.py --input <hair包目录> --suffix _hair \
-       --mesh-name Geo_HairProp --skeleton \
-       --output ../mod-workspace/libraries/assetstudio-hairprop-json
-   ```
-2. **抓帧**：游戏内穿戴目标发饰，3DMigoto Frame Analysis 抓全帧。
-3. **提取 profile**：
-   ```
-   python tools/extract_frame_profile.py <抓帧目录> profiles/<名字> \
-       --component hairprop --body-resource mdl_chr_<角色>-hair-NNNN_hair
-   ```
-   自动选 draw 会按 40+12 双 VB 打分，仍建议用资源库顶点数核对；不对就 `--draw` 指定。
-4. **补全逆解**：Blender 步骤①选择“发型”；插件自动把 hair 与
-   hairprop 的配置合并到同一 profile。脚本底层仍分别调用
-   `complete_inverse_skin_profile(profile_dir, 资源库, component_id="hairprop")`。发饰骨多为头发
-   物理骨，少量不可观测骨正常。
-5. **Blender authoring**：一次导入 hair + hairprop 参考模型与骨架 → 建自定义发型/发饰；步骤②对
-   发饰二选一：硬质发饰刚体绑定到 `Head_Hair`，需要摆动的软发饰传递权重并复核 → 分别准备
-   hair/hairprop t0/t1/t4 → 一次校验并导出完整包。`skin` 数据格式为
-   `[(骨索引, correction索引, 权重)]`，权重在源骨架上时 correction 恒 0 + 单个恒等矩阵。
-6. **验证**：装入一个合并后的完整发型包，确认 selector 命中目标发饰；换到其它发饰时，
-   原 hair 与 hairprop 都保持原版，新网格跟随头部动画、描边/投影正常。
-
-## 4. 已验证 PoC（2026-07-12，hski 兔耳 = hski-hair-0023，IB `8dab3a7b`）
-
-- **贴图换色**：IB TextureOverride 绑 ps-t0 纯青 → 耳朵+挑染丝全部变青（证明注入路径 + Prop 范围）。
-- **网格替换**：纯 Python 合成 24 顶点立方体（100% 权重绑 Prop 主宿主骨、放骨主导顶点质心），
-  `write_inverse_skin_package(component_id="hairprop")` 出包 → 游戏内原发饰整体消失、
-  立方体正确戴在头顶随动画运动，描边/投影正常。**生成器零代码改动。**
-
-## 5. 边界
-
-- LIVE 暗光场景的 hair 系 PS 槽位重排尚未实抓验证（地标探测机制已确认适用，风险低）。
-- Blender 插件的「制作目标」字段（`gmi_component_id`，默认 `body`）只暴露 `body` / `hair`；
-  选择 `hair` 后自动处理同一 profile 内的 `hair` 与 `hairprop`，资源库仍分别读取
-  `--mesh-name Geo_Hair` 与 `--mesh-name Geo_HairProp`。
-- 发型本体已用 `hmsz-hair-0023` 实机验证；注入结构与发饰一致，但材质/顶点色语义不同，见 §6。
-
-## 6. 发型替换踩坑总表：插件已自动处理 vs 需作者手动（2026-07-13 全程复盘）
+## 4. 发型替换踩坑总表：插件已自动处理 vs 需作者手动（2026-07-13 全程复盘）
 
 以 scsp 圆香波波头 + 三件发饰 → hmsz-hair-0023 全程实机迭代为准。
 
-### 6.1 插件已自动处理（gakumas_mi 0.7.4 起，作者无感）
+### 4.1 插件已自动处理（gakumas_mi 0.7.4 起，作者无感）
 
 | 坑 | 症状（修复前） | 0.7.4 处理方式 |
 |---|---|---|
@@ -132,7 +86,7 @@
 | hair 描边逐顶点错误合成 | 暗部量化塌成 (0,1,0) → 绿边 | 安全模式用全网格色档；参考拷贝保留 G低/B低/A高等独立 nibble，不能把 B/A 整字节改写 |
 | hairprop 描边同病 | 黑蝴蝶结绿边 | 按材质槽类型写常量：metal=(3,3,3)+A144、其余=(0,0,0)+A0、B=8 |
 
-### 6.2 需作者手动（流程/判断题，插件管不了）
+### 4.2 需作者手动（流程/判断题，插件管不了）
 
 | 事项 | 要点 |
 |---|---|

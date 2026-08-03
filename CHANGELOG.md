@@ -334,7 +334,7 @@
 - 抓帧复核（`FrameAnalysis-2026-06-30-045108` + `mdl_chr_fktn-cstm-0001_body`）确认 `m_bdyco`
   与主 body **共用 VB0/VB1/IB**、仅 submesh 范围不同，且第二段在 5 个 VS pass 中的 4 个出现；
   NativeCo override 对全部 5 个 VS 都 `checktextureoverride = ib`。详见
-  [`research/transparent-material-status.md`](research/transparent-material-status.md)。
+  [`research/ab-route-notes.md`](research/ab-route-notes.md) §5。
 - 补充 `m_bdyco` alpha 行为实测：低 alpha 渐变区域仍被裁切，抬到 `A=128/255` 后透明 padding
   以黑块显示，确认当前 body-co 路线更接近 cutout/alpha test，不是连续半透明 blend。
 - 测试：`tests/mod_ini_contract.py` 删去 cutout/alpha-blend 契约，新增「旧 alpha 值回退不透明」
@@ -346,7 +346,7 @@
   draw 拆出，走 `InheritMask`（只测深度不写深度，反向 Z）+ `AlphaBlend`（MRT、RT1 预乘
   alpha）两段，优先保证 **A=0 镂空干净 + 投影/遮挡正常**；半透明在同模型已有 coverage
   的像素上可靠显示。随包附带 `GMIFinal.hlsl` / `GMIInheritMaskA.hlsl` / `GMIAlphaBlend.hlsl`
-  / `GMIAlphaClip.hlsl`。详见 [`research/transparent-material-status.md`](research/transparent-material-status.md)。
+  / `GMIAlphaClip.hlsl`。详见 [`research/ab-route-notes.md`](research/ab-route-notes.md) §5。
 - 文档全面整理：新增本 CHANGELOG，归档已排除路线与逐步实验记录到 `research/archive/`，
   透明材质合并为单一结论文档。
 
