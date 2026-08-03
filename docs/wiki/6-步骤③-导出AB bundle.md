@@ -68,7 +68,7 @@ Left|Right UpLeg / Leg / Foot
 目标 body / hair 的 **R32 模板 `.bundle`** 文件。模板是工具作者一次性批量产的（530 个 body +
 378 个 hair），按目标资源名取对应的那个，例如换 `mdl_chr_atbm-cstm-0140_body` 就选同名模板。
 
-模板整包**在百度网盘提供**（`r32-templates-*.zip`），不在 GitHub 仓库里，见 [[1-环境准备与安装]] 1.1「网盘素材包」。
+模板整包**在百度网盘提供**（`libraries\templates\`），不在 GitHub 仓库里，见 [[1-环境准备与安装]] 1.1「网盘素材包」。
 
 **留空也能导出**，只是只出 `bundle-src\`（中间产物），不会打成成品 `.bundle`。
 
