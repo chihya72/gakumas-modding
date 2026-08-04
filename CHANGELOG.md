@@ -29,8 +29,8 @@
 
 > 这一版的每条都来自真实作者会话：dress-2219（`hmsz-cstm-0059`）和 mltd-stage
 > （`ttmr-cstm-0119`）。7 个成品 mod（6 body + 1 hair）在本版下全部实机确认；
-> 仍未解决的是**自建摇物链的装饰件在游戏里不动**，现场快照见
-> `mod-workspace/mods/work/hmsz-cstm-0059_body_dress-2219-TEST/`。
+> 仍未解决的是**自建摇物链的装饰件在游戏里不动**，见
+> `research/current-status-and-roadmap.md` 的「未解决：自建摇物链」。
 
 ### 新增骨的四个约定错误（装饰件先炸成黑刺、再坍缩、最后锁死不摆）
 
@@ -81,7 +81,7 @@ Unity 的 `Quaternion` 序列化顺序是 `(x,y,z,w)`，运行时按 `Quaternion
 > ⚠️ 装上这四项修复后 dress-2219 重导，日志显示数据链路完全正常
 > （`createdBones=26 swingPrepared=36 droppedInfluences=0`、链尾齐全、3 条链注册成功），
 > **但装饰件在游戏里仍然不动**。这是 0.9.3 未解决的问题，成品当前用刚性/跟裙摆绕开，
-> 排查现场见 `mod-workspace/mods/work/hmsz-cstm-0059_body_dress-2219-TEST/`。
+> 排查经过与下一步见 `research/current-status-and-roadmap.md`。
 
 ### SCSP 预设：`_1` 后缀不再挡住预设查表，并补上脚趾
 

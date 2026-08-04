@@ -1,7 +1,7 @@
 # AB 路线技术笔记
 
 > 合并自 `ab-route-handoff/docs/` 的 5 份文档（2026-08-02），原目录已删除。
-> 丢掉的是已经全部完成的 4-Phase 落地计划，以及绑死在 `rui-nurs` 单案例和本机绝对路径上的
+> 丢掉的是已经全部完成的 4-Phase 落地计划，以及绑死在早期原型单案例和本机绝对路径上的
 > 复现步骤；留下的是**读源码得出的机制结论**和**踩过坑才知道的数据规范**。
 >
 > 数据侧脚本移到了 `tools/`：`export_ip_swing_bones.py`（骨架 sidecar，含摆动参数与链尾 tip）、
@@ -33,9 +33,9 @@
 
 **Unity 版本 6000.0.67f1**（bundle 头写死，必须匹配游戏运行时）。
 
-其余 schema 权威出处：模板打包契约见 `mod-workspace/pipelines/ip/unity-template-builder/`；
-manifest 见 `gakumas_mi/core.py` 的 `write_bundle_source`；运行时消费见同级仓库
-`gakumas-mod-runtime/src/runtime/ModRuntime.cpp`。
+其余 schema 权威出处：模板打包契约见 `tools/build_phase3_templates.py`（它调用的 Unity
+工程只用于一次性批量产模板，模板本体走网盘分发）；manifest 见 `gakumas_mi/core.py` 的
+`write_bundle_source`；运行时消费见同级仓库 `gakumas-mod-runtime/src/runtime/ModRuntime.cpp`。
 
 ## 2. 运行时换网格机制
 
@@ -111,8 +111,10 @@ bindposeMode=mod-remapped originalRoot="Hips" modRoot="Hips"` +
 
 ## 3. 新增物理骨（swing）：结论与规范
 
-> 面向接手 AB 路线物理骨的开发者。2026-07-17 实机跑通(rui-nurs→hmsz-0000:翅膀、裙摆、
-> 缎带、两个听诊器均正常摆动)。
+> 面向接手 AB 路线物理骨的开发者。本节的机制结论(tip 骨、`UpdateChainInfo` 语义、参数字段)
+> 是读源码 + 逐项实测得出的，仍然成立；**但「新骨会摆」这个整体结论没有现役证据**——
+> 当前管线下装饰件实测不动，见第 5 节和
+> [`current-status-and-roadmap.md`](current-status-and-roadmap.md) 的「未解决:自建摇物链」。
 
 ### TL;DR
 
@@ -177,7 +179,7 @@ LeftBackWing2_S  spring=0.3  mass=0.5   ← 我们却灌了 0/0 → 摆不起来
 **提取法(比旧的 AssetStudio 定长偏移法简单得多)**:源 bundle **typetree 内嵌**,UnityPy 直接
 读得动 MonoBehaviour,53/53 全出,无需 dummy DLL、无需固定偏移、无需镜像回填。`m_Script` 指向
 缺失的 CAB 依赖 → 拿不到类名 → **按 typetree key 签名认 swing 骨**(含 `damping/stiffness/
-spring/mass` 即是)。实现见 `../scripts/export_rui_bones.py`。
+spring/mass` 即是)。同引擎源的抽取实现见 `tools/export_ip_swing_bones.py`。
 
 只导源**真正授权**的 5 个字段:`damping / stiffness / spring / mass / useWindGlobalForce`。
 
@@ -230,8 +232,8 @@ swing 系统是**学马自己的**(`ActorSwingChain`/`ActorSwingDynamicBone`),�
 
 **给开发者的路径(优先级从高到低)**:
 
-1. **能复用 base 骨就复用**(新几何权重绑到现有裙摆/头发骨)→ 物理免费继承,**首选、零成本**。
-   rui-nurs 的裙摆就是这么工作的(`matchedBones=90`)。
+1. **能复用 base 骨就复用**(新几何权重绑到现有裙摆/头发骨)→ 物理免费继承,**首选、零成本**,
+   也是目前**唯一确定有效**的装饰物理做法(插件里叫「跟裙摆」)。
 2. **必须新骨时**(翅膀/听诊器/尾巴,运动独立于 base):
    - 链式命名 `<部位>1_S / 2_S / ... / N_S_End`,父挂稳定骨(Shoulder/Spine/Hips)。
    - **必须给链尾 tip**,哪怕它没有蒙皮权重 —— 否则真正该摆的那根会被当 tip 排除(见第 1 节)。
@@ -273,7 +275,9 @@ A = 把组件+参数授权进 mod bundle,让游戏 load 时原生建链。**runt
 
 离线验证方法(比进游戏快得多):用真实 blend 模拟导出,量新骨的运行时位置与 bindPose 的偏差。
 dress-2219 上修复前平均 208.2mm / 最大 572.4mm、修复后 0.0mm,且模拟出的修复前数值与实际
-问题包逐位吻合。脚本见 `mod-workspace/mods/work/hmsz-cstm-0059_body_dress-2219-TEST/analysis/scripts/simulate_export_bone_error.py`。
+问题包逐位吻合。做法约 30 行:在 Blender 里对作者网格调 `_source_bone_sidecar_records()` +
+`core.build_source_extra_bones()`,再用 `_target_rest_world(游戏骨架)` 沿 `parentName` 合成
+每根新骨的运行时世界矩阵,与它 bindPose 的逆逐根比距离。改导出侧写入逻辑前先跑它。
 
 ### 9. 工程坑
 

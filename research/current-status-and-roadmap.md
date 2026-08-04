@@ -45,8 +45,8 @@ GakumasMI 已打通 Blender → 游戏侧运行时 → 游戏的换模闭环（�
 
 ## 成品 mod 与它们各自证明了什么（截至 0.9.3）
 
-工作目录在同级仓库 `mod-workspace/mods/`（`work/` 是工程，`release/` 是成品）。
-**除 `-TEST` 那份研究快照外，7 个成品都已实机确认。**
+成品的 blend、贴图源文件和打包产物都是各自作者的本地资产，不入库；这里只记录**它们各自
+验证了插件的哪条路径**。7 个全部实机确认。
 
 | 成品 | 目标资源 | 证明了什么 |
 |---|---|---|
@@ -58,8 +58,7 @@ GakumasMI 已打通 Blender → 游戏侧运行时 → 游戏的换模闭环（�
 | `mltd-stage` | `ttmr-cstm-0119` | **目标 3 段、作者只用 1 段**：空段不出贴图条目（0.9.3 修复） |
 | `hmsz-fuyuko-icu` | `hmsz-cstm-0059` | **源专属新增骨**：bindPose/四元数/链根三项写入约定（0.9.3 修复）；装饰件当前走刚性/跟裙摆 |
 
-`work/hmsz-cstm-0059_body_dress-2219-TEST/` 不是 mod，是「自建摇物链不动」那次排查的完整
-现场（blend + 配置档 + 出问题的包 + 日志 + 6 个分析脚本），保留供接着查，见下方「未解决」。
+`hmsz-fuyuko-icu` 那一栏里没写进去的部分——自建摇物链为什么不动——见下方「未解决」。
 
 ## 逐项验证等级（0.9.0 发布冻结期的 B→A 清单）
 
@@ -155,18 +154,19 @@ ShapeKey/表情、蓝图树批量出 mod、多游戏架构。脸部等其余组�
 
 ## 未解决：自建摇物链的装饰件在游戏里不动（0.9.3 起的头号问题）
 
-**现役管线上，自建摇物链没有任何画面级确认的成功案例。**`atbm-0140` 只有日志
-（`createdBones=288`、`colliders 288/288`），画面从未确认；唯一写着"均正常摆动"的
-rui-nurs→hmsz_0000 是 2026-07-17 的旧原型（IP 源 + chinosk6 bundle 管线，不是现在这套）；
-唯一认真盯过这件事的 dress-2219 结论是不动。
+**自建摇物链没有任何画面级确认的成功案例。**`atbm-0140` 只有日志
+（`createdBones=288`、`colliders 288/288`），画面从未确认；唯一认真盯过这件事的
+dress-2219 结论是不动。早期笔记里那句「实机跑通、均正常摆动」来自一条已退役的原型路线，
+**不能当作本管线的证据**（见 [`lessons-learned.md`](lessons-learned.md)）。
 
 dress-2219 是第一个真正给源专属装饰骨刷权重的 mod。0.9.3 修完四项写入约定后，数据链路
 在日志里完全正常——`matchedBones=156 createdBones=26 swingPrepared=36 droppedInfluences=0`、
 拓扑正确、链尾 `_End` 齐全、`chain groups 6x3 2x4 2x5`、3 条 `ActorSwingChain` 注册成功——
 **但装饰件维持静止姿态一动不动**。
 
-现场（可直接重导复现）：`mod-workspace/mods/work/hmsz-cstm-0059_body_dress-2219-TEST/`，
-含冻结的 blend、配置档、出问题的包与 `bundle-src`、info 级日志、6 个分析脚本。
+**接手前先准备现场**：这个问题必须有一份能重导的快照才好查——冻结那一版的 blend、配套
+配置档（含 `Reference/Geo_Body.skeleton.json`）、出问题的包与它的 `bundle-src`、info 级
+日志。抓帧目录会被清理，配置档要单独留一份。
 
 **下一步该查什么**（按可信度排序）：
 
@@ -178,8 +178,9 @@ dress-2219 是第一个真正给源专属装饰骨刷权重的 mod。0.9.3 修�
 2. **与游戏自己的链共存。**我们 `AddComponent` 新建了 3 个 `ActorSwingChain`，而游戏自己的
    裙摆链也挂在 `Hips` 上。注意 runtime 注释警告过不能把新骨混进游戏已有链——
    `UpdateChainInfo` 会把共享链截断到最短成员长度；"同骨多链"是否也踩这条，要先确认。
-   唯一写着"均正常摆动"的 rui-nurs→hmsz_0000 是 2026-07-17 的旧原型（IP 源 + chinosk6
-   bundle 管线），可以拿来对照当时挂在哪根骨，但**别把它当现役管线的成功背书**。
+   注意 [`ab-route-notes.md`](ab-route-notes.md) §3.4 记的源侧结构是「`ActorSwingChain` 仅一条、
+   挂 `Pelvis`（学马叫 `Hips`）」——**所以"挂 Hips"本身不是本例独有的新变量**，这条假设的
+   优先级要往下压，除非能证明"同一根骨上多条 chain"才是差异所在。
 3. **参数是否真到位。**0.9.3 才补上 `rootWeight=0.3 / pendulum=0.001`；确认包里这两项确实写入
    （`bundle-src` 的 `*_bones.json.txt` 可直接查），别把"改过代码"当成"数据到位"。
 4. **碰撞体（附带缺口）。**自建摇物骨没有 `collider`，`SetDefaultValues` 留下半径 0.05 的空

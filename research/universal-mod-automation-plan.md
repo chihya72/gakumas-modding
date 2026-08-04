@@ -228,7 +228,7 @@ mod 顶点组 ──分类──┤                                             
 | **atbm-0140-chisaki** | **MMD 外部源**(45 材质) | ✅ createdBones=288、多层 ChainInfo、物理 |
 | fuyuko-super (dress_2219) | SCSP 镜像源 | ✅ RC1 已完整通过：**原始 `dress_2219` 手指动就炸已确认是 prep 坏绑定**；重新导出后 fuyuko 加载、graft、手部和装饰物理均完成实机确认。→ 它证明"手指失败不是 AB 架构问题"，不能把旧 prep 失败算作当前 AB 缺陷 |
 
-**关键**:`atbm-0140` 证明**外部源(MMD)→ AB 能成**,前提是 prep 按 `ai-model-workspace/external-model-conversion-workflow.md` 做到位。
+**关键**:`atbm-0140` 证明**外部源(MMD)→ AB 能成**,前提是 prep 按 [`../docs/wiki/10-外部模型转换实战规范.md`](../docs/wiki/10-外部模型转换实战规范.md) 做到位。
 
 ### 能力边界:AB 比 3Dmigoto 严格
 | | 蒙皮 | 对 prep 的容错 |
@@ -284,7 +284,7 @@ fuyuko 的失败性质不是"某步没自动",而是**坏数据静默通过导�
 **落地顺序**:
 - ✅ **①已完成(2026-07-25)**:姿势模拟已通用化并接进导出侧。[`tools/simulate_ab_skinning.py`](../tools/simulate_ab_skinning.py) 现在从场景自动发现 mesh/参考体/游戏骨架(`gmi_weighted_reference` 或 `GMI_*参考*`),给三态判决 **OK / FAIL(超基线 `FAIL_RATIO`=1.5x)/ UNKNOWN(没有可测顶点——绝不当通过)**;`operators._bind_sanity_report` 在 bundle 导出时跑它,结果进导出报告 `bind_sanity` 并 `report({'WARNING'})`(坏绑定导出侧补不了,所以只警告 + 指回 prep,不静默)。脚本已 vendor 进插件包。
   **验证(带标签样本)**:dress_2219 work(实机炸手指)→ **FAIL fingers 1.85x**;madoka(实机能跑)→ **OK 0.98x**;chisaki 不传 remap → **UNKNOWN**(修掉了"没测到=通过"这个危险失效模式)。
-- ❌ **②(自动对齐模块)已放弃(2026-07-25)**。原计划把三份重复对齐脚本收成插件里的自动对齐。放弃理由:①对齐本质是**建模判断**(怎么变形同时保住形状),实测两次自动化尝试都产出废品——逐顶点乘 `gameRest·sourceRest⁻¹` 把手指绕自身轴扭烂、pose 摆骨在绑定不健康时把网格越带越偏;②作者手工做(整体平移+沿指向缩放+比例编辑)结果明显更好,而且本来就是他熟悉的操作;③**有了①的闸门,手工对齐足够安全**——对没对齐有数可查(手指肉偏差 vs 参考体、p99 vs 基线),不会再出现"改到第 8 版才发现绑定早坏了"。**结论:不要为人做得更好的事写自动化,只要留一把尺子。** 对齐规范与手法留在 `ai-model-workspace/external-model-conversion-workflow.md` §2。
+- ❌ **②(自动对齐模块)已放弃(2026-07-25)**。原计划把三份重复对齐脚本收成插件里的自动对齐。放弃理由:①对齐本质是**建模判断**(怎么变形同时保住形状),实测两次自动化尝试都产出废品——逐顶点乘 `gameRest·sourceRest⁻¹` 把手指绕自身轴扭烂、pose 摆骨在绑定不健康时把网格越带越偏;②作者手工做(整体平移+沿指向缩放+比例编辑)结果明显更好,而且本来就是他熟悉的操作;③**有了①的闸门,手工对齐足够安全**——对没对齐有数可查(手指肉偏差 vs 参考体、p99 vs 基线),不会再出现"改到第 8 版才发现绑定早坏了"。**结论:不要为人做得更好的事写自动化,只要留一把尺子。** 对齐规范与手法见 [`../docs/wiki/10-外部模型转换实战规范.md`](../docs/wiki/10-外部模型转换实战规范.md) §2。
 - ③语义输入的交互 UI(装饰件归属表单)。**优先级提高**:实测按名字猜语义不可靠——`lace` 既可能是裙摆镶边、也可能是靴口花边(fuyuko 的 `Lace_R` 在靴口 z=181~228mm),猜错就整件乱抽。所以 `follow_skirt` 这类语义规则应降级为**候选建议**,由作者在表单里确认,而不是当默认。
 
 ## 7. 前置基础设施 & 问题状态
@@ -371,7 +371,7 @@ geojson/bundle 侧:
 - 插件运行日志：游戏目录下 `gakumas-mod/mod-plugin.log`
 - **崩溃二分已完成、结论见「进度」段(不内嵌合成对象)**，该任务作废，别再重做。
 - 离线量化闸门：`blender --background <blend> --python tools/simulate_ab_skinning.py -- <remap.json>`（pose 游戏骨架弯手指，量手指区 edge-stretch，参考体为已知正确基线）。**改法先离线量再让作者导出。**⚠该指标相对 rest，若 rest 本身被改坏它会假性变好，必须同时看几何/目视。
-- prep 侧闸门与教训见 `ai-model-workspace/external-model-conversion-workflow.md` §0-3b / §2-6 / §5（⭐v3 条目）。
+- prep 侧闸门与教训见 [`../docs/wiki/10-外部模型转换实战规范.md`](../docs/wiki/10-外部模型转换实战规范.md) §0-3b / §2-6 / §5（⭐v3 条目）。
 - CI 里还会跑 5 个纯 core 脚本（`tests/material_bake_smoke.py` 等，见 `.github/workflows/ci.yml`）。
   移除 3DMigoto 后 `mod_ini_contract.py` / `weight_transfer_smart.py` 两组已删。
 - 模板工具：新目标模板 `tools/repair_template_bone_names.py --mode index`，已导出成品用 `--mode hash`。插件包用 `dist/` 下最新 `gakumas_mi-0.9.3-code-*.zip`。
