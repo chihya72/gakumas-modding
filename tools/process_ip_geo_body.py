@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""rui-nurs Geo_Body.json 处理器(纯 Python,不进 Blender)。
+"""偶像荣耀(IP)源的 Geo_Body.json 处理器(纯 Python,不进 Blender)。
 
 两件事,顶点/法线/切线/UV/权重一律不动:
   1. 保留源权重:无损 AB 路线由插件在运行时嫁接 IP 专属骨,这里不能再 reparent。
@@ -8,18 +8,19 @@
      R.hi/R.lo/G.hi + 宽度 B.lo=15,保留源 ramp/rim 字段 G.lo/B.hi/A。
      方法标识 TEMPLATE_OUTLINE_RGB_WIDTH15_PRESERVE_GLOW_BHIGH_A(同 miku fktn-0119)。
 
-用法:python process_geo_body.py   (路径写死本项目)
+用法:
+  python tools/process_ip_geo_body.py --mesh <源 Geo_Body.json> --bones <骨 sidecar.json>       --textures <源贴图目录> --texture-prefix t_chr_<角色>-<服装> --output-dir <落点>
+
+贴图按前缀拼名:<prefix>_bdy_col/_bdy_def/_bdyco_col_alp/_bdyco_def.png。
 """
 from pathlib import Path
+import argparse
 import json
 import numpy as np
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "source"
-BUILD = ROOT / "build"
-PRESETS = ROOT.parents[2] / "gakumas-modding" / "gakumas_mi" / "material_presets.json"
-TEX = SRC / "textures"
+PRESETS = ROOT / "gakumas_mi" / "material_presets.json"
 
 TEMPLATE_CLASSES = ("skin", "cloth", "leather_shoe", "leather_plastic", "metal")
 # 源像素 5 分类 → 描边类(见 fktn-0119 03 脚本:matte=leather_shoe, glossy=leather_plastic)
@@ -54,8 +55,21 @@ def classify_pixel(base_rgb, def_g):
 
 
 def main():
-    mesh = json.loads((SRC / "rui_Geo_Body.json").read_text(encoding="utf-8"))
-    bones = json.loads((BUILD / "rui_bones.json").read_text(encoding="utf-8"))["bones"]
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--mesh", type=Path, required=True, help="源 Geo_Body.json")
+    parser.add_argument("--bones", type=Path, required=True,
+                        help="export_ip_swing_bones.py 产出的骨 sidecar JSON")
+    parser.add_argument("--textures", type=Path, required=True, help="源贴图目录")
+    parser.add_argument("--texture-prefix", required=True,
+                        help="贴图名前缀，如 t_chr_rui-nurs-00")
+    parser.add_argument("--output-dir", type=Path, required=True, help="处理结果落点")
+    args = parser.parse_args()
+    TEX, BUILD, prefix = args.textures, args.output_dir, args.texture_prefix
+    BUILD.mkdir(parents=True, exist_ok=True)
+
+    mesh = json.loads(args.mesh.read_text(encoding="utf-8"))
+    bones = json.loads(args.bones.read_text(encoding="utf-8"))["bones"]
     presets = json.loads(PRESETS.read_text(encoding="utf-8"))["presets"]
     V = mesh["m_VertexCount"]
 
@@ -66,10 +80,10 @@ def main():
         assert all(0 <= bi < len(bones) for bi in s["boneIndex"]), "骨索引越界"
 
     # ---- 2. COLOR 描边 ----
-    base = load_rgba(TEX / "t_chr_rui-nurs-00_bdy_col.png")
-    defm = load_rgba(TEX / "t_chr_rui-nurs-00_bdy_def.png")
-    co_base = load_rgba(TEX / "t_chr_rui-nurs-00_bdyco_col_alp.png")
-    co_def = load_rgba(TEX / "t_chr_rui-nurs-00_bdyco_def.png")
+    base = load_rgba(TEX / f"{prefix}_bdy_col.png")
+    defm = load_rgba(TEX / f"{prefix}_bdy_def.png")
+    co_base = load_rgba(TEX / f"{prefix}_bdyco_col_alp.png")
+    co_def = load_rgba(TEX / f"{prefix}_bdyco_def.png")
     # 每顶点材质:submesh0(m_bdy)=firstVertex 0..，submesh1(m_bdyco)=后段
     sm = mesh["m_SubMeshes"]
     co_first = sm[1]["firstVertex"] if len(sm) > 1 else V
@@ -104,7 +118,7 @@ def main():
 
     mesh["m_Skin"] = skin
     mesh["m_Colors"] = colors
-    out = BUILD / "rui_Geo_Body.processed.json"
+    out = BUILD / "Geo_Body.processed.json"
     out.write_text(json.dumps(mesh, ensure_ascii=False), encoding="utf-8")
 
     report = {

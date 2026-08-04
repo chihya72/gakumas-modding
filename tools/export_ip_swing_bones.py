@@ -1,15 +1,18 @@
 # -*- coding: utf-8 -*-
-"""从 rui body bundle 导出带层级/TRS 的加权骨 sidecar。"""
+"""从偶像荣耀(IP)的 body bundle 导出带层级/TRS/摆动参数的骨 sidecar。
+
+用法（三个路径都要按你这次的源改）：
+  python tools/export_ip_swing_bones.py --bundle <mdl_chr_<角色>_body.unity3d>       --target-skeleton <目标学马 body 的 *.skeleton.json> --output <骨 sidecar 落点>
+"""
 from pathlib import Path
+import argparse
 import json
 
 import UnityPy
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BUNDLE = ROOT.parent / "source" / "mdl_chr_rui-nurs-00_body" / "bundles" / "mdl_chr_rui-nurs-00_body.unity3d"
-TARGET_SKELETON = ROOT / "source" / "hmsz0000_skeleton.json"
-OUT = ROOT / "build" / "rui_bones.json"
+IP_UNITY_VERSION = "2022.3.57f1"
 
 
 # An ActorSwingDynamicBone serialises exactly these params; the runtime's other
@@ -88,7 +91,18 @@ def extra_swing_bones(env, swing_by_go, bone_names):
 
 
 def main():
-    UnityPy.config.FALLBACK_UNITY_VERSION = "2022.3.57f1"
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--bundle", type=Path, required=True, help="IP 源 body 的 .unity3d")
+    parser.add_argument("--target-skeleton", type=Path, required=True,
+                        help="目标学马 body 的 <mesh>.skeleton.json，用来标记哪些骨同名可直接接上")
+    parser.add_argument("--output", type=Path, required=True, help="骨 sidecar JSON 落点")
+    parser.add_argument("--unity-version", default=IP_UNITY_VERSION,
+                        help=f"源 bundle 的 Unity 版本，默认 {IP_UNITY_VERSION}")
+    args = parser.parse_args()
+    BUNDLE, TARGET_SKELETON, OUT = args.bundle, args.target_skeleton, args.output
+
+    UnityPy.config.FALLBACK_UNITY_VERSION = args.unity_version
     env = UnityPy.load(str(BUNDLE))
     target = json.loads(TARGET_SKELETON.read_text(encoding="utf-8"))
     target_names = {node["name"] for node in target["nodes"]}
