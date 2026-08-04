@@ -209,8 +209,16 @@ tip                不在任何 layer 里        ← 只定义末节朝向
 
 ### 5. 已知缺口
 
+- ⚠️ **2026-08-04 起有一个未解的实机问题:插件自建的摇物链装饰件在游戏里完全不动。**
+  数据链路在日志里全对(`createdBones=26 swingPrepared=36`、链尾齐全、3 条链注册成功),
+  画面上就是不摆。排查现场与下一步见
+  [`current-status-and-roadmap.md`](current-status-and-roadmap.md) 的「未解决:自建摇物链」。
+  **注意别把 `layer[N].active=0` 当病因**——第 3 节早就写明它是每帧 LOD 标志、刚建完读必然是 0。
 - **`limitInfo`(每骨限位)当前不导出**。源里对末端 `*_End` 会把限位放开到 [-180,180]。目前实机
   表现正常,但如果将来出现摆动越界/穿模,这是第一个该补的地方。
+- **碰撞体不导出**。`SetDefaultValues` 留下半径 0.05 的空碰撞体,手臂会穿过装饰件。游戏本体
+  AB 里有 111 个 `ActorSwingDynamicBone`(248 字节/个)可读,取值分布已统计,字段↔偏移的对应
+  未逆向完。
 - **`radius`/`smoothing` 是 per-layer 授权的**(base layer[0]=0.05 vs layer[1]=0.005),现由
   `UpdateChainInfo` 自行计算,我们不干预。若手感不对再查这里。
 
@@ -247,7 +255,27 @@ A = 把组件+参数授权进 mod bundle,让游戏 load 时原生建链。**runt
   `swingDynamicBones/swingChains` 会破坏长度关系。要走 A 必须找到该表构建前的实例化入口。
   **既然 runtime 路线已通,这条别碰。**
 
-### 8. 工程坑
+### 8. 导出侧的四个写入约定(2026-08-04 实证,别再写反)
+
+新增骨的 TRS/bindPose 由插件自己写,**不经过 Mesh JSON**——游戏原始骨怎么写都不受影响,所以
+这四条错了只有新增骨中招,且必须有 mod 真给这些骨刷权重才看得出来(权重为 0 时错误数据挂在
+没人引用的骨上,静默潜伏)。dress-2219 一次性暴露全部四条:
+
+| # | 约定 | 写错的表现 |
+|---|---|---|
+| 1 | bindPose 按 AssetStudio 的 `M<列><行>` 写,平移落 `M30..M32` | 写成转置 → 顶点被拉开约 1 米,装饰件炸成贯穿角色的黑刺 |
+| 2 | `localRotation` 是 Unity 的 `(x,y,z,w)`;mathutils 迭代出来是 `(w,x,y,z)` | 直接 `list()` → w 跑到首位,朝向整个错掉 |
+| 3 | 链**根**的 local 必须按**游戏骨架**父骨的静止姿势重算(`inverse(游戏父骨世界) × 作者骨世界`);链内部不动 | 沿用作者骨架的相对变换 → 骨被放到别处而 bindPose 记的是作者世界位置,装饰件坍缩成一片(两套骨架实测差 Hips 38mm / Spine 83mm / Spine2 67mm) |
+| 4 | swing 必须带 `rootWeight`(0.3)和 `pendulum`(0.001) | 缺了 → `SetDefaultValues` 给 1.0/0 = 完全刚性 + 无重力,锁死在静止姿态翘着不下垂 |
+
+> 第 4 条与本节第 2.2 小节「`m_Weight` 不是 `rootWeight`,别导别写」不矛盾:**不要从源模型导**
+> 这两个值(源里没有),但**要写我方默认值**,否则运行时按刚性处理。
+
+离线验证方法(比进游戏快得多):用真实 blend 模拟导出,量新骨的运行时位置与 bindPose 的偏差。
+dress-2219 上修复前平均 208.2mm / 最大 572.4mm、修复后 0.0mm,且模拟出的修复前数值与实际
+问题包逐位吻合。脚本见 `mod-workspace/mods/work/hmsz-cstm-0059_body_dress-2219-TEST/analysis/scripts/simulate_export_bone_error.py`。
+
+### 9. 工程坑
 
 - **`UnityResolve::Class::SetValue` 是坏的**:声明 `-> void` 却 `return expr;`,**只在实例化时**
   才编译报错。写字段用 field offset 直写。
@@ -374,6 +402,11 @@ A = 把组件+参数授权进 mod bundle,让游戏 load 时原生建链。**runt
 - 若目标服装没有 `m_bdyco`，该材质必须改回 `OPAQUE`，或更换/重建 profile。
 - 只要有材质槽设为 `NATIVE_CO`，就必须提供单独的 `m_bdyco` t0；缺失时应停止导出，
   不能回退到 `m_bdy` 的基础色 t0。
+- **「目标资源有几段」不等于「要提供几套贴图」。** 原版 body 的段数是 1、2 或 3
+  （530 套 dump：186 / 326 / 18；3 段的是 `cstm-0119` 全系列与 `hski-0070/0071/0074`、
+  `kcna-0131/0132`、`fktn-0071`，多出来的段是腰环、胸前小件这类零碎）。贴图只按**作者网格
+  真正用到的段**出，空段保留原版材质——它在 mod mesh 里是 0 面片，不可见。0.9.3 之前按目标
+  段数逐段要图，没做 co 的工程会被空着的段 1 拽去要 co 的 t0，报「材质槽 1 缺少 t0」。
 - `m_bdyco` 当前按 cutout 使用最可靠；不要把中间 alpha 视作可连续混合的半透明。
 
 最终原则：

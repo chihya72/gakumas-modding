@@ -153,6 +153,11 @@ mod 顶点组 ──分类──┤                                             
 - **当前完成范围**:sidecar/runtime 已通；P5 已补齐 bundle skeleton/bindpose/`m_Skin` 索引闭环。
 - **已验证**:插件 Release x64 编译、sidecar 解析契约、离线导出回归。
 - **实机验收证据**：`atbm-0140` 日志为 `matchedBones=56 createdBones=288 bones=344 boneWeights=170292 droppedInfluences=0 fallbackVertices=0`、`meshApplied=1`，并建出 5 组 `ChainInfo`（7/8/9/10/11 层）；`ActorSwing colliders applied: 288/288`。`active=0` 是刚建链/LOD 阶段的正常状态，不判失败；持续自摆仍需人工观察。
+- ⚠️ **2026-08-04 更新：画面级观察的结果是「不摆」。** dress-2219（`hmsz-cstm-0059`）修完
+  0.9.3 的四项 sidecar 写入约定后，日志同样全绿（`createdBones=26 swingPrepared=36`、链尾齐全、
+  3 条链注册），装饰件在游戏里维持静止姿态。**所以 P4 的实机验收目前只到"链建出来了"，
+  不到"它会摆"**；成品用刚性/跟裙摆绕开。排查现场与下一步见
+  [`current-status-and-roadmap.md`](current-status-and-roadmap.md) 的「未解决：自建摇物链」。
 
 ### P5. 权重导出(换标签,不刷)
 - 现有路径:`_inverse_skin_export_data(source_rig_weights=True)` 原样读顶点组 + 按对照表映射骨索引。
@@ -243,13 +248,14 @@ mod 顶点组 ──分类──┤                                             
 2. **AB 不容错 → prep 是硬门槛**(见上)。
 3. **装饰物理需逐件调**:三层分类 + override 已落地,复杂服装仍要看画面。
 4. Unity 版本锁 `6000.0.67f1`(bundle 头写死)。
-5. 新骨物理"持续自摆"仅日志通过,画面级仍需目视。
+5. **新骨物理画面级已证伪一次**:dress-2219 上链建出来了、日志全绿,装饰件不摆(2026-08-04)。
+   在查清之前,自建摇物链不是可交付能力,装饰件走刚性/跟裙摆。
 
 ### 已付的一次性成本(不再是风险)
 模板库备齐(**1817 个文件 / ~908 body 模板,全 R32**,作者只选不建)、免 Unity 的 UnityPy 补丁链、一键导出入插件、崩溃类已根治(不内嵌合成对象,改运行时建骨)。
 
 ### 结论
-**路线成立;对「同骨架 + 规范 prep 的外部源」已是生产可用状态。** 换来原生蒙皮/描边/透明/物理(含新骨摆动)、免逆蒙皮算子、免 Unity。代价是**把容错从运行时挪到了 prep**。要成为可推广产品,优先级:①解决插件分发 ②prep 工具化并加代码闸门 ③装饰物理 override UI。
+**路线成立;对「同骨架 + 规范 prep 的外部源」已是生产可用状态。** 换来原生蒙皮/描边/透明/物理(蹭游戏已有摆动骨;**新骨自建摆动当前不生效**)、免逆蒙皮算子、免 Unity。代价是**把容错从运行时挪到了 prep**。要成为可推广产品,优先级:①解决插件分发 ②prep 工具化并加代码闸门 ③装饰物理 override UI。
 
 ## 6.8 prep 能否自动执行(2026-07-25 判断)
 
@@ -368,7 +374,7 @@ geojson/bundle 侧:
 - prep 侧闸门与教训见 `ai-model-workspace/external-model-conversion-workflow.md` §0-3b / §2-6 / §5（⭐v3 条目）。
 - CI 里还会跑 5 个纯 core 脚本（`tests/material_bake_smoke.py` 等，见 `.github/workflows/ci.yml`）。
   移除 3DMigoto 后 `mod_ini_contract.py` / `weight_transfer_smart.py` 两组已删。
-- 模板工具：新目标模板 `tools/repair_template_bone_names.py --mode index`，已导出成品用 `--mode hash`。插件包用 `dist/` 下最新 `gakumas_mi-0.9.0-code-*.zip`。
+- 模板工具：新目标模板 `tools/repair_template_bone_names.py --mode index`，已导出成品用 `--mode hash`。插件包用 `dist/` 下最新 `gakumas_mi-0.9.3-code-*.zip`。
 - ⚠**装完新插件必须彻底重启 Blender**（内存里的旧模块不会自动重载；另注意 `gmi_bone_remap_file` 的显式映射优先于自动分类）。
 
 主仓库基础 checkpoint 已提交并推送；当前冻结期改动与插件 runtime 改动会在本轮单独提交，接手时不要

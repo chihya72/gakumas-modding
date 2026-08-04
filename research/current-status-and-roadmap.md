@@ -1,6 +1,6 @@
 # GakumasMI 当前状态与路线
 
-更新：2026-08-03 · Blender 插件：**0.9.0**（`main`，已打 tag `v0.9.0`）
+更新：2026-08-05 · Blender 插件：**0.9.3**（`main`，已打 tag `v0.9.3`）
 
 本文只记录当前事实和未完成事项。逐版本变化见 [`../CHANGELOG.md`](../CHANGELOG.md)，
 使用方法见 [`../gakumas_mi/README.md`](../gakumas_mi/README.md)。
@@ -14,7 +14,7 @@
 >
 > **发布冻结期的 RC 闭环已经把这批改动带过实机。** 三步面板从 RC ZIP 全新安装走通，
 > 骨骼映射表单、承重关节闸门、装饰骨策略列、校色后的 t0 和新骨链都有真实 Blender 或游戏
-> 证据，并产出三个进游戏的成品 mod（`atbm-cstm-0140` / `fktn-othr-0002` / `ttmr-cstm-0111`）。
+> 证据。到 0.9.3 累计 **7 个进游戏的成品 mod**（见下方「成品 mod 与它们各自证明了什么」）。
 > **仍然是 C 级的**：VRM/VRoid、3ds Max Biped、Auto-Rig Pro、英文 Humanoid 四张预设表纯按
 > 公开命名规范写成，连对应模型都没拿到过——表里名字若拼错，表现是那几行不预填、要手动选
 > （有闸门兜着不会静默出废品），但不能宣称「支持」。逐项见下方「逐项验证等级」。
@@ -43,6 +43,24 @@ GakumasMI 已打通 Blender → 游戏侧运行时 → 游戏的换模闭环（�
 - `profiles/hmsz-hair-0023-hair`：hair；
 - `profiles/ttmr-cstm-0111`：单材质段、无 co 的 body。
 
+## 成品 mod 与它们各自证明了什么（截至 0.9.3）
+
+工作目录在同级仓库 `mod-workspace/mods/`（`work/` 是工程，`release/` 是成品）。
+**除 `-TEST` 那份研究快照外，7 个成品都已实机确认。**
+
+| 成品 | 目标资源 | 证明了什么 |
+|---|---|---|
+| `chisaki-swimsuit` | `atbm-cstm-0140` | 带原生 `bdyco` 的 body、肤色对齐原版 |
+| `daikokushu-rabbit-fktn` | `fktn-othr-0002` | MMD 源 + 全骨架 A→T retarget + 骨名重映射 |
+| `madoka-swimsuit` | `ttmr-cstm-0111` | 单段无 co 的 body（SCSP 源） |
+| `ttmr-hair-madoka-swimsuit` | `ttmr-hair-0002` | hair + hairprop 合并成一个包（两个 renderer） |
+| `miku-fktn` | `fktn-cstm-0119` | **作者自备 co 部件**：段 1 走独立的 co t0/t1/t4 |
+| `mltd-stage` | `ttmr-cstm-0119` | **目标 3 段、作者只用 1 段**：空段不出贴图条目（0.9.3 修复） |
+| `hmsz-fuyuko-icu` | `hmsz-cstm-0059` | **源专属新增骨**：bindPose/四元数/链根三项写入约定（0.9.3 修复）；装饰件当前走刚性/跟裙摆 |
+
+`work/hmsz-cstm-0059_body_dress-2219-TEST/` 不是 mod，是「自建摇物链不动」那次排查的完整
+现场（blend + 配置档 + 出问题的包 + 日志 + 6 个分析脚本），保留供接着查，见下方「未解决」。
+
 ## 逐项验证等级（0.9.0 发布冻结期的 B→A 清单）
 
 0.9.0 冻结时逐项记录的验证等级。**A 级必须有真实 Blender 或游戏证据，离线测试不能替代。**
@@ -67,7 +85,13 @@ GakumasMI 已打通 Blender → 游戏侧运行时 → 游戏的换模闭环（�
 
 - 游戏角色网格使用 CPU 蒙皮；静态结构来自 Mesh JSON。
 - ~~逆解与重蒙皮链已实机验证~~（随 3DMigoto 路线移除；不再探索进程注入、手/颈拆件等替代路线）。
-- AB 路线的骨架永远是游戏原版那套：不新建骨、不改 bindpose，实测同名骨 bindpose 逐元素偏差 0。
+- AB 路线的骨架以游戏原版那套为准：同名骨不改 bindpose，实测逐元素偏差 0。**源专属装饰骨
+  是例外**——它们由运行时按 sidecar 现场新建，因此 sidecar 的写入约定必须精确（bindPose 列序、
+  四元数 xyzw、链根按游戏骨架静止姿势重算），三条都在 0.9.3 修过，见
+  [`ab-route-notes.md`](ab-route-notes.md) §3.8。
+- **原版 body 的材质段数是 1、2 或 3**（530 套 dump：186/326/18）。3 段的是 `cstm-0119` 全系列
+  与 `hski-0070/0071/0074`、`kcna-0131/0132`、`fktn-0071`，多出来的是腰环、胸前小件这类零碎。
+  导出只给作者网格用到的段出贴图，空段保留原版材质（0 面片、不可见）。
 - 骨映射的覆盖率是**数据问题不是算法问题**——支持一种新命名规范＝加一张预设表；认不出来的
   由作者在表单里点选。因此不再靠嗅探"这是哪种模型"。
 - 装饰骨的物理归属**命名和位置都决定不了**（源作者常把腰饰绑在胸骨、把裙边花边绑在大腿），
@@ -117,7 +141,8 @@ ShapeKey/表情、蓝图树批量出 mod、多游戏架构。脸部等其余组�
 
 | 优先级 | 事项 | 完成条件 |
 |---|---|---|
-| P0 | 回归与发布维护 | 30 项 pytest + 4 个纯 Python 冒烟脚本 + Blender 4.2/4.5 四段闭环持续通过（移除 3DMigoto 后 mod.ini/传权两组测试已删） |
+| P0 | **自建摇物链的装饰件不动**（0.9.3 未解） | 见下方「未解决：自建摇物链」；成品当前用刚性/跟裙摆绕开 |
+| P0 | 回归与发布维护 | 35 项 pytest + 纯 Python 冒烟脚本 + Blender 4.2/4.5 四段闭环持续通过（移除 3DMigoto 后 mod.ini/传权两组测试已删） |
 | P0 | 装饰骨默认策略翻转 | 位置匹配退出默认路径、改为跟源父骨 + `胸`→`Bust*_S` 名字规则；属行为变更，需确认后再做 |
 | P1 | hair 高保真材质 | t6 HHL 与 t1.A mask 成对导出；无 t6 时继续安全归零 A |
 | P2 | HairProp section 语义 | 显式保留 hair-like / `hirco` cutout 的 t0.A、材质段与 outline pass |
@@ -127,6 +152,38 @@ ShapeKey/表情、蓝图树批量出 mod、多游戏架构。脸部等其余组�
 排序依据：测试闭环已修完，当前最大可见质量缺口是 hair t6 HHL；HairProp 分段若不先明确，
 继续堆通用透明/材质抽象会把 cutout 与普通 hair 段混在一起。ShapeKey、蓝图树和多游戏支持
 仍不是下一步，它们不会改善当前学马 hair 的正确性。
+
+## 未解决：自建摇物链的装饰件在游戏里不动（0.9.3 起的头号问题）
+
+dress-2219 是第一个真正给源专属装饰骨刷权重的 mod。0.9.3 修完四项写入约定后，数据链路
+在日志里完全正常——`matchedBones=156 createdBones=26 swingPrepared=36 droppedInfluences=0`、
+拓扑正确、链尾 `_End` 齐全、`chain groups 6x3 2x4 2x5`、3 条 `ActorSwingChain` 注册成功——
+**但装饰件维持静止姿态一动不动**。
+
+现场（可直接重导复现）：`mod-workspace/mods/work/hmsz-cstm-0059_body_dress-2219-TEST/`，
+含冻结的 blend、配置档、出问题的包与 `bundle-src`、info 级日志、6 个分析脚本。
+
+**下一步该查什么**（按可信度排序）：
+
+1. **先换判据。**排查当时把 `ActorSwing layer[N].active=0` 当成病因，但
+   [`ab-route-notes.md`](ab-route-notes.md) §3.3 早就写明：`active` 是每帧更新的 LOD/剔除标志，
+   在 `UpdateChainInfo` 刚返回时读**必然**是 0，跑起来才置 1；且 `layer[0]`（锚定层）设计上
+   永远是 0。**所以现有日志证明不了"没激活"。**要么把打印点挪到稳定运行若干帧之后，要么同时
+   打印游戏自己那条裙摆链的 `active` 作对照（`ModRuntime.cpp` 约 834-848 行的 lambda）。
+2. **与游戏自己的链共存。**我们 `AddComponent` 新建了 3 个 `ActorSwingChain`，而游戏自己的
+   裙摆链也挂在 `Hips` 上。rui-nurs（唯一跑通过的新骨物理案例）当时是什么情形要先核对：
+   若它没有和游戏原有链挂同一根骨，那"同骨多链"就是本例独有的新变量。注意 runtime 注释
+   警告过不能把新骨混进游戏已有链——`UpdateChainInfo` 会把共享链截断到最短成员长度。
+3. **参数是否真到位。**0.9.3 才补上 `rootWeight=0.3 / pendulum=0.001`；确认包里这两项确实写入
+   （`bundle-src` 的 `*_bones.json.txt` 可直接查），别把"改过代码"当成"数据到位"。
+4. **碰撞体（附带缺口）。**自建摇物骨没有 `collider`，`SetDefaultValues` 留下半径 0.05 的空
+   碰撞体，手臂会穿过去。游戏本体 AB 里有 111 个 `ActorSwingDynamicBone`（248 字节/个）可读，
+   已按偏移统计过取值分布（偏移 112 的 `0.3` 与实测 `rootWeight=0.3` 对得上），
+   **但字段与偏移的对应还没逆向完，TEST 目录里那张分布表不要照抄**。
+
+**期间的可用做法**（成品在用）：装饰骨走「刚性跟父骨」，裙子走「跟裙摆」蹭游戏自带的 32 根
+裙摆骨——后者继承原版摆动与碰撞体，是确定有效的改进。策略键是**前缀最长匹配**，骨名
+`Spine_Bow_L_A0` 写 `"Bow"` 匹配不上。
 
 ## 暂不开展
 

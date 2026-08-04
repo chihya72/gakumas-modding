@@ -25,6 +25,114 @@
 > 英文 Humanoid 四张预设表。表里名字若拼错，表现是那几行不预填、要手动选（有闸门兜着不会
 > 静默出废品），但不能宣称"支持"。
 
+## 0.9.3 — 卡住实际制作的五个修复
+
+> 这一版的每条都来自真实作者会话：dress-2219（`hmsz-cstm-0059`）和 mltd-stage
+> （`ttmr-cstm-0119`）。7 个成品 mod（6 body + 1 hair）在本版下全部实机确认；
+> 仍未解决的是**自建摇物链的装饰件在游戏里不动**，现场快照见
+> `mod-workspace/mods/work/hmsz-cstm-0059_body_dress-2219-TEST/`。
+
+### 新增骨的四个约定错误（装饰件先炸成黑刺、再坍缩、最后锁死不摆）
+
+源专属装饰骨（SCSP 的蝴蝶结、缎带等）由运行时按 sidecar 现场新建。这条路 0.9.0 起就在，
+但此前没有任何一个 mod 真正用过——之前的做法是把装饰件刚性绑到身体骨上，那 26 根骨权重为 0，
+错误数据挂在没人引用的骨上，自然看不出来。dress-2219 是第一个真正给它们刷权重的 mod，
+四个约定错误一次性全暴露：
+
+**① bindPose 写反了（转置）**
+
+`_matrix_json()` 按 `M<行><列>` 写，而 `_bind_pose_matrix()` 和 `patch_unity_bundle` 都按
+AssetStudio 约定的 `M<列><行>` 读（平移在 M30..M32）——**写入端是转置的**。
+
+游戏原始骨的 bindPose 直接来自 Mesh JSON，不经这个函数，所以身体一切正常；只有**插件自己
+新增的源专属骨**中招。dress-2219 实测：26 根装饰骨（胸口/背后蝴蝶结、缎带）的绑定姿势全错，
+顶点被拉离约 1 米，画面上是一堆贯穿角色的长条黑刺。走刚性映射到身体骨的装饰件（如鞋花
+映射到 LeftFoot）不受影响。
+
+**② localRotation 的分量顺序反了**
+
+Unity 的 `Quaternion` 序列化顺序是 `(x,y,z,w)`，运行时按 `Quaternion(v[0],v[1],v[2],v[3])` 读；
+导出端写的是 `list(matrix.to_quaternion())`，而 mathutils 迭代出来是 `(w,x,y,z)`。实测
+`Spine_Bow_R_B0` 在 blend 里 w=0.3392/x=-0.184，包里写的正是 `[0.3392, -0.184, ...]`。
+新增 `_quaternion_xyzw()`。
+
+**③ 新骨链的根用了作者骨架的相对变换**
+
+运行时把新骨挂在**游戏骨架**的父骨下，但导出写的 local 是相对**作者骨架**父骨的。两套骨架的
+静止姿势并不相同——dress-2219 实测 Hips 差 38mm、Spine 差 83mm、Spine2 差 67mm——于是骨被
+放到别处，而 bindPose 记的是作者世界位置，两边对不上就把装饰件拉变形（蝴蝶结坍缩成一片）。
+
+新增 `_retarget_new_bone_roots()`：链根按 `inverse(游戏父骨静止世界矩阵) × 作者骨世界矩阵`
+重算 local；链内部（父也是新骨）不动，那一段父子都按作者世界摆放，相对关系本来就自洽。
+
+**效果**：用真实 blend 模拟导出，26 根装饰骨的运行时位置与 bindPose 的偏差从
+**平均 208.2mm / 最大 572.4mm 降到 0.0mm**（模拟出的修复前数值与实际出问题的包逐位吻合）。
+
+`tests/blender_smoke.py` 加了三条断言：bindPose 写入→读取往返、四元数 w 在末位、
+链根重算后世界位置回到作者摆放处。
+
+**④ 新骨的 swing 缺 `rootWeight` / `pendulum`**
+
+这两项不给，运行时 `SetDefaultValues` 会留下 `1.0` / `0`——即「完全刚性跟随根骨 + 没有重力项」，
+装饰件被锁死在作者摆的静止姿态上翘着不下垂。默认值改为游戏自己裙摆骨的实测值 `0.3` / `0.001`
+（runtime 的 `LocalIpBoneSwing` 注释）。源模型自带 swing 参数时仍用源的，只补这两项
+（`build_source_extra_bones()` 由整体替换改成 `{**默认, **源}` 合并）。
+
+> ⚠️ 装上这四项修复后 dress-2219 重导，日志显示数据链路完全正常
+> （`createdBones=26 swingPrepared=36 droppedInfluences=0`、链尾齐全、3 条链注册成功），
+> **但装饰件在游戏里仍然不动**。这是 0.9.3 未解决的问题，成品当前用刚性/跟裙摆绕开，
+> 排查现场见 `mod-workspace/mods/work/hmsz-cstm-0059_body_dress-2219-TEST/`。
+
+### SCSP 预设：`_1` 后缀不再挡住预设查表，并补上脚趾
+
+SCSP 导出的骨名是「变体名 + `_1`」。此前只有「剥掉 `_1` 后能直接命中目标骨名」这条路通，
+需要再查预设表的（`*_rot` / `Elbow` / `Clavicle`）全部落空：dress-2219 上 18 根带权重的
+身体骨、合计 3514 权重被误判成装饰骨。预设表里也一直没有 `Toe → ToeBase` 规则，于是脚趾
+撞承重关节闸门、导出被拒。
+
+- 新增 `_preset_lookup()`：原名查不到时剥掉 `_1` 再查一次；预设打分 `_best_preset()` 同步，
+  否则整套骨名都带 `_1` 的源会让每张表都得 0 分、选表全靠嗅探碰运气；
+- scsp 预设加 `LeftToe → LeftToeBase`、`RightToe → RightToeBase`。
+
+修完 dress-2219 不填任何手写映射表，自动映射 146 条，承重关节 21/21 全覆盖。
+
+### 「生成完整配置档」报 'operatorBytes'
+
+点「生成完整配置档」时报一句没头没尾的 `'operatorBytes'`（Python `KeyError` 的原样输出）。
+0.9.0 删掉 3DMigoto 逆蒙皮路线时，`summarize_bind_mesh()` 不再产出那个 ~40 MB 的 R32 逆算子
+buffer，返回值里的 `operatorBytes` 也一并没了，但两处还在读它：
+`core.complete_inverse_skin_profile()` 的返回字典、以及算子里那句「逆算子 X KB」的完成提示。
+
+- **配置档其实已经写好了**：崩溃发生在 `profile.json` 落盘之后、拼提示语的时候。受影响的是
+  「配置档目录」没被自动填上（body），以及发型的 hairprop 分量没被合并（hair）。
+  已经踩到的人可以手动把「配置档目录」指向抓帧目录下的 `GakumasMI-profile\`，不必重跑。
+- 去掉两处对 `operatorBytes` 的读取和完成提示里的「逆算子 X KB」——那个数字已经没有对应物了。
+- **为什么没被测试挡住**：`tests/blender_ui_smoke.py` 里 mock 的返回值自己造了一个
+  `operatorBytes: 1024`，测试喂假键、算子读假键，两边自洽地错。stub 已改成与真实返回一致，
+  再出现读不存在的键会被这条冒烟拦下。
+
+### 目标服装有 3 段时报「材质槽 1 缺少 t0 基础色贴图」
+
+**原版 body 不止 1~2 段**：530 套 dump 里 186 套 1 段、326 套 2 段、**18 套 3 段**
+（`cstm-0119` 全 13 个角色，另有 `hski-0070/0071/0074`、`kcna-0131/0132`、`fktn-0071`）。
+`ttmr-cstm-0119` 的第 2、3 段是腰上一圈 128 顶点的薄环和胸前 179 顶点的小件。
+
+导出按 `range(目标段数)` 逐段要一套 t0/t1/t4，而段 1 对 body 一律当成原生 co——于是**没做
+co 部件的工程**会被一个自己根本没用到的空段拽去要「co 基础色 t0」，空着就报
+`材质槽 1 缺少 t0 基础色贴图`。
+
+改成只给**作者网格真的用到的段**出贴图（`data["materials"]` 归并后出现过的段）。空段照样
+会被 `_bundle_submeshes` 造出来，但 0 面片、不可见，不出贴图条目就保留原版材质。真标了
+「原生 co」的工程 `materials` 里会出现段 1，co 贴图照旧必填，行为不变。hairprop 的同款
+`range(prop_slots)` 一并改掉。mltd-stage（`ttmr-cstm-0119`）已用本修复导出并实机确认。
+
+### 工具：`export_all_body_json.py` 改走 typetree，骨架导出覆盖率 99/530 → 全部
+
+这个 UnityPy 版本上 `SkinnedMeshRenderer.m_Bones` 用类型化的 `.read()` 取到的是空列表，
+于是 530 个 body 里 **431 个被误判成「没有带骨骼的 SkinnedMeshRenderer」而跳过**——数据一直
+都在，只是读法不对。全流程改成 `read_typetree()` + 按 `m_PathID` 手动解引用（`_tree()` /
+`_pptr()` / `_tt_vec3()` / `_tt_quat()`），顺带把逐对象的 try/except 兜底去掉，读不到就是真读不到。
+
 ## 0.9.2 — 发型 + 发饰真正合并成一个包
 
 ### 发型和发饰现在能一次导出成一个包（实机验证通过）
