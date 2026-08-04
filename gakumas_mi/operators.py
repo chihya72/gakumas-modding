@@ -101,11 +101,14 @@ def _run_bundle_patch(scene, mod_root, output_bundle):
             stream.strip() for stream in (proc.stdout or "", proc.stderr or "") if stream.strip()
         )
         tail = output.splitlines()[-12:] if output else ["外部 Python 没有输出；请检查 Python 路径和启动权限"]
+        # 缺依赖只是众多可能之一。子进程给了真实报错就先亮它，别拿装包提示盖住数据问题。
+        missing_module = "ModuleNotFoundError" in output or "ImportError" in output
+        hint = (f"外部 Python 缺依赖，装上再试：{python_exe} -m pip install UnityPy Pillow"
+                if missing_module else
+                "这是模板补丁自己的报错，不是缺依赖；按上面最后一行的异常处理")
         raise RuntimeError(
-            f"模板补丁失败（外部 Python：{python_exe}）。\n"
-            "先确认它是 Python 3.10+ 且装了 UnityPy 与 Pillow："
-            f"{python_exe} -m pip install UnityPy Pillow\n"
-            + f"returncode={proc.returncode}\n" + "\n".join(tail))
+            f"模板补丁失败（外部 Python：{python_exe}，returncode={proc.returncode}）\n"
+            + "\n".join(tail) + f"\n\n{hint}")
     return output_bundle
 
 
@@ -1302,8 +1305,8 @@ def _inverse_skin_export_data(
     }
 
 
-def _prepare_bundle_export_data(context, obj, scene):
-    component_id = _object_component_id(obj, scene)
+def _prepare_bundle_export_data(context, obj, scene, component_id=None):
+    component_id = component_id or _object_component_id(obj, scene)
     _sync_object_mesh_data(context, obj)
     profile_dir = bpy.path.abspath(scene.gmi_profile_dir)
     resolved = _resolve_body_json_library(scene, component_id)
@@ -1336,10 +1339,13 @@ def _prepare_bundle_export_data(context, obj, scene):
     data["bundle_extra_skeleton_nodes"] = extra_nodes
     data["bundle_extra_bind_poses"] = extra_bind_poses
     data["source_rig_report"] = remap_report
-    sanity = _bind_sanity_report(obj, remap)
-    if sanity:
-        failed, unmeasured, report = sanity
-        data["bind_sanity"] = {"failed": failed, "unmeasured": unmeasured, "detail": report}
+    # 体检量的是 fingers/forearm，只有 body 有这些区域；hair/hairprop 上跑必然“无法评估”，
+    # 那条警告会被当成骨名没映射的假警报。
+    if component_id == "body":
+        sanity = _bind_sanity_report(obj, remap)
+        if sanity:
+            failed, unmeasured, report = sanity
+            data["bind_sanity"] = {"failed": failed, "unmeasured": unmeasured, "detail": report}
     if component_id == "hair":
         reference = _profile_weight_reference(context, "hair")
         if reference.get("gmi_component_id") != "hair":
@@ -1857,24 +1863,54 @@ class GMI_OT_export_bundle_source(Operator):
             component_id, resolved, data = _prepare_bundle_export_data(
                 context, obj, scene
             )
-            # body：把作者网格材质归并到目标 body 的 bdy(+bdyco)方案，并校验匹配。
-            group_alpha = None
-            material_slot_count = len(obj.material_slots)
-            if component_id == "body":
-                target_n = _resolve_target_scheme(resolved)
-                co_slots = set(_material_slot_alpha_modes(obj))
-                data["materials"] = core.merge_material_groups(
-                    co_slots, target_n, data.get("materials") or []
-                )
-                group_alpha = {group: ("NATIVE_CO" if group == 1 else None)
-                               for group in range(target_n)}
-                material_slot_count = target_n
+            # 只带 Geo_HairProp 的包实测装上去毫无反应（发型发饰都不变）。发型+发饰是同一件
+            # 头饰的两个 renderer，必须从发型这边一次导成一个包。
+            if component_id == "hairprop":
+                raise ValueError(
+                    "发饰不能单独导出成包：请激活【发型】网格，再在「发饰对象」里选上发饰，"
+                    "一次导出会把两个 renderer 打进同一个包")
+            # 把作者网格的材质槽归并到目标资源的段数，并校验匹配。body 是 bdy(+bdyco)；
+            # hair/hairprop 的目标只有 1 段，作者模型常带 m_FrontHair/m_BackHair 之类的
+            # 多槽切分，不归并就会带着 3 个 submesh 撞进模板补丁，报一句看不懂的
+            # “submesh count changed”。co 只对 body 有意义。
+            target_n = _resolve_target_scheme(resolved)
+            co_slots = set(_material_slot_alpha_modes(obj)) if component_id == "body" else set()
+            data["materials"] = core.merge_material_groups(
+                co_slots, target_n, data.get("materials") or []
+            )
+            group_alpha = {group: ("NATIVE_CO" if (component_id == "body" and group == 1) else None)
+                           for group in range(target_n)}
+            material_slot_count = target_n
             output_root = bpy.path.abspath(scene.gmi_output_dir)
             if not output_root:
                 raise ValueError("请先选择输出目录")
             package_id = core._sanitize_package_id(scene.gmi_package_id)
             bundle_dir = Path(output_root) / package_id / "bundle-src"
             textures = _bundle_texture_sources(obj, scene, component_id, group_alpha)
+            # 发型和发饰是同一件头饰的两个 renderer，必须进同一个包：只导发型的话
+            # 发饰仍是原版，只导发饰则整包 part 对不上，两种都等于没换。
+            extra_components = []
+            prop_obj = scene.gmi_hairprop_object if component_id == "hair" else None
+            if prop_obj is not None and prop_obj.type == "MESH":
+                _, prop_resolved, prop_data = _prepare_bundle_export_data(
+                    context, prop_obj, scene, "hairprop"
+                )
+                prop_slots = _resolve_target_scheme(prop_resolved)
+                prop_data["materials"] = core.merge_material_groups(
+                    set(), prop_slots, prop_data.get("materials") or []
+                )
+                prop_textures = _bundle_texture_sources(
+                    prop_obj, scene, "hairprop", {group: None for group in range(prop_slots)}
+                )
+                for item in prop_textures:
+                    item["rendererName"] = core.RENDERER_NAMES["hairprop"]
+                textures = list(textures) + prop_textures
+                extra_components.append({
+                    "component_id": "hairprop", "data": prop_data,
+                    "mesh_json": prop_resolved["meshJson"],
+                    "skeleton_json": prop_resolved["skeletonJson"],
+                    "material_slot_count": prop_slots,
+                })
             for item in textures:
                 _export_bundle_png(item["source"], bundle_dir / item["filename"])
             source = resolved.get("body") or Path(resolved["meshJson"]).parent.name
@@ -1883,7 +1919,11 @@ class GMI_OT_export_bundle_source(Operator):
                 scene.gmi_package_name, scene.gmi_author, data,
                 resolved["meshJson"], resolved["skeletonJson"], textures,
                 material_slot_count=material_slot_count,
+                extra_components=extra_components,
             )
+            if component_id == "hair" and not extra_components:
+                self.report({"WARNING"}, "只导出了发型：没指定发饰对象，游戏里发饰还是原版。"
+                                         "在「发饰对象」里选上发饰再导一次")
             # 坏绑定导出侧补不了，所以只能大声警告并让作者回上游重做 prep。
             sanity = data.get("bind_sanity") or {}
             if sanity.get("failed"):

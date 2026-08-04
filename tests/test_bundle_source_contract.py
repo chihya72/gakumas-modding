@@ -490,6 +490,83 @@ def test_merge_material_groups():
     assert core.merge_material_groups(set(), 1, []) == []
 
 
+def test_hair_and_hairprop_share_one_package():
+    """发型+发饰必须导成一个包两个 renderer，格式对齐实机验证过的
+    IP/06-ab-route-handoff/ab-mods/qa-madoka-ttmr-hair-0002-2b/mod.json。"""
+    skeleton = {"nodes": [{"name": "Root", "parent": -1, "weightedIndex": None},
+                          {"name": "Hips", "parent": 0, "weightedIndex": 0}]}
+    source_mesh = {"m_BindPose": [{"id": "hips"}], "m_Name": "Test"}
+    def data():
+        return {
+            "vertices": [(0, 0, 0)] * 3, "normals": [(0, 0, 1)] * 3,
+            "tangents": [(1, 0, 0, 1)] * 3, "uv0": [(0, 0)] * 3,
+            "colors": [(0, 0, 1, 0)] * 3, "faces": [(0, 1, 2)],
+            "materials": [0, 0, 0], "skin": [[(0, 1.0)]] * 3, "source_rig_report": {},
+        }
+    with tempfile.TemporaryDirectory() as temp:
+        root = Path(temp)
+        mesh_path, skeleton_path = root / "mesh.json", root / "skeleton.json"
+        mesh_path.write_text(json.dumps(source_mesh), encoding="utf-8")
+        skeleton_path.write_text(json.dumps(skeleton), encoding="utf-8")
+        bundle_dir = root / "hairpkg" / "bundle-src"
+        bundle_dir.mkdir(parents=True)
+        for name in ("hair_slot0_t0.png", "hairprop_slot0_t0.png"):
+            (bundle_dir / name).write_bytes(b"png")
+        output = core.write_bundle_source(
+            root, "hairpkg", "mdl_chr_ttmr-hair-0002_hair", "hair", "Hair", "Author",
+            data(), mesh_path, skeleton_path,
+            [{"materialSlot": 0, "property": "_BaseMap", "filename": "hair_slot0_t0.png"},
+             {"materialSlot": 0, "property": "_BaseMap", "filename": "hairprop_slot0_t0.png",
+              "rendererName": "Geo_HairProp"}],
+            extra_components=[{"component_id": "hairprop", "data": data(),
+                               "mesh_json": mesh_path, "skeleton_json": skeleton_path}],
+        )
+        manifest = json.loads((output / "mod.json").read_text(encoding="utf-8"))
+        replacement = manifest["replacements"][0]
+        assert replacement["part"] == "hair"
+        rules = replacement["renderers"]
+        assert [rule["targetRenderer"] for rule in rules] == ["Geo_Hair", "Geo_HairProp"]
+        # 主 renderer 继承顶层 source/skeleton，副 renderer 自带
+        assert "source" not in rules[0] and "skeleton" not in rules[0]
+        prop_source = "mdl_chr_ttmr-hair-0002_hair__Geo_HairProp"
+        assert rules[1]["source"] == prop_source
+        assert rules[1]["skeleton"] == f"Assets/Mods/hairpkg/{prop_source}_bones.json.txt"
+        # 两份 geojson / 两份 sidecar 都在，且盖同一个 buildId
+        assert (output / "mdl_chr_ttmr-hair-0002_hair.geojson.txt").is_file()
+        assert (output / f"{prop_source}.geojson.txt").is_file()
+        prop_sidecar = json.loads((output / f"{prop_source}_bones.json.txt").read_text(encoding="utf-8"))
+        assert prop_sidecar["buildId"] == manifest["buildId"]
+        assert prop_sidecar["runtimeProtocol"] == core.AB_RUNTIME_PROTOCOL
+        # 贴图按 renderer 分流
+        by_renderer = {item["rendererName"] for item in replacement["textures"]}
+        assert by_renderer == {"Geo_Hair", "Geo_HairProp"}
+
+
+def test_hairprop_only_package_is_hair_part():
+    """单独导发饰时 part 也必须是 hair —— 写成 body 会被运行时当身体 mod，装了没反应。"""
+    skeleton = {"nodes": [{"name": "Root", "parent": -1, "weightedIndex": None},
+                          {"name": "Hips", "parent": 0, "weightedIndex": 0}]}
+    with tempfile.TemporaryDirectory() as temp:
+        root = Path(temp)
+        mesh_path, skeleton_path = root / "mesh.json", root / "skeleton.json"
+        mesh_path.write_text(json.dumps({"m_BindPose": [{"id": "hips"}], "m_Name": "T"}), encoding="utf-8")
+        skeleton_path.write_text(json.dumps(skeleton), encoding="utf-8")
+        bundle_dir = root / "proppkg" / "bundle-src"
+        bundle_dir.mkdir(parents=True)
+        (bundle_dir / "hairprop_slot0_t0.png").write_bytes(b"png")
+        output = core.write_bundle_source(
+            root, "proppkg", "mdl_chr_ttmr-hair-0002_hair", "hairprop", "P", "A",
+            {"vertices": [(0, 0, 0)] * 3, "normals": [(0, 0, 1)] * 3,
+             "tangents": [(1, 0, 0, 1)] * 3, "uv0": [(0, 0)] * 3,
+             "colors": [(0, 0, 1, 0)] * 3, "faces": [(0, 1, 2)],
+             "materials": [0, 0, 0], "skin": [[(0, 1.0)]] * 3, "source_rig_report": {}},
+            mesh_path, skeleton_path,
+            [{"materialSlot": 0, "property": "_BaseMap", "filename": "hairprop_slot0_t0.png"}],
+        )
+        manifest = json.loads((output / "mod.json").read_text(encoding="utf-8"))
+        assert manifest["replacements"][0]["part"] == "hair"
+
+
 if __name__ == "__main__":
     test_bundle_source_contract()
     test_bundle_new_bone_index_and_weight_contract()
@@ -504,6 +581,8 @@ if __name__ == "__main__":
     test_physics_override_precedence()
     test_source_extra_bone_sidecar()
     test_merge_material_groups()
+    test_hair_and_hairprop_share_one_package()
+    test_hairprop_only_package_is_hair_part()
     print("bundle source contract OK")
 
 

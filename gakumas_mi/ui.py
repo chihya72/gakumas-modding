@@ -181,6 +181,10 @@ def draw_export_step(layout, scene, context):
     bundle_row.operator("gmi.export_bundle_source", text="导出 bundle 源", icon="PACKAGE")
     if not has_bundle_weights:
         export.label(text="bundle 源需要作者模型顶点组权重", icon="INFO")
+    if _is_hair_package(scene):
+        export.prop(scene, "gmi_hairprop_object")
+        if not scene.gmi_hairprop_object:
+            export.label(text="未选发饰对象：只换发型，发饰保持原版", icon="INFO")
     if has_bundle_weights:
         export.prop(scene, "gmi_bundle_template")
         export.prop(scene, "gmi_bundle_python")

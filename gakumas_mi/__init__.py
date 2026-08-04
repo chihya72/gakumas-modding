@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 9, 1),
+    "version": (0, 9, 2),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "学园偶像大师换装/换发 mod 制作（AB bundle 路线）：抓帧生成配置档 → 骨名映射到游戏骨架 → 导出并打包 AB bundle（原生蒙皮/描边/物理）",
@@ -103,14 +103,14 @@ def register():
     )
     bpy.types.Scene.gmi_component_id = EnumProperty(
         name="制作目标",
-        description="选身体或发型即可，发饰不是独立目标：发型和配套发饰是两个网格对象，"
-                    "导出时按对象标记自动分包/合并",
+        description="选身体或发型即可，发饰不是独立目标：发型和配套发饰是同一件头饰的两个 "
+                    "renderer，导出时激活发型网格、在「发饰对象」里选上发饰，合成一个包",
         items=[
             ("body", "身体（body）",
              "替换 Geo_Body 整个身体网格；透明/镂空部件在步骤②把对应材质槽设为「原生co」"),
             ("hair", "发型（hair）",
-             "替换 Geo_Hair；配套发饰 Geo_HairProp 可选制作——只做发型则保留原发饰，"
-             "发型+发饰一起做则导出时自动合并为一个完整包"),
+             "替换 Geo_Hair；配套发饰 Geo_HairProp 可选制作——「发饰对象」留空则只换发型、"
+             "保留原发饰，选上发饰则两个 renderer 合并为一个完整包"),
         ],
         default="body",
     )
@@ -191,6 +191,12 @@ def register():
         description="暗面颜色图：RGB=基础色的暗化版（布料约 ×0.45、皮肤约 ×0.78），"
                     "A=皮肤二值遮罩——是数据不是透明度，看图软件里显示成透明属正常。"
                     "没有现成图就留空，用「按材质生成 t1/t4 并校准肤色」",
+    )
+    bpy.types.Scene.gmi_hairprop_object = bpy.props.PointerProperty(
+        name="发饰对象", type=bpy.types.Object,
+        poll=lambda self, obj: obj.type == "MESH",
+        description="发饰（Geo_HairProp）的作者网格。发型和发饰是同一件头饰的两个 renderer，"
+                    "选上它才会导成一个包；留空则只换发型，游戏里发饰仍是原版",
     )
     bpy.types.Scene.gmi_hairprop_base_color_file = StringProperty(
         name="发饰基础色 t0", subtype="FILE_PATH",
@@ -338,6 +344,7 @@ def unregister():
         "gmi_unmapped_bone_fallback",
         "gmi_package_id",
         "gmi_base_color_file", "gmi_hair_use_base_alpha", "gmi_packed_mask_file", "gmi_shade_color_file",
+        "gmi_hairprop_object",
         "gmi_hairprop_base_color_file", "gmi_hairprop_packed_mask_file", "gmi_hairprop_shade_color_file",
         "gmi_t1_r_file", "gmi_t1_g_file", "gmi_t1_b_file", "gmi_t1_a_file",
         "gmi_opacity_texture_file", "gmi_opacity_packed_mask_file", "gmi_opacity_shade_color_file",

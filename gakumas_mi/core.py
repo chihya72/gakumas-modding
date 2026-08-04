@@ -1666,34 +1666,13 @@ def _bundle_root_bone(skeleton, bone_names):
     return next((candidate for candidate in candidates if candidate), "Hips")
 
 
-def write_bundle_source(
-    output_root, package_id, source, component_id, name, author, data,
-    mesh_json, skeleton_json, textures, material_slot_count=1, version="0.1.0",
-):
-    """Write the Unity-independent source files consumed by the Phase 2 build."""
-    package_id = _sanitize_package_id(package_id)
-    source = str(source or "").strip()
-    if not source or Path(source).name != source:
-        raise ValueError("bundle source 的 source 必须是单个资源名")
-    bundle_dir = Path(output_root) / package_id / "bundle-src"
-    bundle_dir.mkdir(parents=True, exist_ok=True)
-    source_mesh = load_json(Path(mesh_json))
-    skeleton = load_json(Path(skeleton_json))
-    extra_nodes = data.get("bundle_extra_skeleton_nodes") or []
-    if extra_nodes:
-        skeleton = dict(skeleton)
-        skeleton["nodes"] = list(skeleton.get("nodes") or []) + extra_nodes
-    geo, bones = _bundle_geojson(data, source_mesh, skeleton, material_slot_count)
+RENDERER_NAMES = {"body": "Geo_Body", "hair": "Geo_Hair", "hairprop": "Geo_HairProp"}
 
-    renderer_names = {"body": "Geo_Body", "hair": "Geo_Hair", "hairprop": "Geo_HairProp"}
-    renderer_name = renderer_names.get(component_id, "Geo_Body")
-    asset_root = f"Assets/Mods/{package_id}"
-    geo_name = f"{source}.geojson.txt"
-    bones_name = f"{package_id}_bones.json.txt"
-    prefab_name = f"{source}.prefab"
-    bundle_name = f"{package_id}.bundle"
-    _write_json(bundle_dir / geo_name, geo)
-    source_report = data.get("source_rig_report", {})
+
+def _bundle_sidecar(component):
+    """一个 renderer 的骨架 sidecar（buildId 由调用方最后统一盖上）。"""
+    bones, skeleton = component["bones"], component["skeleton"]
+    source_report = component["data"].get("source_rig_report", {})
     sidecar = {
         "schemaVersion": 4 if source_report.get("newBones") else 2,
         "runtimeProtocol": AB_RUNTIME_PROTOCOL,
@@ -1704,7 +1683,7 @@ def write_bundle_source(
         "sourceRigRemap": source_report,
     }
     if source_report.get("newBones"):
-        if not extra_nodes:
+        if not component["extra_nodes"]:
             sidecar["newBones"] = source_report["newBones"].get("newBones", [])
         sidecar["extraSwingBones"] = source_report["newBones"].get("extraSwingBones", [])
         # Runtime BuildHybridBoneArray creates new bones from bones[] and reads each entry's
@@ -1721,6 +1700,79 @@ def write_bundle_source(
             swing = swing_by_name.get(bone.get("name"))
             if swing and "swing" not in bone:
                 bone["swing"] = dict(swing)
+    return sidecar
+
+
+def _bundle_component(bundle_dir, package_id, source, component_id, data,
+                      mesh_json, skeleton_json, material_slot_count, primary):
+    """写一个 renderer 的 geojson，返回它的 sidecar 和 manifest 里的 renderer 规则。
+
+    发型和发饰是同一个 bundle 里的两个 renderer，共用一个顶层 source；副 renderer 的
+    geojson/sidecar 按 `{source}__{targetRenderer}` 命名——这正是模板里第二个 Mesh 的
+    命名（`..._hair__Geo_HairProp_mesh`），也是 patch_unity_bundle 查找时认的名字。
+    """
+    renderer_name = RENDERER_NAMES.get(component_id, "Geo_Body")
+    rule_source = source if primary else f"{source}__{renderer_name}"
+    skeleton = load_json(Path(skeleton_json))
+    extra_nodes = data.get("bundle_extra_skeleton_nodes") or []
+    if extra_nodes:
+        skeleton = dict(skeleton)
+        skeleton["nodes"] = list(skeleton.get("nodes") or []) + extra_nodes
+    geo, bones = _bundle_geojson(
+        data, load_json(Path(mesh_json)), skeleton, material_slot_count
+    )
+    geo_name = f"{rule_source}.geojson.txt"
+    bones_name = (f"{package_id}_bones.json.txt" if primary
+                  else f"{rule_source}_bones.json.txt")
+    _write_json(bundle_dir / geo_name, geo)
+    asset_root = f"Assets/Mods/{package_id}"
+    rule = {"rendererId": component_id, "targetRenderer": renderer_name,
+            "modRenderer": renderer_name}
+    if not primary:
+        rule["source"] = rule_source
+        rule["skeleton"] = f"{asset_root}/{bones_name}"
+    return {"geo": geo, "bones": bones, "skeleton": skeleton, "extra_nodes": extra_nodes,
+            "geo_name": geo_name, "bones_name": bones_name, "renderer_name": renderer_name,
+            "rule": rule, "data": data}
+
+
+def write_bundle_source(
+    output_root, package_id, source, component_id, name, author, data,
+    mesh_json, skeleton_json, textures, material_slot_count=1, version="0.1.0",
+    extra_components=(),
+):
+    """Write the Unity-independent source files consumed by the Phase 2 build.
+
+    `extra_components` 让一个包带多个 renderer（当前唯一用途：发型 + 发饰同包）。
+    每项是 dict：component_id / data / mesh_json / skeleton_json / material_slot_count。
+    """
+    package_id = _sanitize_package_id(package_id)
+    source = str(source or "").strip()
+    if not source or Path(source).name != source:
+        raise ValueError("bundle source 的 source 必须是单个资源名")
+    bundle_dir = Path(output_root) / package_id / "bundle-src"
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    components = [_bundle_component(bundle_dir, package_id, source, component_id, data,
+                                    mesh_json, skeleton_json, material_slot_count, True)]
+    for item in extra_components:
+        components.append(_bundle_component(
+            bundle_dir, package_id, source, item["component_id"], item["data"],
+            item["mesh_json"], item["skeleton_json"],
+            item.get("material_slot_count", 1), False))
+
+    geo, bones = components[0]["geo"], components[0]["bones"]
+    skeleton, extra_nodes = components[0]["skeleton"], components[0]["extra_nodes"]
+    renderer_name = components[0]["renderer_name"]
+    asset_root = f"Assets/Mods/{package_id}"
+    geo_name = components[0]["geo_name"]
+    bones_name = components[0]["bones_name"]
+    prefab_name = f"{source}.prefab"
+    bundle_name = f"{package_id}.bundle"
+    source_report = data.get("source_rig_report", {})
+    for component in components:
+        component["sidecar"] = _bundle_sidecar(component)
+    sidecar = components[0]["sidecar"]
     texture_entries = []
     for item in textures:
         filename = Path(item["filename"]).name
@@ -1738,7 +1790,9 @@ def write_bundle_source(
     build_id_hash = hashlib.sha256()
     build_id_hash.update(package_id.encode("utf-8"))
     build_id_hash.update(str(version).encode("utf-8"))
-    for value in (geo, sidecar, texture_entries):
+    values = [value for component in components
+              for value in (component["geo"], component["sidecar"])]
+    for value in values + [texture_entries]:
         build_id_hash.update(json.dumps(
             value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
         ).encode("utf-8"))
@@ -1748,8 +1802,10 @@ def write_bundle_source(
         build_id_hash.update(path.name.encode("utf-8"))
         build_id_hash.update(hashlib.sha256(path.read_bytes()).digest())
     build_id = build_id_hash.hexdigest()[:16]
-    sidecar["buildId"] = build_id
-    _write_json(bundle_dir / bones_name, sidecar)
+    # runtime 是逐 renderer 读 sidecar 的，每份都要盖同一个 buildId
+    for component in components:
+        component["sidecar"]["buildId"] = build_id
+        _write_json(bundle_dir / component["bones_name"], component["sidecar"])
 
     mod = {
         "schemaVersion": 2,
@@ -1763,17 +1819,14 @@ def write_bundle_source(
         "enabled": True,
         "replacements": [{
             "source": source,
-            "part": "body" if component_id != "hair" else "hair",
+            # 发饰属于 hair 部位；写成 body 会让 runtime 按身体 mod 处理，装上去毫无反应
+            "part": "hair" if component_id in {"hair", "hairprop"} else "body",
             "priority": 0,
             "bundle": bundle_name,
             "asset": f"{asset_root}/{prefab_name}",
             "skeleton": f"{asset_root}/{bones_name}",
             "type": "GameObject",
-            "renderers": [{
-                "rendererId": component_id,
-                "targetRenderer": renderer_name,
-                "modRenderer": renderer_name,
-            }],
+            "renderers": [component["rule"] for component in components],
             "replaceMaterials": False,
             "textures": texture_entries,
         }],

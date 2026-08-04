@@ -96,6 +96,7 @@
 | 发饰材质类型标注 | 金属件材质槽标 `metal` → 灰描边+A高 rim mask；亮色布件（白花等）想要灰描边也标 metal；不标默认黑描边 |
 | 暗环境金属发乌 | metal 预设 metallic=0.75 大量混入环境立方图，室内昏暗时小饰品会发乌——饰品建议用布料 t1 参数（或单独提亮该件暗面图） |
 | 双 draw | hair 与 hairprop 需各自 draw override，但发布时合并为一个完整发型包；hair 用 hairprop selector 限定 |
+| 合包在 AB 路线的落地 | 2026-08-04 前导出器只写一个 renderer，「合并成一个包」只是结论没有实现，实际只能产出半截包（只带 `Geo_HairProp` 的包实测 `pairs=1`，发型退回原版）。现在 `write_bundle_source(extra_components=...)` 支持多 renderer，副 renderer 用 `{source}__Geo_HairProp` 命名 geojson/sidecar；作者侧操作是「激活发型 + 选发饰对象」，单独导发饰会被拒绝 |
 | 开发环境 | 无头脚本跑导出前，确认 Blender 已安装的 gakumas_mi 与仓库同步（枚举缺项报 `enum not found` 即版本落后） |
 
 ---

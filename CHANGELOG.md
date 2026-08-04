@@ -25,6 +25,42 @@
 > 英文 Humanoid 四张预设表。表里名字若拼错，表现是那几行不预填、要手动选（有闸门兜着不会
 > 静默出废品），但不能宣称"支持"。
 
+## 0.9.2 — 发型 + 发饰真正合并成一个包
+
+### 发型和发饰现在能一次导出成一个包（实机验证通过）
+
+此前文档写的是「同时有发饰网格 → 点一次导出自动合并成一个完整包」，但**导出器从来只写一个
+renderer**，这条从未真正实现。实际做出来的只能是两个半截包：
+
+- 只导发型 → 包里只有 `Geo_Hair`，游戏里发饰是原版；
+- 只导发饰 → 包里只有 `Geo_HairProp`，游戏里**发型退回原版**（实测日志 `pairs=1`），
+  而且 `part` 被写成 `body`（`"part": "body" if component_id != "hair" else "hair"`
+  没考虑 `hairprop`），运行时按身体 mod 处理。
+
+现在：
+
+- `write_bundle_source` 新增 `extra_components`，一个包可带多个 renderer。命名对齐实机
+  验证过的合包格式——副 renderer 的 source 是 `{source}__Geo_HairProp`，geojson 与
+  sidecar 跟着这个名字走，主 renderer 继承顶层 `source`/`skeleton`，两份 sidecar 盖同一个
+  `buildId`（runtime 是逐 renderer 读的）；
+- 导出面板新增 **「发饰对象」**（hair 包时显示）：激活发型网格 + 选上发饰 = 一个完整包。
+  留空则只换发型，并明确提示“发饰保持原版”；
+- **单独激活发饰导出直接报错**，不再默默产出装上去只生效一半的包；
+- `part` 修正：`hairprop` 归 `hair` 部位。
+
+### 材质槽归并不再只对 body 生效
+
+作者网格的多材质槽（发型的 `m_FrontHair` / `m_BackHair` / `m_InBack` 等）此前只有 body
+会归并到目标段数，hair/hairprop 直接按原槽数导出，带着 3 个 submesh 撞进模板补丁，只报一句
+`submesh count changed: template=1 input=3`。现在所有部件都归并（`co` 仍只对 body 有意义）。
+
+### 两处误导性提示
+
+- 绑定体检量的是 fingers / forearm，只对 body 跑。此前在发型上也跑，必然“无法评估”，
+  还附一句“作者骨名可能没映射到游戏骨名”，是纯假警报；
+- 模板补丁失败时不再一律先甩锅“是否装了 UnityPy/Pillow”，先亮子进程的真实异常，
+  只有输出里确实出现 `ModuleNotFoundError` / `ImportError` 才提示装依赖。
+
 ## 0.9.1 — 网盘素材包上线、安装路径更正与文档整合
 
 **只有文档和资源分发变化，插件代码行为与 0.9.0 相同**——但这两项都会直接决定你能不能做出

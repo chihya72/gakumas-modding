@@ -134,11 +134,42 @@ python -c "import sys;print(sys.executable)"
 
 ## 6.5 发型 + 发饰：合并成一个包
 
-- **只有发型作者网格**：导出只替换 `Geo_Hair` 并保留原配套发饰。多套发型共用同一基础网格时，
-  步骤①匹配配置档那一步会用同帧 `Geo_HairProp` 的顶点数选中正确的目标资源；
-- **同时准备了发饰作者网格**：点一次导出，插件自动把 `Geo_Hair` + `Geo_HairProp` 合并为**一个完整包**。
+发型和发饰是同一件头饰的**两个 renderer**（`Geo_Hair` + `Geo_HairProp`），必须进同一个包。
+导出方式是固定的：
+
+1. **激活「发型」作者网格**（不是发饰）；
+2. 在导出框的 **「发饰对象」** 里选上发饰网格；
+3. 点导出，插件把两个 renderer 打进一个包。
+
+- **不做发饰**：「发饰对象」留空即可，导出只替换 `Geo_Hair` 并保留原配套发饰。面板会提示
+  “只换发型，发饰保持原版”。多套发型共用同一基础网格时，步骤①匹配配置档那一步会用同帧
+  `Geo_HairProp` 的顶点数选中正确的目标资源；
+- **激活发饰去导出会直接报错**。只带 `Geo_HairProp` 一条规则的包实测装上去的效果是：发饰换了，
+  **发型退回原版**——因为包里没有 `Geo_Hair` 规则，运行时不会碰它。日志里的特征是
+  `pairs=1`（正确的合并包是 `pairs=2`）。
+
+导出的 `mod.json` 里应该看到两条 renderer 规则，副 renderer 自带 `source` 和 `skeleton`：
+
+```json
+"renderers": [
+  { "rendererId": "hair",     "targetRenderer": "Geo_Hair",     "modRenderer": "Geo_Hair" },
+  { "rendererId": "hairprop", "targetRenderer": "Geo_HairProp", "modRenderer": "Geo_HairProp",
+    "source":   "mdl_chr_<资源名>_hair__Geo_HairProp",
+    "skeleton": "Assets/Mods/<模组标识>/mdl_chr_<资源名>_hair__Geo_HairProp_bones.json.txt" }
+]
+```
 
 详见 [[7-发型与发饰]]。
+
+## 6.5.1 材质槽会被归并到目标段数
+
+作者网格常带多个材质槽（发型模型的 `m_FrontHair` / `m_BackHair` / `m_InBack`，身体的多件衣料），
+而游戏目标只有固定段数：发型和发饰各 **1 段**，身体是 **1 段（bdy）或 2 段（bdy + bdyco）**。
+导出时插件会把作者材质槽归并到目标段数——**前提是这些槽共用同一套贴图**（同一张 atlas）。
+
+没归并成功时的表现是模板补丁报
+`submesh count changed: template=1 input=3`。身体上若把标了「原生 co」的槽导到只有 1 段的目标，
+会得到明确报错，改回「不透明」或换含 bdyco 的目标服装。
 
 ## 6.6 安装到游戏
 
