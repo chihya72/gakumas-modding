@@ -155,6 +155,11 @@ ShapeKey/表情、蓝图树批量出 mod、多游戏架构。脸部等其余组�
 
 ## 未解决：自建摇物链的装饰件在游戏里不动（0.9.3 起的头号问题）
 
+**现役管线上，自建摇物链没有任何画面级确认的成功案例。**`atbm-0140` 只有日志
+（`createdBones=288`、`colliders 288/288`），画面从未确认；唯一写着"均正常摆动"的
+rui-nurs→hmsz_0000 是 2026-07-17 的旧原型（IP 源 + chinosk6 bundle 管线，不是现在这套）；
+唯一认真盯过这件事的 dress-2219 结论是不动。
+
 dress-2219 是第一个真正给源专属装饰骨刷权重的 mod。0.9.3 修完四项写入约定后，数据链路
 在日志里完全正常——`matchedBones=156 createdBones=26 swingPrepared=36 droppedInfluences=0`、
 拓扑正确、链尾 `_End` 齐全、`chain groups 6x3 2x4 2x5`、3 条 `ActorSwingChain` 注册成功——
@@ -171,9 +176,10 @@ dress-2219 是第一个真正给源专属装饰骨刷权重的 mod。0.9.3 修�
    永远是 0。**所以现有日志证明不了"没激活"。**要么把打印点挪到稳定运行若干帧之后，要么同时
    打印游戏自己那条裙摆链的 `active` 作对照（`ModRuntime.cpp` 约 834-848 行的 lambda）。
 2. **与游戏自己的链共存。**我们 `AddComponent` 新建了 3 个 `ActorSwingChain`，而游戏自己的
-   裙摆链也挂在 `Hips` 上。rui-nurs（唯一跑通过的新骨物理案例）当时是什么情形要先核对：
-   若它没有和游戏原有链挂同一根骨，那"同骨多链"就是本例独有的新变量。注意 runtime 注释
-   警告过不能把新骨混进游戏已有链——`UpdateChainInfo` 会把共享链截断到最短成员长度。
+   裙摆链也挂在 `Hips` 上。注意 runtime 注释警告过不能把新骨混进游戏已有链——
+   `UpdateChainInfo` 会把共享链截断到最短成员长度；"同骨多链"是否也踩这条，要先确认。
+   唯一写着"均正常摆动"的 rui-nurs→hmsz_0000 是 2026-07-17 的旧原型（IP 源 + chinosk6
+   bundle 管线），可以拿来对照当时挂在哪根骨，但**别把它当现役管线的成功背书**。
 3. **参数是否真到位。**0.9.3 才补上 `rootWeight=0.3 / pendulum=0.001`；确认包里这两项确实写入
    （`bundle-src` 的 `*_bones.json.txt` 可直接查），别把"改过代码"当成"数据到位"。
 4. **碰撞体（附带缺口）。**自建摇物骨没有 `collider`，`SetDefaultValues` 留下半径 0.05 的空
