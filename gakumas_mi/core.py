@@ -2207,7 +2207,6 @@ def complete_inverse_skin_profile(profile_dir, library_dir, component_id="body",
         "weightedBoneCount": weighted_bone_count,
         "activeBoneCount": operator_meta["activeBoneCount"],
         "unobservableBones": unobservable,
-        "operatorBytes": operator_meta["operatorBytes"],
     }
 
 
@@ -2523,6 +2522,20 @@ def _preset_target(name, preset_bones):
     return preset_bones.get(folded) if folded else None
 
 
+def _preset_lookup(name, preset_bones):
+    """查预设表：原名查不到时，剥掉 `_1` 后缀再查一次。
+
+    SCSP 导出的骨名常是「变体名 + _1」（`LeftArm1_rot_1`、`LeftElbow_1`）。只查原名的话，
+    `_1` 后缀会让 `*_rot` / `Elbow` / `Clavicle` 这些预设规则全部落空，带权重的捩骨、
+    脚趾被误判成装饰骨——dress-2219 上实测漏了 18 根骨、3514 权重。
+    """
+    candidate = _preset_target(name, preset_bones)
+    if candidate is not None:
+        return candidate
+    stripped = re.sub(r"(?:_1)+$", "", name)
+    return _preset_target(stripped, preset_bones) if stripped != name else None
+
+
 def _best_preset(source, target, presets, preferred=None):
     """逐张表试算命中数，取最高的那张。
 
@@ -2531,7 +2544,8 @@ def _best_preset(source, target, presets, preferred=None):
     """
     def hits(key):
         bones = presets.get(key, {}).get("bones", {})
-        return sum(1 for name in source if _preset_target(name, bones) in target)
+        # 与 mapped_name 同一套匹配（含 _1 剥离），否则整套骨名都带 _1 的源会让每张表都得 0 分
+        return sum(1 for name in source if _preset_lookup(name, bones) in target)
 
     ranked = sorted(presets, key=lambda key: (-hits(key), key != preferred, key))
     if ranked and hits(ranked[0]):
@@ -2583,7 +2597,7 @@ def build_bone_remap(source_bones, target_bones, parent_by_name=None,
         stripped = re.sub(r"(?:_1)+$", "", name)
         if stripped in target:
             return stripped, "strip_suffix"
-        candidate = _preset_target(name, preset_bones)
+        candidate = _preset_lookup(name, preset_bones)
         if candidate in target:
             return candidate, "preset"
         return None, None
@@ -2896,9 +2910,13 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
     wanted = {str(name) for name in extra_names if str(name) in records}
     parents = parent_by_name or {}
     body = body_remap or {}
+    # rootWeight / pendulum 不给的话，运行时 SetDefaultValues 会留下 1.0 / 0——
+    # 即「完全刚性跟随根骨 + 没有重力项」，装饰件被锁死在作者摆的静止姿态上翘着不下垂。
+    # 这里的 0.3 / 0.001 取自游戏自己的裙摆骨实测值（见 runtime 的 LocalIpBoneSwing 注释）。
     swing = dict(default_swing or {
         "damping": 0.5, "stiffness": 0.02, "spring": 0.5,
         "mass": 0.15, "useWindGlobalForce": True,
+        "rootWeight": 0.3, "pendulum": 0.001,
     })
 
     def parent_name(name):
@@ -2927,7 +2945,9 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
                 "localPosition": list(item.get("localPosition") or [0.0, 0.0, 0.0]),
                 "localRotation": list(item.get("localRotation") or [0.0, 0.0, 0.0, 1.0]),
                 "localScale": list(item.get("localScale") or [1.0, 1.0, 1.0]),
-                "swing": dict(item.get("swing") or swing),
+                # 源模型自带 swing（IP 包能抽出 ActorSwing 参数）时用它自己的，但
+                # rootWeight/pendulum 那两项源里通常没有，缺了就会被锁死不下垂 → 补默认值
+                "swing": {**swing, **dict(item.get("swing") or {})},
             })
             if item.get("bindPose") is not None:
                 result[-1]["bindPose"] = item["bindPose"]

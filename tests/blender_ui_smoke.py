@@ -125,13 +125,15 @@ try:
     assert cleared == (0x12, 0x34, 0xA0, 0x9F), cleared
 
     hints_result = {"vertexCounts": [1], "exact": {"vertexCount": 1}}
+    # 必须与 core.complete_inverse_skin_profile 的真实返回键一致——此前这里多造了一个
+    # 已删除的 operatorBytes，算子读它、测试喂它，KeyError 就一路溜到用户面前。
     completion = {
         "body": scene.gmi_body_resource,
         "match": "exact",
         "boneNaming": "skeleton",
         "vertexCount": 1,
         "weightedBoneCount": 1,
-        "operatorBytes": 1024,
+        "activeBoneCount": 1,
         "unobservableBones": [],
     }
     with (

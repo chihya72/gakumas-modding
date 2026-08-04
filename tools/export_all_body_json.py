@@ -103,6 +103,14 @@ def _quat(value) -> list[float]:
     return [float(value.X), float(value.Y), float(value.Z), float(value.W)]
 
 
+def _tt_vec3(value) -> list[float]:
+    return [float(value["x"]), float(value["y"]), float(value["z"])]
+
+
+def _tt_quat(value) -> list[float]:
+    return [float(value["x"]), float(value["y"]), float(value["z"]), float(value["w"])]
+
+
 def is_valid_skeleton_json(path: Path) -> tuple[bool, str]:
     if not path.is_file():
         return False, "文件不存在"
@@ -123,10 +131,28 @@ def is_valid_skeleton_json(path: Path) -> tuple[bool, str]:
     return True, ""
 
 
+def _tree(objects, trees, path_id):
+    """按 path_id 取 typetree，带缓存。"""
+    if path_id not in trees:
+        obj = objects.get(path_id)
+        trees[path_id] = obj.read_typetree() if obj is not None else None
+    return trees[path_id]
+
+
+def _pptr(value):
+    return int(value["m_PathID"]) if value else 0
+
+
 def export_skeleton_json(
     bundle: Path, mesh_json: Path, output: Path, unity_version: str,
     mesh_name: str = "Geo_Body",
 ) -> dict:
+    """从原始 AB 读出骨架 sidecar。
+
+    全程走 typetree，不用 UnityPy 的类型化 `.read()`：这个 UnityPy 版本上
+    `SkinnedMeshRenderer.m_Bones` 用 `.read()` 取到的是空列表，于是 530 个 body 里
+    有 431 个被误判成「没有带骨骼的 SkinnedMeshRenderer」而跳过——数据一直都在。
+    """
     try:
         import UnityPy
     except ImportError as exc:
@@ -134,106 +160,90 @@ def export_skeleton_json(
 
     UnityPy.config.FALLBACK_UNITY_VERSION = unity_version
     env = UnityPy.load(str(bundle))
+    objects = {obj.path_id: obj for obj in env.objects}
+    trees: dict = {}
 
     # _hair 包里有 Geo_Hair 和 Geo_HairProp 两个 renderer，
     # 必须选 m_Mesh 指向目标网格名的那个，不能取第一个带骨的。
-    target_mesh_path_ids = set()
-    for obj in env.objects:
-        if obj.type.name != "Mesh":
-            continue
-        try:
-            if obj.read().m_Name == mesh_name:
-                target_mesh_path_ids.add(obj.path_id)
-        except Exception:
-            continue
+    target_mesh_path_ids = {
+        obj.path_id for obj in env.objects
+        if obj.type.name == "Mesh"
+        and (_tree(objects, trees, obj.path_id) or {}).get("m_Name") == mesh_name
+    }
 
     renderer_object = None
     renderer = None
-    fallback = None  # (obj, candidate) 第一个带骨的，仅当按网格名匹配不到时使用
-    last_error = None
+    fallback = None  # (obj, tree) 第一个带骨的，仅当按网格名匹配不到时使用
     for obj in env.objects:
         if obj.type.name != "SkinnedMeshRenderer":
             continue
-        try:
-            candidate = obj.read()
-            bones = list(getattr(candidate, "m_Bones", None) or [])
-            if not bones:
-                last_error = RuntimeError(f"SkinnedMeshRenderer {obj.path_id} 没有 m_Bones")
-                continue
-            mesh_ptr = getattr(candidate, "m_Mesh", None)
-            if mesh_ptr is not None and getattr(mesh_ptr, "path_id", 0) in target_mesh_path_ids:
-                renderer = candidate
-                renderer_object = obj
-                break
-            if fallback is None:
-                fallback = (obj, candidate)
-        except Exception as exc:  # keep scanning; some bundles have stale/unreadable objects
-            last_error = exc
+        candidate = _tree(objects, trees, obj.path_id) or {}
+        if not (candidate.get("m_Bones") or []):
+            continue
+        if _pptr(candidate.get("m_Mesh")) in target_mesh_path_ids:
+            renderer_object, renderer = obj, candidate
+            break
+        if fallback is None:
+            fallback = (obj, candidate)
     if renderer is None and fallback is not None and not target_mesh_path_ids:
-        # 网格名匹配不可用（如 Mesh 对象不可读）时退回旧行为
+        # 网格名匹配不可用时退回旧行为
         renderer_object, renderer = fallback
     if renderer_object is None or renderer is None:
-        detail = f"；最后错误：{last_error}" if last_error else ""
         raise RuntimeError(
-            f"没有 m_Mesh 指向 {mesh_name} 且带骨骼的 SkinnedMeshRenderer：{bundle}{detail}"
-        )
+            f"没有 m_Mesh 指向 {mesh_name} 且带骨骼的 SkinnedMeshRenderer：{bundle}")
 
     mesh = json.loads(mesh_json.read_text(encoding="utf-8"))
-    weighted = []
+    weighted_ids = []
     missing_bones = []
-    for index, ptr in enumerate(renderer.m_Bones):
-        if ptr is None or not getattr(ptr, "path_id", 0):
-            missing_bones.append(f"#{index}: empty")
+    for index, ptr in enumerate(renderer["m_Bones"]):
+        path_id = _pptr(ptr)
+        if not path_id or _tree(objects, trees, path_id) is None:
+            missing_bones.append(f"#{index}: path_id={path_id}")
             continue
-        try:
-            bone = ptr.read()
-        except Exception as exc:
-            missing_bones.append(f"#{index}: path_id={ptr.path_id}, {exc}")
-            continue
-        if bone is None:
-            missing_bones.append(f"#{index}: path_id={ptr.path_id}, read=None")
-            continue
-        weighted.append(bone)
+        weighted_ids.append(path_id)
     if missing_bones:
         preview = "; ".join(missing_bones[:8])
         suffix = f" ... 共 {len(missing_bones)} 个" if len(missing_bones) > 8 else ""
         raise RuntimeError(f"骨骼 Transform 引用不完整：{preview}{suffix}")
-    if not weighted:
+    if not weighted_ids:
         raise RuntimeError("骨架为空：m_Bones 没有任何可读取 Transform")
 
-    weighted_by_path = {bone.path_id: index for index, bone in enumerate(weighted)}
+    weighted_by_path = {path_id: index for index, path_id in enumerate(weighted_ids)}
 
+    # 收齐加权骨及其全部祖先
     needed = {}
-    for bone in weighted:
-        current = bone
-        while current and current.path_id not in needed:
-            needed[current.path_id] = current
-            father = current.m_Father
-            current = father.read() if father and father.path_id else None
+    for path_id in weighted_ids:
+        current = path_id
+        while current and current not in needed:
+            node = _tree(objects, trees, current)
+            if node is None:
+                break
+            needed[current] = node
+            current = _pptr(node.get("m_Father"))
 
-    def depth(transform) -> int:
+    def depth(path_id) -> int:
         result = 0
-        father = transform.m_Father
-        while father and father.path_id and father.path_id in needed:
+        father = _pptr(needed[path_id].get("m_Father"))
+        while father and father in needed:
             result += 1
-            transform = father.read()
-            father = transform.m_Father
+            father = _pptr(needed[father].get("m_Father"))
         return result
 
-    ordered = sorted(needed.values(), key=lambda item: (depth(item), item.path_id))
-    node_index = {node.path_id: index for index, node in enumerate(ordered)}
+    ordered = sorted(needed, key=lambda path_id: (depth(path_id), path_id))
+    node_index = {path_id: index for index, path_id in enumerate(ordered)}
     nodes = []
-    for node in ordered:
-        father_id = node.m_Father.path_id if node.m_Father else 0
-        weighted_index = weighted_by_path.get(node.path_id)
+    for path_id in ordered:
+        node = needed[path_id]
+        game_object = _tree(objects, trees, _pptr(node.get("m_GameObject"))) or {}
+        weighted_index = weighted_by_path.get(path_id)
         entry = {
-            "name": node.m_GameObject.read().m_Name,
-            "pathId": node.path_id,
-            "parent": node_index.get(father_id, -1),
+            "name": game_object.get("m_Name", ""),
+            "pathId": path_id,
+            "parent": node_index.get(_pptr(node.get("m_Father")), -1),
             "weightedIndex": weighted_index,
-            "localPosition": _vec3(node.m_LocalPosition),
-            "localRotation": _quat(node.m_LocalRotation),
-            "localScale": _vec3(node.m_LocalScale),
+            "localPosition": _tt_vec3(node["m_LocalPosition"]),
+            "localRotation": _tt_quat(node["m_LocalRotation"]),
+            "localScale": _tt_vec3(node["m_LocalScale"]),
         }
         if weighted_index is not None:
             entry["boneNameHash"] = mesh["m_BoneNameHashes"][weighted_index]
@@ -248,8 +258,8 @@ def export_skeleton_json(
         "schemaVersion": 1,
         "unityVersion": unity_version,
         "rendererPathId": renderer_object.path_id,
-        "rootBonePathId": renderer.m_RootBone.path_id,
-        "weightedBoneCount": len(weighted),
+        "rootBonePathId": _pptr(renderer.get("m_RootBone")),
+        "weightedBoneCount": len(weighted_ids),
         "nodeCount": len(nodes),
         "nodes": nodes,
     }

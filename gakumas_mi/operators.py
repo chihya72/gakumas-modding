@@ -184,7 +184,7 @@ def _neutral_material_dds(semantic, component_id="body"):
     output = Path(tempfile.gettempdir()) / f"gmi_neutral_{component_id}_{semantic}.dds"
     core.write_solid_rgba8_dds(output, rgba)
     return str(output)
-from mathutils import Matrix, Vector
+from mathutils import Matrix, Quaternion, Vector
 from mathutils.bvhtree import BVHTree
 from mathutils.kdtree import KDTree
 
@@ -531,9 +531,24 @@ def _source_bone_positions(obj):
     }
 
 
+# Blender(Z-up, -Y forward) → Unity(Y-up, Z forward)
+C_UNITY = Matrix(((1, 0, 0, 0), (0, 0, 1, 0), (0, -1, 0, 0), (0, 0, 0, 1)))
+
+
+def _quaternion_xyzw(quaternion):
+    """Unity 的 Quaternion 序列化顺序是 (x,y,z,w)；mathutils 迭代是 (w,x,y,z)。"""
+    return [quaternion.x, quaternion.y, quaternion.z, quaternion.w]
+
+
 def _matrix_json(matrix):
+    """按 AssetStudio 的键序写 bindPose：`M<列><行>`，平移落在 M30..M32。
+
+    这是 `_bind_pose_matrix()` 和 `patch_unity_bundle` 读取时用的同一套约定。曾经写成
+    `M<行><列>`（转置），游戏原始 156 根骨的 bindPose 来自 Mesh JSON 不受影响，只有插件
+    自己新增的源专属骨中招——dress-2219 上表现为胸口/背后蝴蝶结、缎带、鞋花整片炸成黑刺。
+    """
     return {
-        f"M{row}{column}": float(matrix[row][column])
+        f"M{column}{row}": float(matrix[row][column])
         for row in range(4) for column in range(4)
     }
 
@@ -545,9 +560,7 @@ def _source_bone_sidecar_records(obj):
     )
     if not armature:
         return []
-    conversion = Matrix((
-        (1, 0, 0, 0), (0, 0, 1, 0), (0, -1, 0, 0), (0, 0, 0, 1),
-    ))
+    conversion = C_UNITY
     inverse_conversion = conversion.inverted()
     result = []
     for bone in armature.data.bones:
@@ -559,10 +572,14 @@ def _source_bone_sidecar_records(obj):
         result.append({
             "name": bone.name,
             "localPosition": list(unity.translation),
-            "localRotation": list(unity.to_quaternion()),
+            # Unity 的 Quaternion 是 (x,y,z,w)，mathutils 迭代出来是 (w,x,y,z)——
+            # 直接 list() 会把 w 写到第一位，运行时按 x 读，新骨的朝向整个错掉。
+            "localRotation": _quaternion_xyzw(unity.to_quaternion()),
             "localScale": list(unity.to_scale()),
             "length": float(bone.length),
             "bindPose": _matrix_json(bind_pose),
+            # 供新骨链根节点按游戏骨架静止姿势重算 local 用（见 _retarget_new_bone_roots）
+            "worldMatrix": C_UNITY @ bone_world @ C_UNITY.inverted(),
         })
     return result
 
@@ -608,6 +625,62 @@ def _extend_bundle_skeleton(skeleton, bone_map, source_bind, sidecar_report):
         added_bind_poses.append(bind_pose)
         next_index += 1
     return added_nodes, added_bind_poses
+
+
+def _target_rest_world(skeleton):
+    """游戏骨架每根骨的静止世界矩阵（Unity 空间），由 sidecar 的 local 链逐级合成。"""
+    nodes = skeleton.get("nodes") or []
+    world, result = {}, {}
+
+    def compose(index):
+        if index in world:
+            return world[index]
+        node = nodes[index]
+        position = node.get("localPosition") or [0.0, 0.0, 0.0]
+        x, y, z, w = node.get("localRotation") or [0.0, 0.0, 0.0, 1.0]
+        scale = node.get("localScale") or [1.0, 1.0, 1.0]
+        local = Matrix.LocRotScale(Vector(position), Quaternion((w, x, y, z)), Vector(scale))
+        parent = int(node.get("parent", -1))
+        world[index] = local if parent < 0 else compose(parent) @ local
+        return world[index]
+
+    for index, node in enumerate(nodes):
+        name = str(node.get("name") or "")
+        if name and name not in result:
+            result[name] = compose(index)
+    return result
+
+
+def _retarget_new_bone_roots(new_bones, records, skeleton):
+    """把挂在游戏骨下的新骨链根，按游戏骨架的静止姿势重算 local 变换。
+
+    作者骨架和游戏骨架的静止姿势并不相同（dress-2219 实测 Hips 差 38mm、Spine 差 83mm）。
+    直接沿用作者骨架里的相对变换，运行时会把新骨挂到别的位置，而 bindPose 记的是作者
+    世界位置——两边对不上，装饰件就被拉变形（蝴蝶结坍缩成一片）。
+
+    链内部（父也是新骨）不用动：那一段父子都按作者世界摆放，相对关系本来就自洽。
+    """
+    if not new_bones or not skeleton:
+        return 0
+    target_world = _target_rest_world(skeleton)
+    by_name = {str(item.get("name")): item for item in records if item.get("name")}
+    created = {str(item.get("name")) for item in new_bones}
+    retargeted = 0
+    for item in new_bones:
+        parent_name = str(item.get("parentName") or "")
+        if parent_name in created:
+            continue
+        source = by_name.get(str(item.get("name")))
+        parent_world = target_world.get(parent_name)
+        if source is None or parent_world is None or source.get("worldMatrix") is None:
+            continue
+        local = parent_world.inverted() @ source["worldMatrix"]
+        position, rotation, scale = local.decompose()
+        item["localPosition"] = list(position)
+        item["localRotation"] = _quaternion_xyzw(rotation)
+        item["localScale"] = list(scale)
+        retargeted += 1
+    return retargeted
 
 
 def _form_bone_map(scene):
@@ -664,10 +737,13 @@ def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
         remap = core.merge_accessory_bone_remap(
             remap, physics_report["bones"], physics_report["rigidParent"]
         )
+        records = _source_bone_sidecar_records(obj)
         report["newBones"] = core.build_source_extra_bones(
-            _source_bone_sidecar_records(obj), physics_report["newBones"],
+            records, physics_report["newBones"],
             parent_by_name=_source_bone_parents(obj), body_remap=remap,
         )
+        # 新骨链的根挂在游戏骨下，local 必须按游戏骨架的静止姿势重算
+        _retarget_new_bone_roots(report["newBones"]["newBones"], records, skeleton)
         report["physicsInheritance"] = physics_report
     report["explicitBones"] = explicit
     report["bones"] = remap
@@ -1730,7 +1806,7 @@ class GMI_OT_build_full_profile(Operator):
                 {"INFO"},
                 f"完整配置档已生成 → {output_dir}；匹配 {report['body']}（{report['match']}，{naming}），"
                 f"{report['vertexCount']} 顶点 / {report['weightedBoneCount']} 骨骼，"
-                f"逆算子 {report['operatorBytes'] // 1024} KB，不可观测骨 {len(report['unobservableBones'])} 根",
+                f"不可观测骨 {len(report['unobservableBones'])} 根",
             )
             return {"FINISHED"}
         except Exception as exc:
@@ -1878,8 +1954,14 @@ class GMI_OT_export_bundle_source(Operator):
             data["materials"] = core.merge_material_groups(
                 co_slots, target_n, data.get("materials") or []
             )
+            # 贴图只出【作者网格真的用到的段】。目标资源的段数可能多于用到的段——
+            # cstm-0119 全系列原版就是 3 段(主体 + 腰上一圈 128 顶点 + 胸前 179 顶点的
+            # 小件)。空段照样会被 _bundle_submeshes 造出来，但 0 面片、不可见，贴图给
+            # 什么都无所谓;不出条目就保留原版材质。按 range(target_n) 出的话，没做 co
+            # 部件的工程会被段 1 拽去要「原生 co 基础色」，空着就报“缺少 t0”。
+            used_groups = sorted(set(data["materials"]) or {0})
             group_alpha = {group: ("NATIVE_CO" if (component_id == "body" and group == 1) else None)
-                           for group in range(target_n)}
+                           for group in used_groups}
             material_slot_count = target_n
             output_root = bpy.path.abspath(scene.gmi_output_dir)
             if not output_root:
@@ -1900,7 +1982,8 @@ class GMI_OT_export_bundle_source(Operator):
                     set(), prop_slots, prop_data.get("materials") or []
                 )
                 prop_textures = _bundle_texture_sources(
-                    prop_obj, scene, "hairprop", {group: None for group in range(prop_slots)}
+                    prop_obj, scene, "hairprop",
+                    {group: None for group in sorted(set(prop_data["materials"]) or {0})}
                 )
                 for item in prop_textures:
                     item["rendererName"] = core.RENDERER_NAMES["hairprop"]

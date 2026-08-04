@@ -98,7 +98,7 @@ try:
         str(PROFILE_DIR), LIBRARY_DIR, component_id="body",
         body_resource="mdl_chr_atbm-cstm-0140_body")
     print("COMPLETE:", {k: result[k] for k in ("body", "vertexCount", "weightedBoneCount",
-                                               "activeBoneCount", "operatorBytes")})
+                                               "activeBoneCount")})
     print("unobservable:", result.get("unobservableBones"))
     print("REBUILD OK", PROFILE_DIR)
 except Exception:

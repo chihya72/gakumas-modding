@@ -156,6 +156,44 @@ with tempfile.TemporaryDirectory(prefix="gmi-blender-e2e-") as tmp:
         assert output_bundle.read_bytes() == b"test-bundle"
         assert output_manifest.is_file()
         assert output_manifest.read_bytes() == (bundle_src / "mod.json").read_bytes()
+        # bindPose 的键序：写入必须和 _bind_pose_matrix / patch_unity_bundle 的读取一致
+        # （AssetStudio 约定 M<列><行>，平移落在 M30..M32）。写成转置时，游戏原始骨不受
+        # 影响、只有插件新增的源专属骨炸开，很难一眼看出来，所以在这里锁死。
+        from mathutils import Matrix
+        sample = Matrix(((0.36, -0.48, 0.80, 1.5), (0.80, 0.60, 0.0, -2.5),
+                         (-0.48, 0.64, 0.60, 3.5), (0.0, 0.0, 0.0, 1.0)))
+        encoded = operators._matrix_json(sample)
+        assert [round(encoded[f"M3{i}"], 4) for i in range(3)] == [1.5, -2.5, 3.5], encoded
+        decoded = operators._bind_pose_matrix(encoded)
+        assert all(abs(sample[r][c] - decoded[r][c]) < 1e-6
+                   for r in range(4) for c in range(4)), decoded
+
+        # 新骨的两个约定：四元数是 (x,y,z,w)，且挂在游戏骨下的链根要按游戏骨架静止姿势
+        # 重算 local。写错任一个，游戏原始骨都不受影响、只有装饰件变形，很难一眼看出来。
+        from mathutils import Quaternion, Vector
+        turn = Quaternion((0.0, 0.0, 1.0), 1.2)          # 绕 Z 轴，w 与 xyz 都不为 0
+        assert operators._quaternion_xyzw(turn) == [turn.x, turn.y, turn.z, turn.w]
+        assert operators._quaternion_xyzw(turn)[3] == turn.w, "w 必须在末位"
+
+        # 游戏骨架：Hips 在 y=1.0；作者骨架把新骨摆在世界 (0.1, 1.3, 0.2)
+        fake_skeleton = {"nodes": [{
+            "name": "Hips", "parent": -1,
+            "localPosition": [0.0, 1.0, 0.0],
+            "localRotation": [0.0, 0.0, 0.0, 1.0], "localScale": [1.0, 1.0, 1.0],
+        }]}
+        authored = Matrix.LocRotScale(Vector((0.1, 1.3, 0.2)), turn, Vector((1.0, 1.0, 1.0)))
+        new_bones = [{"name": "Bow_A", "parentName": "Hips",
+                      "localPosition": [9.0, 9.0, 9.0],      # 故意填错，必须被重算掉
+                      "localRotation": [0.0, 0.0, 0.0, 1.0], "localScale": [1.0, 1.0, 1.0]}]
+        assert operators._retarget_new_bone_roots(
+            new_bones, [{"name": "Bow_A", "worldMatrix": authored}], fake_skeleton) == 1
+        parent_world = operators._target_rest_world(fake_skeleton)["Hips"]
+        item = new_bones[0]
+        x, y, z, w = item["localRotation"]
+        rebuilt = parent_world @ Matrix.LocRotScale(
+            Vector(item["localPosition"]), Quaternion((w, x, y, z)), Vector(item["localScale"]))
+        assert (rebuilt.translation - authored.translation).length < 1e-6, rebuilt.translation
+
         print("GMI_BLENDER_E2E_OK", bpy.app.version_string)
     finally:
         gakumas_mi.unregister()

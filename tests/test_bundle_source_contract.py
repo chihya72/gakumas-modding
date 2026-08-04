@@ -27,6 +27,31 @@ def test_scsp_body_remap_does_not_use_cloth_bones():
     }
 
 
+def test_scsp_preset_survives_the_trailing_one_suffix():
+    """SCSP 导出的骨名是「变体名 + _1」，预设规则必须照样命中。
+
+    dress-2219 实测：只查原名时 `LeftArm1_rot_1`、`LeftToe_1` 这类全部落空，
+    18 根带权重的身体骨（3514 权重）被误判成装饰骨，脚趾还会撞承重关节闸门。
+    """
+    target = {"LeftArm", "LeftForeArm", "LeftShoulder", "LeftHand",
+              "LeftToeBase", "RightToeBase", "LeftFoot"}
+    source = ["LeftArm1_rot_1", "LeftArm2_rot_1", "LeftForeArm_rot_1", "LeftElbow_1",
+              "LeftShoulder_rot_1", "LeftClavicle_1", "LeftRing_1",
+              "LeftToe_1", "RightToe_1", "LeftFoot_1"]
+    report = core.build_bone_remap(source, target, preset_name="scsp")
+    assert report["bones"] == {
+        "LeftArm1_rot_1": "LeftArm", "LeftArm2_rot_1": "LeftArm",
+        "LeftForeArm_rot_1": "LeftForeArm", "LeftElbow_1": "LeftForeArm",
+        "LeftShoulder_rot_1": "LeftShoulder", "LeftClavicle_1": "LeftShoulder",
+        "LeftRing_1": "LeftHand",
+        "LeftToe_1": "LeftToeBase", "RightToe_1": "RightToeBase",
+        "LeftFoot_1": "LeftFoot",
+    }
+    # 不带后缀的写法不能因此回归
+    assert core.build_bone_remap(["LeftToe"], target, preset_name="scsp")["bones"] == {
+        "LeftToe": "LeftToeBase"}
+
+
 def test_accessory_remap_cannot_override_body_preset():
     merged = core.merge_accessory_bone_remap(
         {"LeftElbow": "LeftForeArm", "Hips": "Hips"},
@@ -490,6 +515,29 @@ def test_merge_material_groups():
     assert core.merge_material_groups(set(), 1, []) == []
 
 
+def test_new_bones_carry_root_weight_and_pendulum():
+    """新骨必须带 rootWeight / pendulum，否则运行时锁死在静止姿态、不下垂。
+
+    runtime 的 SetDefaultValues 给的是 rootWeight=1.0（完全刚性跟随根骨）+ pendulum=0
+    （无重力项）；游戏自己的裙摆骨实测是 0.3 / 0.001。缺这两项时 dress-2219 的蝴蝶结
+    缎带全部过分翘起，形状对但姿态不对。
+    """
+    records = [
+        {"name": "Bow_A", "localPosition": [0, 0, 0], "length": 0.1},
+        # 源自带 swing（IP 包能抽出 ActorSwing）但通常没有这两项，也要补上
+        {"name": "Ribbon_A", "localPosition": [0, 0, 0], "length": 0.1,
+         "swing": {"damping": 0.3, "stiffness": 0.01, "spring": 0.5, "mass": 0.1,
+                   "useWindGlobalForce": 1}},
+    ]
+    report = core.build_source_extra_bones(records, ["Bow_A", "Ribbon_A"], body_remap={})
+    for bone in report["newBones"] + report["extraSwingBones"]:
+        assert bone["swing"]["rootWeight"] == 0.3, bone
+        assert bone["swing"]["pendulum"] == 0.001, bone
+    # 源自带的参数不能被默认值盖掉
+    ribbon = next(b for b in report["newBones"] if b["name"] == "Ribbon_A")
+    assert ribbon["swing"]["damping"] == 0.3 and ribbon["swing"]["mass"] == 0.1
+
+
 def test_hair_and_hairprop_share_one_package():
     """发型+发饰必须导成一个包两个 renderer，格式对齐实机验证过的
     IP/06-ab-route-handoff/ab-mods/qa-madoka-ttmr-hair-0002-2b/mod.json。"""
@@ -581,6 +629,7 @@ if __name__ == "__main__":
     test_physics_override_precedence()
     test_source_extra_bone_sidecar()
     test_merge_material_groups()
+    test_new_bones_carry_root_weight_and_pendulum()
     test_hair_and_hairprop_share_one_package()
     test_hairprop_only_package_is_hair_part()
     print("bundle source contract OK")
@@ -609,3 +658,14 @@ def test_operator_flags_are_accepted_by_patch_script():
 def test_packaging_vendors_patch_script():
     pkg = (ROOT / "tools" / "package_blender_addon.py").read_text(encoding="utf-8")
     assert "patch_unity_bundle.py" in pkg, "打包脚本不再 vendor patch 脚本，一键打包在装好的插件里会找不到它"
+
+
+def test_bundle_textures_only_cover_used_groups():
+    """贴图按【用到的段】出，不按目标资源的段数出。
+
+    cstm-0119 全系列原版 body 是 3 段。按 range(target_n) 出的话，没做 co 部件的
+    工程会被空着的段 1 拽去要「原生 co 基础色 t0」，导出直接报“材质槽 1 缺少 t0”。
+    """
+    ops = (ROOT / "gakumas_mi" / "operators.py").read_text(encoding="utf-8")
+    assert "for group in used_groups" in ops
+    assert "for group in range(target_n)" not in ops, "贴图又按目标段数出了，空段会硬要 co 贴图"
