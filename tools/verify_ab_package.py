@@ -39,11 +39,11 @@ def _sha256(path: Path) -> str:
 
 def _bundle_src(root: Path) -> Path:
     root = root.resolve()
-    if (root / "mod.json").is_file():
-        return root
     candidate = root / "bundle-src"
     if (candidate / "mod.json").is_file():
         return candidate
+    if (root / "mod.json").is_file():
+        return root
     raise FileNotFoundError(f"找不到 bundle-src/mod.json: {root}")
 
 

@@ -113,13 +113,13 @@ bindposeMode=mod-remapped originalRoot="Hips" modRoot="Hips"` +
 
 > 面向接手 AB 路线物理骨的开发者。本节的机制结论(tip 骨、`UpdateChainInfo` 语义、参数字段)
 > 是读源码 + 逐项实测得出的，仍然成立；**但「新骨会摆」这个整体结论没有现役证据**——
-> 当前管线下装饰件实测不动，见第 5 节和
-> [`current-status-and-roadmap.md`](current-status-and-roadmap.md) 的「未解决:自建摇物链」。
+> 当前管线尚无稳定、可重复的画面级成功案例，见第 5 节和
+> [`current-status-and-roadmap.md`](current-status-and-roadmap.md) 的「下一开发重点：自建摇物链」。
 
 ### TL;DR
 
-- **新骨独立 ActorSwing 物理:已支持。** 运行时路线(插件建链 + `AddComponent`)成立,
-  不需要 option A(bundle 授权原生组件),不需要角色初始化前的附挂入口。
+- **新骨独立 ActorSwing 的数据和建链路径已实现，但不是已验证的交付能力。** 插件建链与
+  `AddComponent` 能完成注册，当前仍缺稳定画面级摆动案例。
 - **长期误诊的「1 层墙」根本不是 bug**,是**导出器漏数据**。`UpdateChainInfo` 一直是对的。
 - 数据补齐后 `UpdateChainInfo` 自己就建出正确层数。**不要手搭 layer,也不要再逆向它**。
 - **多数服装复用 base 骨 → 物理免费**,仍是作者首选;新骨物理是 opt-in 高级特性。
@@ -211,10 +211,10 @@ tip                不在任何 layer 里        ← 只定义末节朝向
 
 ### 5. 已知缺口
 
-- ⚠️ **2026-08-04 起有一个未解的实机问题:插件自建的摇物链装饰件在游戏里完全不动。**
+- ⚠️ **插件自建摇物链尚无稳定画面级成功案例，是 1.0.0 后的下一开发重点。**
   数据链路在日志里全对(`createdBones=26 swingPrepared=36`、链尾齐全、3 条链注册成功),
   画面上就是不摆。排查现场与下一步见
-  [`current-status-and-roadmap.md`](current-status-and-roadmap.md) 的「未解决:自建摇物链」。
+  [`current-status-and-roadmap.md`](current-status-and-roadmap.md) 的「下一开发重点：自建摇物链」。
   **注意别把 `layer[N].active=0` 当病因**——第 3 节早就写明它是每帧 LOD 标志、刚建完读必然是 0。
 - **`limitInfo`(每骨限位)当前不导出**。源里对末端 `*_End` 会把限位放开到 [-180,180]。目前实机
   表现正常,但如果将来出现摆动越界/穿模,这是第一个该补的地方。
@@ -292,7 +292,7 @@ dress-2219 上修复前平均 208.2mm / 最大 572.4mm、修复后 0.0mm,且模�
 
 - **几何 / 权重 / bindpose / COLOR / 骨骼结构**：100% 无损；
 - **动画**：身体用学马编舞（retarget 是特性，不是损失）；
-- **源专属骨物理**：已恢复（2026-07-17），做法见第 3 节。
+- **源专属骨变换、权重和建链数据**：已恢复；动态物理尚无稳定画面级案例，做法与缺口见第 3 节。
 
 为什么 reparent 一定有损：学马 renderer 的 `bones[]` 固定 146 根，**没有源专属骨的槽位**。
 插件早期「没同名就 fallback 到 Hips」会丢掉专属骨信息。现在的做法是没同名就

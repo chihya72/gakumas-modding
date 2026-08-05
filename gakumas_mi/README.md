@@ -1,4 +1,4 @@
-# GakumasMI Blender 插件 0.9.3
+# GakumasMI Blender 插件 1.0.0
 
 面向《学园偶像大师》的作者侧 Blender 插件：导入参考模型、对骨名、准备贴图、导出成品
 AssetBundle。**只做 AB（原生蒙皮）路线**，3DMigoto 逆蒙皮的传权与导出已整体移除——作者
@@ -8,7 +8,7 @@ AssetBundle。**只做 AB（原生蒙皮）路线**，3DMigoto 逆蒙皮的传�
 base/mask/shade 三张贴图，**永不碰 PS hash 或寄存器槽位**——AB 路线的贴图由运行时按
 `rendererName + materialSlot + property` 语义替换，新场景/服装/角色自动覆盖。
 
-目标环境：Blender 4.2 LTS（4.5 LTS 也有 CI 覆盖）。当前状态：开发预览版。
+目标环境：Blender 4.2 LTS（4.5 LTS 也有 CI 覆盖）。当前状态：正式稳定版。
 
 ## 安装
 
@@ -29,16 +29,16 @@ base/mask/shade 三张贴图，**永不碰 PS hash 或寄存器槽位**——AB 
 
 | 你要做的事 | 看哪页 |
 |---|---|
-| 装环境、拿网盘资源库和模板 | [1-环境准备与安装](../docs/wiki/1-环境准备与安装.md) |
-| 搞懂配置档 / 抓帧 / 骨骼映射这些词 | [2-核心概念](../docs/wiki/2-核心概念.md) |
-| 跑通第一个换装 mod | [3-快速上手](../docs/wiki/3-快速上手：第一个换装%20mod.md) |
-| ① 准备配置档 | [4-步骤①-准备配置档](../docs/wiki/4-步骤①-准备配置档.md) |
-| ② 材质与贴图（t0/t1/t4、分材质烘焙、肤色对齐） | [5-步骤②-材质与贴图](../docs/wiki/5-步骤②-材质与贴图.md) |
-| ③ 骨骼映射表、承重关节闸门、导出打包 | [6-步骤③-导出AB bundle](../docs/wiki/6-步骤③-导出AB%20bundle.md) |
-| 发型与配套发饰 | [7-发型与发饰](../docs/wiki/7-发型与发饰.md) |
-| 透明 / 镂空（原生 co） | [8-透明材质（原生co）](../docs/wiki/8-透明材质（原生co）.md) |
-| 报错、没描边、颜色错乱 | [9-常见问题与排错](../docs/wiki/9-常见问题与排错.md) |
-| 从 MMD/PMX 等外部模型做起 | [10-外部模型转换实战规范](../docs/wiki/10-外部模型转换实战规范.md) |
+| 装环境、拿网盘资源库和模板 | [1-环境准备与安装](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/1-环境准备与安装.md) |
+| 搞懂配置档 / 抓帧 / 骨骼映射这些词 | [2-核心概念](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/2-核心概念.md) |
+| 跑通第一个换装 mod | [3-快速上手](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/3-快速上手：第一个换装%20mod.md) |
+| ① 准备配置档 | [4-步骤①-准备配置档](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/4-步骤①-准备配置档.md) |
+| ② 材质与贴图（t0/t1/t4、分材质烘焙、肤色对齐） | [5-步骤②-材质与贴图](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/5-步骤②-材质与贴图.md) |
+| ③ 骨骼映射表、承重关节闸门、导出打包 | [6-步骤③-导出AB bundle](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/6-步骤③-导出AB%20bundle.md) |
+| 发型与配套发饰 | [7-发型与发饰](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/7-发型与发饰.md) |
+| 透明 / 镂空（原生 co） | [8-透明材质（原生co）](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/8-透明材质（原生co）.md) |
+| 报错、没描边、颜色错乱 | [9-常见问题与排错](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/9-常见问题与排错.md) |
+| 从 MMD/PMX 等外部模型做起 | [10-外部模型转换实战规范](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/10-外部模型转换实战规范.md) |
 
 ## 两种 JSON 的区别
 
@@ -62,21 +62,21 @@ base/mask/shade 三张贴图，**永不碰 PS hash 或寄存器槽位**——AB 
 是作者基本功。身体骨名由八家预设和面板映射表兜底，装饰物理按源父骨/语义规则默认处理，
 异常件用覆盖表修正。
 
-**装饰物理的当前边界（0.9.3）**：「跟裙摆」（蹭游戏自带裙摆骨）和「刚性跟父骨」是可用的；
-**「自建摇物链」实测装饰件在游戏里不动**，正在查，详见
-[`../research/current-status-and-roadmap.md`](../research/current-status-and-roadmap.md)
-的「未解决：自建摇物链」。
+**装饰物理的当前边界（1.0.0）**：「跟裙摆」（蹭游戏自带裙摆骨）和「刚性跟父骨」是可用的；
+**「自建摇物链」尚无稳定的画面级成功案例，是下一个开发重点**，详见
+[当前状态与路线](https://github.com/chihya72/gakumas-modding/blob/main/research/current-status-and-roadmap.md)
+的「下一开发重点：自建摇物链」。
 
 成品 `.bundle` + `mod.json` 放进 Mod Runtime 的 `gakumas-mod/mods/<id>/`
 （chinosk6 的 `gkms-localify-dmm` 用的是它自己的 `gakumas-local/local-files/mods/<id>/`）。
 
 已排除的路线、作废的做法和被推翻的结论见
-[`../research/lessons-learned.md`](../research/lessons-learned.md)；当前能力边界与后续计划见
-[`../research/current-status-and-roadmap.md`](../research/current-status-and-roadmap.md)；
-运行时机制与新增物理骨规范见 [`../research/ab-route-notes.md`](../research/ab-route-notes.md)。
+[已证伪结论](https://github.com/chihya72/gakumas-modding/blob/main/research/lessons-learned.md)；当前能力边界与后续计划见
+[当前状态与路线](https://github.com/chihya72/gakumas-modding/blob/main/research/current-status-and-roadmap.md)；
+运行时机制与新增物理骨规范见 [AB 路线笔记](https://github.com/chihya72/gakumas-modding/blob/main/research/ab-route-notes.md)。
 
 ## 版本与打包
 
-各版本变更见根目录 [`../CHANGELOG.md`](../CHANGELOG.md)。发布包用
+各版本变更见 [CHANGELOG](https://github.com/chihya72/gakumas-modding/blob/main/CHANGELOG.md)。发布包用
 `python tools/package_blender_addon.py` 生成（代码版不含资源库；加 `--with-body-lib`
 可一并打包）。本地包不提交到公开仓库。

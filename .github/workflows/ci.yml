@@ -24,8 +24,7 @@ jobs:
       - name: 安装依赖
         run: pip install numpy pillow pytest UnityPy
 
-      # pytest 一直没进 CI —— tests/test_*.py 的 30 个契约测试（含 500 行的
-      # bundle 源契约）在本地能跑，但从没在 CI 上跑过。
+      # tests/test_*.py 的 35 个契约测试（含 bundle/source、工具和发布入口回归）。
       - name: 契约测试
         run: python -m pytest tests -q
 

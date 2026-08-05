@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (0, 9, 3),
+    "version": (1, 0, 0),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "学园偶像大师换装/换发 mod 制作（AB bundle 路线）：抓帧生成配置档 → 骨名映射到游戏骨架 → 导出并打包 AB bundle（原生蒙皮/描边/物理）",
@@ -85,7 +85,7 @@ def register():
     )
     bpy.types.Scene.gmi_output_dir = StringProperty(
         name="输出目录", subtype="DIR_PATH",
-        description="导出的 mod 包写到这里；把整个包文件夹放进游戏 Mods 目录即可安装",
+        description="导出的 mod 包写到这里；把整个包文件夹放进游戏的 gakumas-mod\\mods 目录即可安装",
     )
     bpy.types.Scene.gmi_bundle_template = StringProperty(
         name="R32 模板 bundle", subtype="FILE_PATH",

@@ -1,6 +1,7 @@
 # Third-party notices
 
-本仓库自有代码以 [GPL-3.0](LICENSE) 发布。选 GPL-3.0 不是偏好问题：仓库内再分发的
+本仓库自有代码以 [GPL-3.0](LICENSE) 发布。正式 toolkit zip 在根目录附带 `LICENSE` 和本文件，
+并在 `3dmigoto_gkms/` 附带修改补丁说明。选 GPL-3.0 不是偏好问题：仓库内再分发的
 `3dmigoto_gkms/d3d11.dll` 是 GPL-3.0 项目 3DMigoto 的修改版二进制，其许可要求整体以
 同一许可分发。
 
@@ -26,6 +27,12 @@ GPL-3.0 要求随二进制提供对应的完整源码。本仓库的 `d3d11.dll`
 > 以「上游 + 完整补丁」的形式提供是发行版常见做法，不另开 fork 仓库。
 >
 > 需要一份可直接 clone 的完整源码树，开 issue 说明即可。
+
+正式发布包必须同时包含：
+
+- 根目录 `LICENSE` 与 `third-party-notices.md`；
+- `3dmigoto_gkms/FLIP-RESIZE-PATCH.md`；
+- 与本文件所列固定上游版本相匹配的第三方二进制。
 
 ## 发布包在构建时取用、不入库的二进制
 

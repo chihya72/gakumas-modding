@@ -157,7 +157,7 @@ mod 顶点组 ──分类──┤                                             
   0.9.3 的四项 sidecar 写入约定后，日志同样全绿（`createdBones=26 swingPrepared=36`、链尾齐全、
   3 条链注册），装饰件在游戏里维持静止姿态。**所以 P4 的实机验收目前只到"链建出来了"，
   不到"它会摆"**；成品用刚性/跟裙摆绕开。排查现场与下一步见
-  [`current-status-and-roadmap.md`](current-status-and-roadmap.md) 的「未解决：自建摇物链」。
+  [`current-status-and-roadmap.md`](current-status-and-roadmap.md) 的「下一开发重点：自建摇物链」。
 
 ### P5. 权重导出(换标签,不刷)
 - 现有路径:`_inverse_skin_export_data(source_rig_weights=True)` 原样读顶点组 + 按对照表映射骨索引。
@@ -363,7 +363,7 @@ geojson/bundle 侧:
 ## 11. 接手入口
 
 - 游戏侧运行时仓库：同级的 `../gakumas-mod-runtime/`（产物 `xinput1_3.dll`）
-- **主回归（最常用）**：`python -m pytest tests/ -q`（当前 30 passed）
+- **主回归（最常用）**：`python -m pytest tests/ -q`（当前 35 passed）
 - Blender 导出回归：`blender --background --factory-startup --python-exit-code 1 --python tests/blender_smoke.py`
 - Blender UI 回归：`blender --background --factory-startup --python-exit-code 1 --python tests/blender_ui_smoke.py`
 - 运行时 Release 编译（在 `../gakumas-mod-runtime/`）：`.\generate.bat` 后
@@ -374,7 +374,7 @@ geojson/bundle 侧:
 - prep 侧闸门与教训见 [`../docs/wiki/10-外部模型转换实战规范.md`](../docs/wiki/10-外部模型转换实战规范.md) §0-3b / §2-6 / §5（⭐v3 条目）。
 - CI 里还会跑 5 个纯 core 脚本（`tests/material_bake_smoke.py` 等，见 `.github/workflows/ci.yml`）。
   移除 3DMigoto 后 `mod_ini_contract.py` / `weight_transfer_smart.py` 两组已删。
-- 模板工具：新目标模板 `tools/repair_template_bone_names.py --mode index`，已导出成品用 `--mode hash`。插件包用 `dist/` 下最新 `gakumas_mi-0.9.3-code-*.zip`。
+- 模板工具：新目标模板 `tools/repair_template_bone_names.py --mode index`，已导出成品用 `--mode hash`。插件包用 `dist/` 下最新 `gakumas_mi-1.0.0-code-*.zip`。
 - ⚠**装完新插件必须彻底重启 Blender**（内存里的旧模块不会自动重载；另注意 `gmi_bone_remap_file` 的显式映射优先于自动分类）。
 
 主仓库基础 checkpoint 已提交并推送；当前冻结期改动与插件 runtime 改动会在本轮单独提交，接手时不要

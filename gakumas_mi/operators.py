@@ -2437,7 +2437,7 @@ class GMI_bone_map_item(bpy.types.PropertyGroup):
         items=[
             ("auto", "自动", "跟源父骨；胸/Bust 名称按 Bust*_S，异常件用覆盖策略"),
             ("rigid", "刚性跟父骨", "无物理，跟最近的已映射身体父骨——不确定时选它"),
-            ("integrate", "自建摇物链", "新建骨 + 自己的 ActorSwing 链（自由悬垂的飘带/蝴蝶结）"),
+            ("integrate", "自建摇物链（实验）", "新建骨 + ActorSwing 链；尚无稳定实机画面案例，正式成品暂勿依赖"),
             ("follow_skirt", "跟裙摆", "蹭最近的裙摆摇物骨（裙边花边），无视距离"),
             ("follow_nearest", "跟随最近骨骼",
              "跟随最近的目标摇物骨；超过安全距离时改为刚性跟父骨"),

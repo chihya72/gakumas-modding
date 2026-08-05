@@ -5,8 +5,9 @@ name: Release · Gakumas Mod 制作工具
 # 0.9.0 起两条产品线合并成一个包，只有这一个 release workflow：
 #   gakumas-mod-toolkit-<版本>.zip
 #     ├─ 安装说明.txt
+#     ├─ LICENSE / third-party-notices.md
 #     ├─ blender-addon/gakumas_mi-<版本>.zip   ← Blender「从磁盘安装」直接选它
-#     └─ 3dmigoto_gkms/                        ← 整个拷进游戏根目录，只用来按 F8 抓帧
+#     └─ 3dmigoto_gkms/                        ← 抓帧文件和修改版源码补丁说明
 # 旧的 gakumas-mi-v* 与 3dmigoto-gkms-v* 两条 tag 线到此为止，版本号统一跟插件走。
 
 on:
@@ -96,8 +97,13 @@ jobs:
         run: |
           mkdir -p stage/3dmigoto_gkms
           cp 3dmigoto_gkms/d3d11.dll 3dmigoto_gkms/d3dx.ini 3dmigoto_gkms/键位说明.txt stage/3dmigoto_gkms/
+          cp 3dmigoto_gkms/FLIP-RESIZE-PATCH.md stage/3dmigoto_gkms/
           cp thirdparty/x64/nvapi64.dll thirdparty/x64/d3dcompiler_47.dll stage/3dmigoto_gkms/
           cp -r 3dmigoto_gkms/ShaderFixes stage/3dmigoto_gkms/
+
+      - name: 装配许可文件
+        run: |
+          cp LICENSE third-party-notices.md stage/
 
       - name: 写包内安装说明
         run: |
@@ -126,7 +132,10 @@ jobs:
 
           做出来的 .bundle + mod.json 放进
              <游戏目录>\gakumas-mod\mods\<模组标识>\
-          换模由另外两个 DLL 负责，不在本包内。
+          换模由独立项目的 xinput1_3.dll 负责，不在本包内。
+
+          许可证与第三方来源见包根目录 LICENSE、third-party-notices.md，
+          以及 3dmigoto_gkms\FLIP-RESIZE-PATCH.md。重新分发时请一并保留。
 
           完整教程见项目 docs/wiki/。
           风险自负：第三方视觉修改工具，不改数值/网络/服务端，不绕过反作弊。
@@ -168,6 +177,7 @@ jobs:
             不能用 Blender 自带的那个）；
           - `3dmigoto_gkms/` —— 抓帧环境，整个拷进游戏根目录，进游戏按 F8 抓帧做配置档。
             **它只抓帧，不加载 mod。**
+          - `LICENSE` / `third-party-notices.md` —— 项目与第三方许可；重新分发时一并保留。
 
           换模运行时 `xinput1_3.dll`（内含游戏内 Mod 管理 UI）是独立项目，不在本包内。
           详细步骤见仓库 `docs/wiki/`。""" % (version, version))

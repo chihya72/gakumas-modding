@@ -1,6 +1,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import shutil
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -82,3 +83,18 @@ def test_verify_ab_package_passes_minimal_contract(tmp_path):
         "invalidParentCount": 0,
         "missingParameterCount": 0,
     }
+
+    # 正式 release 目录同时有部署用顶层 mod.json 和完整 bundle-src；验证器必须检查
+    # bundle-src，不能被顶层精简部署清单截走。
+    release_root = tmp_path / "release"
+    bundle_src = release_root / "bundle-src"
+    bundle_src.mkdir(parents=True)
+    for name in ("mod.json", "test_bones.json.txt", "test.geojson.txt", "t4.png"):
+        shutil.copy2(tmp_path / name, bundle_src / name)
+    (release_root / "mod.json").write_text(
+        json.dumps({"runtimeProtocol": 1, "buildId": "stale-top-level"}),
+        encoding="utf-8",
+    )
+    packaged_report = verify.verify_package(release_root)
+    assert packaged_report["ok"]
+    assert Path(packaged_report["bundleSource"]) == bundle_src.resolve()
