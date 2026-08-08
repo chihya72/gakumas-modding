@@ -216,6 +216,13 @@ tip                不在任何 layer 里        ← 只定义末节朝向
   画面上就是不摆。排查现场与下一步见
   [`current-status-and-roadmap.md`](current-status-and-roadmap.md) 的「下一开发重点：自建摇物链」。
   **注意别把 `layer[N].active=0` 当病因**——第 3 节早就写明它是每帧 LOD 标志、刚建完读必然是 0。
+- ⚠️ **现役导出的 sidecar `newBones` 是空的**(2026-08-09 核对 `ab-export-20260727` 产出的
+  `chisaki-swimsuit` 与 `hmsz-fuyuko-icu`,两个包都是 `newBones: []`)。源专属骨只进了
+  `bones`,既没有摆动参数也没有链尾 tip,于是运行时把它们逐根做成**长度 1 的链**
+  (`chain groups (roots x length): 22x1`),`CampusActorAnimationRig.RegisterBones` 直接抛
+  `ArgumentOutOfRangeException`。运行时侧现在有 SEH 兜底不至于打断换装开关,但只要导出器
+  不产出 `newBones`,本节第 6 条那套规范就一次都没真正走过。**这是第 4 项转 A 之前必须先
+  补的数据缺口,不是运行时的物理问题。**
 - **`limitInfo`(每骨限位)当前不导出**。源里对末端 `*_End` 会把限位放开到 [-180,180]。目前实机
   表现正常,但如果将来出现摆动越界/穿模,这是第一个该补的地方。
 - **碰撞体不导出**。`SetDefaultValues` 留下半径 0.05 的空碰撞体,手臂会穿过装饰件。游戏本体
