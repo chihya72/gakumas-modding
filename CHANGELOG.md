@@ -6,7 +6,7 @@
 
 > ⚠ **0.9.0 里各条的验证程度不一样。**（下面这段写于 2026-07-27 的发布冻结之前；
 > 冻结期的 RC 闭环之后，骨骼映射表单、承重关节闸门、三步 UI、校色 t0 和刚性/跟裙摆装饰
-> 策略已转为实机实证；自建摇物链只有建链日志，至今尚无稳定画面级案例。逐项见
+> 策略已转为实机实证；自建摇物链当时只有建链日志（**2026-08-11 已画面级确认**）。逐项见
 > `research/current-status-and-roadmap.md`。）
 >
 > **实机验证过（2026-07-26，星仪·大国主 PMX → `fktn-othr-0002`，进游戏确认）**：
@@ -25,6 +25,120 @@
 > **纯按公开命名规范写的，连对应模型都没拿到过**：VRM/VRoid、3ds Max Biped、Auto-Rig Pro、
 > 英文 Humanoid 四张预设表。表里名字若拼错，表现是那几行不预填、要手动选（有闸门兜着不会
 > 静默出废品），但不能宣称"支持"。
+
+## 1.1.0 — 自建摇物骨：参数取自原版基准，飘带不再建链
+
+- **新增 `gakumas_mi/swing_presets.json`：学马原生摆动参数基准表。** 由
+  `tools/scan_vanilla_swing_bones.py` 扫 530 套原版 body bundle 得出（bundle 内嵌 typetree，
+  字段按名字读，不是按偏移猜）。4 档部件（ribbon / cloth / sleeve / skirt）× 3 个链上角色
+  （链根锚 / 中段 / 链尾）的 median 做默认值、min/max 备作导出闸门区间；
+- **摆动参数写全。** 此前只写 `damping/stiffness/spring/mass/rootWeight/pendulum` 六项，
+  其余交给运行时 `SetDefaultValues`。对照原版实测那是错的：`pendulumRange` **84.6% 取 1.0**
+  （它是 pendulum 的作用范围，留 0 等于把重力项乘没了）、`wind` 84.6% 取 1.0、`useLimit` 88.3%
+  是 1 且带真实角度限位。少这几项时骨在数据上"参数齐全"，实际既不下垂也不受风；
+- **飘带 / 蝴蝶结不再建 `ActorSwingChain`。** 原版实测裙类 94% 挂链、披风类 54%，而飘带绳结类
+  只有 2.6%——它们本来就是裸 `ActorSwingDynamicBone`，链是裙摆专用的环形碰撞解算。
+  sidecar 新增 `swingChains` 段，宿主骨与按链长的分组在导出器离线算好，运行时照单执行；
+- **骨骼映射表单新增「部件类型」列**：飘带蝴蝶结 / 披风褶边 / 袖口 / 裙裤下摆四档，决定取
+  哪一档原版参数和建不建链；只在策略选了「自建摇物链」时可点。默认「自动」按骨名猜，认不
+  出来按飘带处理（自由悬垂、不建链，最保守）。**点名链上任意一根即对整条链生效**——否则同
+  一条链会混用两档参数。随骨映射 JSON 一起存读（新增 `swingCategories` 段，schemaVersion 2）；
+- 试过做「摆动幅度」弱/标准/强三档，**实测证否后撤销**：把 `damping`/`stiffness`/`spring`/
+  `mass`/`pendulum` 从原版分布一端拉到另一端，摆幅只动 ±35% 且方向与预期相反，它们不是决定
+  幅度的主因。只保留标准档（原版中位数）。经过与下次该怎么查见
+  [`research/ab-route-notes.md`](research/ab-route-notes.md) §12；
+- **角度限位默认关闭。** 限位是按骨轴授权的：原版摇物骨的子骨一律在 local −X（X=扭转轴，
+  所以锁成 `[0,0]`），而 MMD 源的子骨在 local −Z。照搬等于锁死一条真·摆动轴、再把另一条夹到
+  ±30° —— 参数全对却纹丝不动。不做主轴置换（作者 rig 的骨轴可能任意斜向，猜错代价就是这种
+  最难查的故障）；源模型显式给了 `useLimit` 的照它的来；
+- **修 `useWindGlobalForce` 写成整数**：运行时 nlohmann 按 bool 读会抛 `type_error.302`，
+  而那一抛是**整份 sidecar 作废、骨架 graft 整个跳过** —— 表现是网格根本没换、只有贴图生效。
+  导出侧出真 bool，运行时两种都收；
+- **不建分叉链**：`UpdateChainInfo` 只沿第一个子节点建层，一根骨带两个子分支时另一支永远
+  进不了链层，而导出器却会按"最深那支"报一个链长 —— 静默建条只覆盖一半的链。检测到分叉
+  直接不建（那些骨照样逐骨模拟，只是少了环形碰撞，安全降级）；
+- **分类词表与扫描器同步**：`Gown`/`Shirt`/`Inner` 曾在扫描器算 cloth、在插件落 ribbon，
+  于是自动模式用错参数还不建链。新增契约测试直接读扫描器源码比对，再分叉会当场红；
+- 修一批评审指出的问题：托管引用写入走 GC write barrier（裸指针直写会绕过增量 GC 的写屏障，
+  长时间运行可能丢引用）；骨复用改为**按归属作用域**（key = `modId | sidecar 指纹 | source`；
+  同一角色层级下 body 包和 hair 包、乃至先后换同一部位的两个 mod，同名自定义骨都不再被后来者
+  直接复用、跳过自己的父级与参数）；分类规则**顺序**也与扫描器对齐
+  （`BeltChain`/`CapeRibbon`/`CollarBow` 这类两边词表都命中的名字，先判哪个就归哪类）；
+  打包器缺必需数据文件时直接失败（此前缺文件仍会打出"成功"的 ZIP）；`swing_presets.json`
+  与扫描脚本入库；
+- 包验证器：摇物骨要写全 12 项参数（含碰撞体三项）；**`extraSwingBones`/`newBones` 也查**
+  （链尾同样会被运行时建成动态骨，缺参数照样落默认值，此前只查 `bones[]` 会零告警放行）；
+  新增 `swingChains` 契约检查（宿主/链根存在性、链根重复认领、链根的父必须是宿主、分叉拓扑）；
+- 包验证器的两个类型漏洞：`chainLength: "2"` 此前被静默跳过整段比对（运行时按整数读），
+  现在报错；`bones: 7` 此前让核包工具自己抛 `TypeError`，现在在唯一入口归一化成一条可读错误；
+- 扫描器 `--limit N` 调试模式修复：局部样本不保证四档齐全，`build_plugin_presets` 缺档跳过
+  而不是 `KeyError`；同时**缺档时拒绝 `--install`**，生产基线只能来自全量扫描。
+
+### 运行时（gakumas-mod-runtime）
+
+- **建骨建链搬到 graft 时（prefab 上）**，删掉 `RegisterBones` 里的列表追加和 SEH 兜底。
+  `initialTransforms` 与 `swingDynamicBones` 是按下标并行的两张表，只往后者追加会让
+  `RegisterBones` 取下标越界、整个注册中途夭折；而 `ActorSwingDynamicBone`/`ActorSwingChain`
+  都实现 `IActorAnimationBone`，游戏自己的 `CampusActorAnimation.Initialize()` 会收走它们并
+  保证两表同长；
+- **新建的链要自己建层再补授权字段**：prefab 上 `AddComponent` 的链只有 `rootBones`，
+  `OnEnable` 不建层（游戏自己的链在 bundle 里就带着序列化好的 layers）。现在在 hook 里调
+  `UpdateChainInfo`，再按 1539 条原版链的实测补 `active`（layer>0 置 1）和 `radius`
+  （0.010→0.015→0.025→0.030→0.033 逐层递增）。此前这两项停在 `ChainLayerInfo()` 默认值
+  `active=0`/`radius=0.05`，等于链不参与模拟；
+- 新增 `pendulumRange`/`wind`/`dynamicType`/`limitInfo`/collider 写入；
+- **碰撞体与限位改在 graft 时自己 `new` 出来再写**，删掉整趟活体补写和那张全局
+  `骨名 → 参数` 表。旧做法两个 mod 用了同名骨就互相覆盖参数、碰巧和原版骨同名还会去改
+  原版的碰撞体。`UnityResolve::Class::address` 就是 `Il2CppClass*`，可以直接
+  `il2cpp_object_new`。**2026-08-11 实机确认**：活体读回 `colliderRadius=0.0200` 与 sidecar 一致；
+- **一根链根都没挂上的链会被销毁**：空链照样被 `Initialize()` 收进 rigData 然后什么都不驱动；
+- 链层诊断日志按"这个角色有没有 mod 骨"门控 —— 未改装角色一行不打（此前每次
+  `RegisterBones` 都遍历并记录该角色全部原版链）；
+- 兼容 `manifest-v2.md` 里写过的嵌套碰撞写法 `swing.collider.{radius,type,collisionMask}`，
+  只认平铺的话按旧文档产出的包会**静默丢掉整套碰撞体配置**；
+- 新增诊断：`registration coverage`（mod 骨有没有进 `swingDynamicBones`、两张并行表是否同长）、
+  `live bone`（活体字段读回）、`chain layer`（逐层 active/around/radius，游戏自己的链在同一份
+  输出里天然是对照组）；
+- **混合骨数组缓存改按 `modId | sidecar 全文指纹 | source` 判命中**。按 modId + 骨名比对不够：
+  同一个 mod 原地更新、骨名一字未改而 TRS/摆动参数/`swingChains` 全变了，照样命中旧缓存；
+- **锁只圈共享容器**。`BuildHybridBoneArray` 此前从缓存查询一直持锁到函数返回，把建 GameObject、
+  `AddComponent`、建链这些托管调用全包在里面（堵住 `RegisterBones` 热路径，托管侧若同步重入
+  相关 hook 还会死锁）；`BuildLayersForModChains` 则反过来，裸读全局骨名集合与后台 graft 的写
+  构成数据竞争，现在先抄一份快照再调 `UpdateChainInfo`；
+- **关闭与卸载会清理建骨状态**：`SetSessionModEnabled(off)` 丢掉该 mod 的混合骨缓存（renderer
+  的骨数组已被还原，留着等于下次 ON 命中旧构建）；`Shutdown()` 释放骨 GC 句柄并清空骨归属、
+  骨名与缓存三张表。骨归属记录在 OFF 时**故意保留**——key 里带 modId 与指纹，别的 mod 撞不上，
+  清掉反而会让 ON→OFF→ON 每轮重建一套同名骨；已销毁的骨由复用处的存活检查兜；
+- **修复管理页 ON 后回主页仍不生效、必须先进换装页的问题**：当前无目标 Renderer 时按
+  `modId + source` 排队，`RegisterBones` / Renderer 材质生命周期到来后重试；原 Mesh 身份改为
+  保留有界的近期多代记录，并排除 Runtime 自己的克隆。**2026-08-12 实机确认**：
+  `hmsz-fuyuko-icu` 先写 `hotInstances=0`，返回主页后资源路径完成替换，再由
+  `alreadyPatched=1` 正常清队列；无异常或重复应用。`atbm-cstm-0140` 的同分支尚未单独复验；
+- 活体热 ON 只刷新现有角色的 Mesh、材质、骨绑定与碰撞体；新增摇物骨/链仍需重新进入场景，
+  因为它们只在 prefab graft 与角色初始化阶段进入 Animation Rig；
+- **`swingChains` 写了但不是数组 = 报错**（此前静默当作"没有链"，而导出侧验证器判它是 error，
+  于是坏包在实机上看起来只是"不摆"）；反过来 `chainLength` 类型错不再作废整份 sidecar——它只
+  进日志，由验证器在导出期拦；
+- **资源装载那几张表补上锁**：`g_bundleMutex` 声明了却一次没用过，而它该保护的 bundle 句柄、
+  已加载资源句柄、已变换网格、原生链已挂根四张表全在裸读写——资源装载会离开主线程，
+  并发插入触发 rehash 就是随机崩溃。锁只圈表本身，绝不跨过托管装载调用（那会重入自己的 hook）；
+- **卡住的热重载不再把全场景扫描摊到每一帧**：重试挂在 `Renderer.SetPropertyBlock` 这种逐帧
+  逐 renderer 的调用上，而每次重试都要 `FindObjectsByType`。在主页开一个当前不在场景里的
+  mod 就会让队列一直挂着——这是最常见的用法。现在节流到 250ms 一次，在飞标志也改成 RAII
+  （中途 return 会把它永久留在 true，之后再也不重试）；
+- **进程退出不再做收尾**：`DllMain` 的 `DLL_PROCESS_DETACH` 此前忽略 `lpReserved`，进程退出时
+  仍去 `il2cpp_gchandle_free` 和写日志，而那时别的线程已被强杀、可能正死在 GC 锁或日志锁里 →
+  退出期挂死/崩溃。只有 `FreeLibrary` 卸载才真收尾；
+- **`InstallHooks` 的 else 挂错了 if**：属性块方法解析失败时没有 else，四个贴图覆盖 hook 被
+  静默跳过且 `hooksOk` 仍是 1（表现是贴图覆盖全失效而日志全绿）；而 `set_materials` 缺失时
+  报的却是属性块的错误信息。两边各自归位；
+- **`AssetBundleRequest` 记名字改成覆盖写**：`emplace` 遇到已存在的 key 不写，而 request 指针
+  会被复用——上一条没被消费的记录会让新请求顶着旧资源名走替换；
+- **`Shutdown()` 补齐**：bundle / 已加载资源 / 网格克隆三批 GC 句柄，加载历史、已变换网格、
+  原生链根三张表，以及热重载队列和它的两个原子标志（`inFlight` 停在 true 会让重新
+  `Initialize` 之后的重试永久失效）；
+- **`mod.json` 的 `runtimeProtocol` 现在会校验**：sidecar 一直是硬校验，manifest 却照单全收，
+  而导出器写它、验证器把不等于 1 判成 error。写了就必须对得上；没写的老包照常放行。
 
 ## 1.0.0 — 首个正式稳定版
 

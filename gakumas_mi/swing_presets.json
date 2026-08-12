@@ -1,0 +1,1163 @@
+{
+ "_source": "tools/scan_vanilla_swing_bones.py --install 生成，别手改",
+ "_amplitude": "range 里的分位数只作参考/闸门，代码不用它调幅度。2026-08-11 试过做弱/标准/强三档，实测五个参数从分布一端拉到另一端摆幅只动 ±35% 且方向与预期相反，档位已撤销，只保留标准档（中位数）。",
+ "_collisionMask": "原版逐服装的碰撞分组归属，对 mod 新骨无对应语义；统一取 -1(Everything)。",
+ "categories": {
+  "ribbon": {
+   "useChain": false,
+   "chainRatio": 0.0263,
+   "samples": 6685,
+   "roles": {
+    "root": {
+     "damping": 0.5,
+     "stiffness": 0.05,
+     "spring": 0.0,
+     "pendulum": 0.0,
+     "pendulumRange": 1.0,
+     "mass": 0.1,
+     "wind": 1.0,
+     "rootWeight": 0.3,
+     "useWindGlobalForce": true,
+     "useLimit": 1,
+     "limitX": [
+      0,
+      0
+     ],
+     "limitY": [
+      -30,
+      30
+     ],
+     "limitZ": [
+      -90,
+      0
+     ],
+     "colliderType": 0,
+     "colliderRadius": 0.028,
+     "colliderRadiusSub": 0.05,
+     "collisionMask": -1,
+     "dynamicType": 0,
+     "range": {
+      "damping": {
+       "p10": 0.5,
+       "median": 0.5,
+       "p90": 0.5,
+       "min": 0.1,
+       "max": 1.0
+      },
+      "stiffness": {
+       "p10": 0.005,
+       "median": 0.05,
+       "p90": 0.05,
+       "min": 0.0001,
+       "max": 0.35
+      },
+      "spring": {
+       "p10": 0.0,
+       "median": 0.0,
+       "p90": 0.5,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "pendulum": {
+       "p10": 0.0,
+       "median": 0.0,
+       "p90": 0.02,
+       "min": 0.0,
+       "max": 0.274
+      },
+      "pendulumRange": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.06,
+       "max": 1.0
+      },
+      "mass": {
+       "p10": 0.0,
+       "median": 0.1,
+       "p90": 0.8,
+       "min": 0.0,
+       "max": 6.0
+      },
+      "wind": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.1,
+       "max": 1.0
+      },
+      "rootWeight": {
+       "p10": 0.3,
+       "median": 0.3,
+       "p90": 0.5,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "colliderRadius": {
+       "p10": 0.01,
+       "median": 0.028,
+       "p90": 0.05,
+       "min": 0.001,
+       "max": 0.07
+      }
+     }
+    },
+    "mid": {
+     "damping": 0.5,
+     "stiffness": 0.008,
+     "spring": 0.3,
+     "pendulum": 0.003,
+     "pendulumRange": 1.0,
+     "mass": 0.7,
+     "wind": 1.0,
+     "rootWeight": 0.3,
+     "useWindGlobalForce": true,
+     "useLimit": 1,
+     "limitX": [
+      0,
+      0
+     ],
+     "limitY": [
+      -30,
+      30
+     ],
+     "limitZ": [
+      -60,
+      0
+     ],
+     "colliderType": 0,
+     "colliderRadius": 0.018,
+     "colliderRadiusSub": 0.05,
+     "collisionMask": -1,
+     "dynamicType": 0,
+     "range": {
+      "damping": {
+       "p10": 0.4,
+       "median": 0.5,
+       "p90": 0.7,
+       "min": 0.1,
+       "max": 0.9
+      },
+      "stiffness": {
+       "p10": 0.001,
+       "median": 0.008,
+       "p90": 0.05,
+       "min": 0.0,
+       "max": 0.1
+      },
+      "spring": {
+       "p10": 0.001,
+       "median": 0.3,
+       "p90": 0.5,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "pendulum": {
+       "p10": 0.0,
+       "median": 0.003,
+       "p90": 0.02,
+       "min": 0.0,
+       "max": 0.05
+      },
+      "pendulumRange": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.06,
+       "max": 1.0
+      },
+      "mass": {
+       "p10": 0.2,
+       "median": 0.7,
+       "p90": 1.0,
+       "min": 0.0,
+       "max": 15.0
+      },
+      "wind": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.05,
+       "max": 1.0
+      },
+      "rootWeight": {
+       "p10": 0.3,
+       "median": 0.3,
+       "p90": 0.5,
+       "min": 0.1,
+       "max": 1.0
+      },
+      "colliderRadius": {
+       "p10": 0.009,
+       "median": 0.018,
+       "p90": 0.05,
+       "min": 0.001,
+       "max": 0.121
+      }
+     }
+    },
+    "tip": {
+     "damping": 0.5,
+     "stiffness": 0.006,
+     "spring": 0.5,
+     "pendulum": 0.003,
+     "pendulumRange": 1.0,
+     "mass": 0.6,
+     "wind": 1.0,
+     "rootWeight": 0.3,
+     "useWindGlobalForce": true,
+     "useLimit": 1,
+     "limitX": [
+      0,
+      0
+     ],
+     "limitY": [
+      -30,
+      30
+     ],
+     "limitZ": [
+      -180,
+      180
+     ],
+     "colliderType": 0,
+     "colliderRadius": 0.015,
+     "colliderRadiusSub": 0.05,
+     "collisionMask": -1,
+     "dynamicType": 0,
+     "range": {
+      "damping": {
+       "p10": 0.4,
+       "median": 0.5,
+       "p90": 0.7,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "stiffness": {
+       "p10": 0.001,
+       "median": 0.006,
+       "p90": 0.05,
+       "min": 0.0,
+       "max": 0.2
+      },
+      "spring": {
+       "p10": 0.05,
+       "median": 0.5,
+       "p90": 0.7,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "pendulum": {
+       "p10": 0.0,
+       "median": 0.003,
+       "p90": 0.02,
+       "min": 0.0,
+       "max": 0.05
+      },
+      "pendulumRange": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "mass": {
+       "p10": 0.0,
+       "median": 0.6,
+       "p90": 1.0,
+       "min": 0.0,
+       "max": 5.0
+      },
+      "wind": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.05,
+       "max": 1.0
+      },
+      "rootWeight": {
+       "p10": 0.3,
+       "median": 0.3,
+       "p90": 0.5,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "colliderRadius": {
+       "p10": 0.009,
+       "median": 0.015,
+       "p90": 0.033,
+       "min": 0.001,
+       "max": 0.101
+      }
+     }
+    }
+   }
+  },
+  "cloth": {
+   "useChain": true,
+   "chainRatio": 0.539,
+   "samples": 5020,
+   "roles": {
+    "root": {
+     "damping": 0.5,
+     "stiffness": 0.05,
+     "spring": 0.0,
+     "pendulum": 0.0,
+     "pendulumRange": 1.0,
+     "mass": 0.0,
+     "wind": 1.0,
+     "rootWeight": 0.3,
+     "useWindGlobalForce": true,
+     "useLimit": 1,
+     "limitX": [
+      0,
+      0
+     ],
+     "limitY": [
+      -10,
+      10
+     ],
+     "limitZ": [
+      -40,
+      0
+     ],
+     "colliderType": 0,
+     "colliderRadius": 0.03,
+     "colliderRadiusSub": 0.05,
+     "collisionMask": -1,
+     "dynamicType": 0,
+     "range": {
+      "damping": {
+       "p10": 0.5,
+       "median": 0.5,
+       "p90": 0.6,
+       "min": 0.1,
+       "max": 0.8
+      },
+      "stiffness": {
+       "p10": 0.005,
+       "median": 0.05,
+       "p90": 0.05,
+       "min": 0.0,
+       "max": 0.06
+      },
+      "spring": {
+       "p10": 0.0,
+       "median": 0.0,
+       "p90": 0.5,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "pendulum": {
+       "p10": 0.0,
+       "median": 0.0,
+       "p90": 0.01,
+       "min": 0.0,
+       "max": 0.05
+      },
+      "pendulumRange": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.01,
+       "max": 1.0
+      },
+      "mass": {
+       "p10": 0.0,
+       "median": 0.0,
+       "p90": 0.8,
+       "min": 0.0,
+       "max": 15.0
+      },
+      "wind": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.3,
+       "max": 1.0
+      },
+      "rootWeight": {
+       "p10": 0.3,
+       "median": 0.3,
+       "p90": 0.3,
+       "min": 0.05,
+       "max": 1.0
+      },
+      "colliderRadius": {
+       "p10": 0.01,
+       "median": 0.03,
+       "p90": 0.05,
+       "min": 0.001,
+       "max": 0.095
+      }
+     }
+    },
+    "mid": {
+     "damping": 0.5,
+     "stiffness": 0.01,
+     "spring": 0.3,
+     "pendulum": 0.0075,
+     "pendulumRange": 1.0,
+     "mass": 0.5,
+     "wind": 1.0,
+     "rootWeight": 0.3,
+     "useWindGlobalForce": true,
+     "useLimit": 1,
+     "limitX": [
+      0,
+      0
+     ],
+     "limitY": [
+      -20,
+      20
+     ],
+     "limitZ": [
+      -60,
+      60
+     ],
+     "colliderType": 0,
+     "colliderRadius": 0.022,
+     "colliderRadiusSub": 0.05,
+     "collisionMask": -1,
+     "dynamicType": 0,
+     "range": {
+      "damping": {
+       "p10": 0.3,
+       "median": 0.5,
+       "p90": 0.8,
+       "min": 0.1,
+       "max": 1.0
+      },
+      "stiffness": {
+       "p10": 0.0045,
+       "median": 0.01,
+       "p90": 0.05,
+       "min": 0.0,
+       "max": 0.1
+      },
+      "spring": {
+       "p10": 0.0,
+       "median": 0.3,
+       "p90": 0.8,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "pendulum": {
+       "p10": 0.0,
+       "median": 0.0075,
+       "p90": 0.01,
+       "min": 0.0,
+       "max": 0.05
+      },
+      "pendulumRange": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "mass": {
+       "p10": 0.1,
+       "median": 0.5,
+       "p90": 3.0,
+       "min": 0.0,
+       "max": 15.0
+      },
+      "wind": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.3,
+       "max": 1.0
+      },
+      "rootWeight": {
+       "p10": 0.3,
+       "median": 0.3,
+       "p90": 0.5,
+       "min": 0.3,
+       "max": 1.0
+      },
+      "colliderRadius": {
+       "p10": 0.008,
+       "median": 0.022,
+       "p90": 0.05,
+       "min": 0.002,
+       "max": 0.11
+      }
+     }
+    },
+    "tip": {
+     "damping": 0.5,
+     "stiffness": 0.01,
+     "spring": 0.3,
+     "pendulum": 0.003,
+     "pendulumRange": 1.0,
+     "mass": 0.5,
+     "wind": 1.0,
+     "rootWeight": 0.3,
+     "useWindGlobalForce": true,
+     "useLimit": 1,
+     "limitX": [
+      0,
+      0
+     ],
+     "limitY": [
+      -10,
+      10
+     ],
+     "limitZ": [
+      -180,
+      180
+     ],
+     "colliderType": 0,
+     "colliderRadius": 0.02,
+     "colliderRadiusSub": 0.05,
+     "collisionMask": -1,
+     "dynamicType": 0,
+     "range": {
+      "damping": {
+       "p10": 0.4,
+       "median": 0.5,
+       "p90": 0.685,
+       "min": 0.1,
+       "max": 1.0
+      },
+      "stiffness": {
+       "p10": 0.005,
+       "median": 0.01,
+       "p90": 0.05,
+       "min": 0.0,
+       "max": 0.5
+      },
+      "spring": {
+       "p10": 0.0,
+       "median": 0.3,
+       "p90": 0.6,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "pendulum": {
+       "p10": 0.0,
+       "median": 0.003,
+       "p90": 0.01,
+       "min": 0.0,
+       "max": 0.5
+      },
+      "pendulumRange": {
+       "p10": 0.9,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.003,
+       "max": 1.0
+      },
+      "mass": {
+       "p10": 0.0,
+       "median": 0.5,
+       "p90": 0.8,
+       "min": 0.0,
+       "max": 3.0
+      },
+      "wind": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.3,
+       "max": 1.0
+      },
+      "rootWeight": {
+       "p10": 0.3,
+       "median": 0.3,
+       "p90": 0.3,
+       "min": 0.05,
+       "max": 1.0
+      },
+      "colliderRadius": {
+       "p10": 0.01,
+       "median": 0.02,
+       "p90": 0.045,
+       "min": 0.003,
+       "max": 0.1
+      }
+     }
+    }
+   }
+  },
+  "sleeve": {
+   "useChain": false,
+   "chainRatio": 0.2497,
+   "samples": 5639,
+   "roles": {
+    "root": {
+     "damping": 0.5,
+     "stiffness": 0.05,
+     "spring": 0.0,
+     "pendulum": 0.0,
+     "pendulumRange": 1.0,
+     "mass": 0.0,
+     "wind": 1.0,
+     "rootWeight": 0.3,
+     "useWindGlobalForce": true,
+     "useLimit": 0,
+     "limitX": [
+      -180,
+      180
+     ],
+     "limitY": [
+      -180,
+      180
+     ],
+     "limitZ": [
+      -180,
+      180
+     ],
+     "colliderType": 0,
+     "colliderRadius": 0.05,
+     "colliderRadiusSub": 0.05,
+     "collisionMask": -1,
+     "dynamicType": 0,
+     "range": {
+      "damping": {
+       "p10": 0.4,
+       "median": 0.5,
+       "p90": 0.5,
+       "min": 0.2,
+       "max": 0.7
+      },
+      "stiffness": {
+       "p10": 0.005,
+       "median": 0.05,
+       "p90": 0.05,
+       "min": 0.001,
+       "max": 0.5
+      },
+      "spring": {
+       "p10": 0.0,
+       "median": 0.0,
+       "p90": 0.5,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "pendulum": {
+       "p10": 0.0,
+       "median": 0.0,
+       "p90": 0.006,
+       "min": 0.0,
+       "max": 0.5
+      },
+      "pendulumRange": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "mass": {
+       "p10": 0.0,
+       "median": 0.0,
+       "p90": 0.8,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "wind": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.3,
+       "max": 1.0
+      },
+      "rootWeight": {
+       "p10": 0.3,
+       "median": 0.3,
+       "p90": 0.3,
+       "min": 0.15,
+       "max": 1.0
+      },
+      "colliderRadius": {
+       "p10": 0.005,
+       "median": 0.05,
+       "p90": 0.05,
+       "min": 0.005,
+       "max": 0.05
+      }
+     }
+    },
+    "mid": {
+     "damping": 0.4,
+     "stiffness": 0.1,
+     "spring": 0.3,
+     "pendulum": 0.06,
+     "pendulumRange": 0.8,
+     "mass": 0.2,
+     "wind": 1.0,
+     "rootWeight": 0.3,
+     "useWindGlobalForce": true,
+     "useLimit": 1,
+     "limitX": [
+      0,
+      0
+     ],
+     "limitY": [
+      -5,
+      5
+     ],
+     "limitZ": [
+      -5,
+      5
+     ],
+     "colliderType": 4,
+     "colliderRadius": 0.05,
+     "colliderRadiusSub": 0.05,
+     "collisionMask": -1,
+     "dynamicType": 1,
+     "range": {
+      "damping": {
+       "p10": 0.4,
+       "median": 0.4,
+       "p90": 0.5,
+       "min": 0.2,
+       "max": 0.8
+      },
+      "stiffness": {
+       "p10": 0.02,
+       "median": 0.1,
+       "p90": 0.35,
+       "min": 0.0003,
+       "max": 0.5
+      },
+      "spring": {
+       "p10": 0.3,
+       "median": 0.3,
+       "p90": 0.8,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "pendulum": {
+       "p10": 0.005,
+       "median": 0.06,
+       "p90": 0.3,
+       "min": 0.0,
+       "max": 0.5
+      },
+      "pendulumRange": {
+       "p10": 0.5,
+       "median": 0.8,
+       "p90": 1.0,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "mass": {
+       "p10": 0.1,
+       "median": 0.2,
+       "p90": 0.6,
+       "min": 0.0,
+       "max": 2.2
+      },
+      "wind": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.05,
+       "max": 1.0
+      },
+      "rootWeight": {
+       "p10": 0.3,
+       "median": 0.3,
+       "p90": 0.3,
+       "min": 0.3,
+       "max": 1.0
+      },
+      "colliderRadius": {
+       "p10": 0.005,
+       "median": 0.05,
+       "p90": 0.05,
+       "min": 0.001,
+       "max": 0.4
+      }
+     }
+    },
+    "tip": {
+     "damping": 0.5,
+     "stiffness": 0.02,
+     "spring": 0.4,
+     "pendulum": 0.002,
+     "pendulumRange": 1.0,
+     "mass": 0.5,
+     "wind": 1.0,
+     "rootWeight": 0.3,
+     "useWindGlobalForce": true,
+     "useLimit": 1,
+     "limitX": [
+      0,
+      0
+     ],
+     "limitY": [
+      -180,
+      180
+     ],
+     "limitZ": [
+      -180,
+      180
+     ],
+     "colliderType": 4,
+     "colliderRadius": 0.05,
+     "colliderRadiusSub": 0.05,
+     "collisionMask": -1,
+     "dynamicType": 1,
+     "range": {
+      "damping": {
+       "p10": 0.4,
+       "median": 0.5,
+       "p90": 0.5,
+       "min": 0.01,
+       "max": 0.85
+      },
+      "stiffness": {
+       "p10": 0.005,
+       "median": 0.02,
+       "p90": 0.05,
+       "min": 0.0001,
+       "max": 0.5
+      },
+      "spring": {
+       "p10": 0.0,
+       "median": 0.4,
+       "p90": 0.5,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "pendulum": {
+       "p10": 0.0,
+       "median": 0.002,
+       "p90": 0.03,
+       "min": 0.0,
+       "max": 0.4
+      },
+      "pendulumRange": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "mass": {
+       "p10": 0.0,
+       "median": 0.5,
+       "p90": 0.8,
+       "min": 0.0,
+       "max": 2.2
+      },
+      "wind": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.3,
+       "max": 1.0
+      },
+      "rootWeight": {
+       "p10": 0.3,
+       "median": 0.3,
+       "p90": 0.3,
+       "min": 0.15,
+       "max": 1.0
+      },
+      "colliderRadius": {
+       "p10": 0.005,
+       "median": 0.05,
+       "p90": 0.05,
+       "min": 0.005,
+       "max": 0.07
+      }
+     }
+    }
+   }
+  },
+  "skirt": {
+   "useChain": true,
+   "chainRatio": 0.9427,
+   "samples": 24183,
+   "roles": {
+    "root": {
+     "damping": 0.5,
+     "stiffness": 0.05,
+     "spring": 0.1,
+     "pendulum": 0.0,
+     "pendulumRange": 1.0,
+     "mass": 0.5,
+     "wind": 1.0,
+     "rootWeight": 0.3,
+     "useWindGlobalForce": true,
+     "useLimit": 1,
+     "limitX": [
+      0,
+      0
+     ],
+     "limitY": [
+      -10,
+      10
+     ],
+     "limitZ": [
+      -30,
+      0
+     ],
+     "colliderType": 0,
+     "colliderRadius": 0.02,
+     "colliderRadiusSub": 0.05,
+     "collisionMask": -1,
+     "dynamicType": 0,
+     "range": {
+      "damping": {
+       "p10": 0.3,
+       "median": 0.5,
+       "p90": 0.6,
+       "min": 0.0,
+       "max": 0.9
+      },
+      "stiffness": {
+       "p10": 0.005,
+       "median": 0.05,
+       "p90": 0.05,
+       "min": 0.0,
+       "max": 0.5
+      },
+      "spring": {
+       "p10": 0.0,
+       "median": 0.1,
+       "p90": 0.5,
+       "min": -0.3,
+       "max": 1.0
+      },
+      "pendulum": {
+       "p10": 0.0,
+       "median": 0.0,
+       "p90": 0.02,
+       "min": 0.0,
+       "max": 0.5
+      },
+      "pendulumRange": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.9,
+       "max": 1.0
+      },
+      "mass": {
+       "p10": 0.0,
+       "median": 0.5,
+       "p90": 0.8,
+       "min": 0.0,
+       "max": 3.0
+      },
+      "wind": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.1,
+       "max": 1.0
+      },
+      "rootWeight": {
+       "p10": 0.3,
+       "median": 0.3,
+       "p90": 0.3,
+       "min": 0.1,
+       "max": 1.0
+      },
+      "colliderRadius": {
+       "p10": 0.01,
+       "median": 0.02,
+       "p90": 0.05,
+       "min": 0.001,
+       "max": 0.07
+      }
+     }
+    },
+    "mid": {
+     "damping": 0.5,
+     "stiffness": 0.02,
+     "spring": 0.5,
+     "pendulum": 0.003,
+     "pendulumRange": 1.0,
+     "mass": 0.75,
+     "wind": 1.0,
+     "rootWeight": 0.3,
+     "useWindGlobalForce": true,
+     "useLimit": 1,
+     "limitX": [
+      0,
+      0
+     ],
+     "limitY": [
+      -30,
+      30
+     ],
+     "limitZ": [
+      -20,
+      0
+     ],
+     "colliderType": 0,
+     "colliderRadius": 0.02,
+     "colliderRadiusSub": 0.05,
+     "collisionMask": -1,
+     "dynamicType": 0,
+     "range": {
+      "damping": {
+       "p10": 0.25,
+       "median": 0.5,
+       "p90": 0.6,
+       "min": 0.0,
+       "max": 0.9
+      },
+      "stiffness": {
+       "p10": 0.005,
+       "median": 0.02,
+       "p90": 0.06,
+       "min": 0.0005,
+       "max": 0.5
+      },
+      "spring": {
+       "p10": 0.0,
+       "median": 0.5,
+       "p90": 0.8,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "pendulum": {
+       "p10": 0.0,
+       "median": 0.003,
+       "p90": 0.02,
+       "min": 0.0,
+       "max": 0.5
+      },
+      "pendulumRange": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.0,
+       "max": 4.0
+      },
+      "mass": {
+       "p10": 0.3,
+       "median": 0.75,
+       "p90": 1.0,
+       "min": 0.0,
+       "max": 5.0
+      },
+      "wind": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.1,
+       "max": 1.0
+      },
+      "rootWeight": {
+       "p10": 0.3,
+       "median": 0.3,
+       "p90": 0.3,
+       "min": 0.1,
+       "max": 1.0
+      },
+      "colliderRadius": {
+       "p10": 0.01,
+       "median": 0.02,
+       "p90": 0.035,
+       "min": 0.001,
+       "max": 0.11
+      }
+     }
+    },
+    "tip": {
+     "damping": 0.5,
+     "stiffness": 0.01,
+     "spring": 0.5,
+     "pendulum": 0.005,
+     "pendulumRange": 1.0,
+     "mass": 0.8,
+     "wind": 1.0,
+     "rootWeight": 0.3,
+     "useWindGlobalForce": true,
+     "useLimit": 1,
+     "limitX": [
+      0,
+      0
+     ],
+     "limitY": [
+      -30,
+      30
+     ],
+     "limitZ": [
+      -90,
+      10
+     ],
+     "colliderType": 0,
+     "colliderRadius": 0.02,
+     "colliderRadiusSub": 0.05,
+     "collisionMask": -1,
+     "dynamicType": 0,
+     "range": {
+      "damping": {
+       "p10": 0.3,
+       "median": 0.5,
+       "p90": 0.6,
+       "min": 0.03,
+       "max": 1.0
+      },
+      "stiffness": {
+       "p10": 0.005,
+       "median": 0.01,
+       "p90": 0.06,
+       "min": 0.0003,
+       "max": 0.5
+      },
+      "spring": {
+       "p10": 0.0,
+       "median": 0.5,
+       "p90": 1.0,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "pendulum": {
+       "p10": 0.0,
+       "median": 0.005,
+       "p90": 0.02,
+       "min": 0.0,
+       "max": 0.5
+      },
+      "pendulumRange": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.0,
+       "max": 1.0
+      },
+      "mass": {
+       "p10": 0.3,
+       "median": 0.8,
+       "p90": 1.0,
+       "min": 0.0,
+       "max": 3.0
+      },
+      "wind": {
+       "p10": 1.0,
+       "median": 1.0,
+       "p90": 1.0,
+       "min": 0.1,
+       "max": 1.0
+      },
+      "rootWeight": {
+       "p10": 0.3,
+       "median": 0.3,
+       "p90": 0.3,
+       "min": 0.1,
+       "max": 1.0
+      },
+      "colliderRadius": {
+       "p10": 0.01,
+       "median": 0.02,
+       "p90": 0.045,
+       "min": 0.005,
+       "max": 0.11
+      }
+     }
+    }
+   }
+  }
+ }
+}

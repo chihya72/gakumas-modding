@@ -110,9 +110,16 @@ def package(output: Path | None = None, include_body_lib: bool = False) -> Path:
         # Required runtime data may be locally generated/untracked; it still
         # must ship with the add-on or Blender falls back to the user add-on
         # directory and raises FileNotFoundError.
-        for name in ("bone_remap_presets.json",):
+        # 这些是运行时**无条件读取**的数据文件，缺一个就在作者点导出时炸
+        # FileNotFoundError。以前只在"存在时"添加 —— 干净 checkout 或漏 git add 会打出一个
+        # "成功"的 ZIP，装上才发现功能没了。缺就直接失败。
+        for name in ("bone_remap_presets.json", "swing_presets.json"):
             path = ADDON_DIR / name
-            if path.is_file() and path not in addon_files:
+            if not path.is_file():
+                raise FileNotFoundError(
+                    f"缺少必需的数据文件 {name}（{path}）——它由 tools/ 下的扫描脚本生成，"
+                    "必须随插件一起打包，且必须入库")
+            if path not in addon_files:
                 _add(path, Path("gakumas_mi") / name)
         # vendor 模板补丁脚本进 addon：一键打包时插件 subprocess 调它（跑在作者的外部
         # Python 上，不是 Blender 自带 Python）。单一 git 源在 tools/，此处只做打包拷贝。

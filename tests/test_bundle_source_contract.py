@@ -515,27 +515,130 @@ def test_merge_material_groups():
     assert core.merge_material_groups(set(), 1, []) == []
 
 
-def test_new_bones_carry_root_weight_and_pendulum():
-    """新骨必须带 rootWeight / pendulum，否则运行时锁死在静止姿态、不下垂。
+def test_new_bones_use_vanilla_swing_presets():
+    """新骨的摆动参数必须按「类别 × 链上角色」取自原版基准表，且**字段写全**。
 
-    runtime 的 SetDefaultValues 给的是 rootWeight=1.0（完全刚性跟随根骨）+ pendulum=0
-    （无重力项）；游戏自己的裙摆骨实测是 0.3 / 0.001。缺这两项时 dress-2219 的蝴蝶结
-    缎带全部过分翘起，形状对但姿态不对。
+    以前只写六项（damping/stiffness/spring/mass/rootWeight/pendulum），其余交给运行时
+    SetDefaultValues。对照 530 套原版 body 的实测那是错的：`pendulumRange` 原版 84.6% 取 1.0
+    （它是 pendulum 的作用范围，留 0 等于把重力项乘没了）、`wind` 84.6% 取 1.0、`useLimit`
+    93% 是 1。少写这几项时骨看着"参数齐全"，实际既不下垂也不受风——dress-2219 日志全绿
+    却一动不动，这是其中一条。
     """
     records = [
         {"name": "Bow_A", "localPosition": [0, 0, 0], "length": 0.1},
-        # 源自带 swing（IP 包能抽出 ActorSwing）但通常没有这两项，也要补上
+        {"name": "Bow_A_Tip", "localPosition": [0, 0, 0], "length": 0.1},
+        # 源自带 swing（IP 源同用 ActorAnimation 中间件，能抽出授权值）优先于基准值，
+        # 但源里没有的字段仍要由基准表补齐。
+        # 源侧的布尔位写成 1（IP 抽出来就是这样），不能原样漏进 sidecar
         {"name": "Ribbon_A", "localPosition": [0, 0, 0], "length": 0.1,
-         "swing": {"damping": 0.3, "stiffness": 0.01, "spring": 0.5, "mass": 0.1,
-                   "useWindGlobalForce": 1}},
+         "swing": {"damping": 0.3, "mass": 0.1, "useWindGlobalForce": 1}},
     ]
-    report = core.build_source_extra_bones(records, ["Bow_A", "Ribbon_A"], body_remap={})
-    for bone in report["newBones"] + report["extraSwingBones"]:
-        assert bone["swing"]["rootWeight"] == 0.3, bone
-        assert bone["swing"]["pendulum"] == 0.001, bone
-    # 源自带的参数不能被默认值盖掉
-    ribbon = next(b for b in report["newBones"] if b["name"] == "Ribbon_A")
+    report = core.build_source_extra_bones(
+        records, ["Bow_A", "Bow_A_Tip", "Ribbon_A"],
+        parent_by_name={"Bow_A_Tip": "Bow_A"}, body_remap={})
+    every = report["newBones"] + report["extraSwingBones"]
+    for bone in every:
+        for field in ("damping", "stiffness", "spring", "pendulum", "pendulumRange",
+                      "mass", "wind", "rootWeight", "useWindGlobalForce", "useLimit",
+                      "limitY", "limitZ", "colliderType", "colliderRadius"):
+            assert field in bone["swing"], (field, bone)
+        assert bone["swing"]["pendulumRange"] > 0, bone   # 留 0 = 重力项失效
+        assert bone["swing"]["rootWeight"] < 1.0, bone    # 1.0 = 完全刚性跟随根骨
+        # 必须是 JSON 原生 bool。写成 1/0 会让运行时的 nlohmann 抛 type_error.302，
+        # 而那一抛是**整份 sidecar 作废、骨架 graft 整个跳过**——实测表现是网格根本没换、
+        # 只有贴图生效，日志里只有一行 "type must be boolean, but is number"。
+        assert isinstance(bone["swing"]["useWindGlobalForce"], bool), bone
+        # 限位是按骨轴授权的，作者骨轴和学马不一致（实测原版子骨在 local -X、MMD 源在
+        # local -Z），照搬等于锁死真·摆动轴 —— 默认必须关。
+        assert bone["swing"]["useLimit"] == 0, bone
+
+    # 碰撞体三项必须显式写出，不能靠运行时缺省 —— 缺省值不进 sidecar 就查不出来用的是什么
+    for bone in every:
+        for field in ("colliderRadius", "colliderType", "collisionMask"):
+            assert field in bone["swing"], (field, bone)
+        assert bone["swing"]["collisionMask"] == -1, bone
+
+    # 源显式给了 useLimit 就照它的来（IP 源同用 ActorAnimation 中间件，轴向一致）
+    kept = core.build_source_extra_bones(
+        [{"name": "Src_A", "localPosition": [0, 0, 0], "length": 0.1,
+          "swing": {"useLimit": 1, "limitY": [-45, 45]}}],
+        ["Src_A"], body_remap={})
+    assert kept["newBones"][0]["swing"]["useLimit"] == 1
+
+    roles = {bone["name"]: bone["swingRole"] for bone in every}
+    assert roles["Bow_A"] == "root" and roles["Bow_A_Tip"] == "mid"
+    assert roles["Bow_A_Tip_End"] == "tip"
+    # 链根是惰性锚（自身不摆、由子骨摆），中段和链尾才真的摆——原版一致的语义
+    anchor = next(b for b in every if b["name"] == "Bow_A")
+    swinging = next(b for b in every if b["name"] == "Bow_A_Tip")
+    assert anchor["swing"]["mass"] < swinging["swing"]["mass"]
+
+    ribbon = next(b for b in every if b["name"] == "Ribbon_A")
     assert ribbon["swing"]["damping"] == 0.3 and ribbon["swing"]["mass"] == 0.1
+    assert ribbon["swing"]["pendulumRange"] == 1.0   # 源没给的仍走基准表
+
+
+def test_only_skirt_like_parts_get_a_swing_chain():
+    """飘带/蝴蝶结不建 ActorSwingChain —— 原版里它们就是裸 ActorSwingDynamicBone。
+
+    530 套原版实测：裙类 94% 挂链、披风类 54%，而飘带绳结类只有 2.6%。链多带一层
+    around/radius 的环形碰撞解算，那是裙摆专用的；给蝴蝶结建链是照着裙摆抄错了对象。
+    """
+    def chain_of(names, parents):
+        records = [{"name": n, "localPosition": [0, 0, 0], "length": 0.1} for n in names]
+        return core.build_source_extra_bones(
+            records, names, parent_by_name=parents, body_remap={"Hips": "Hips"},
+        )["swingChains"]
+
+    bow = chain_of(["Spine_Bow_L", "Spine_Bow_L2"],
+                   {"Spine_Bow_L": "Hips", "Spine_Bow_L2": "Spine_Bow_L"})
+    assert bow == []
+
+    skirt = chain_of(["FrontSkirt_A", "FrontSkirt_B"],
+                     {"FrontSkirt_A": "Hips", "FrontSkirt_B": "FrontSkirt_A"})
+    assert len(skirt) == 1
+    assert skirt[0]["host"] == "Hips" and skirt[0]["rootBones"] == ["FrontSkirt_A"]
+    # 链长含合成链尾：A -> B -> B_End
+    assert skirt[0]["chainLength"] == 3
+
+
+def test_author_swing_category_overrides_the_name_guess():
+    """作者在表单里点的部件类型压过按骨名猜，且**对整条链生效**。
+
+    骨名猜不准是常态（MMD 源常是片假名/中文，且源作者会把腰饰绑在胸骨）。点名一根就得
+    管整条链，否则同一条链会混用两档参数、上下节硬度对不上。
+    """
+    names = ["帯_01", "帯_02"]
+    records = [{"name": n, "localPosition": [0, 0, 0], "length": 0.1} for n in names]
+    parents = {"帯_01": "下半身", "帯_02": "帯_01"}
+
+    def build(categories):
+        return core.build_source_extra_bones(
+            records, names, parent_by_name=parents,
+            body_remap={"下半身": "Hips"}, categories=categories)
+
+    # 认不出来 → 落最保守的 ribbon：自由悬垂、不建链
+    auto = build(None)
+    assert {b["swingCategory"] for b in auto["newBones"]} == {"ribbon"}
+    assert auto["swingChains"] == []
+
+    # 点链上**任意一根**都要对整条链生效——包括中段。以前只沿父链往上找，点中段时链根
+    # 找不到、仍按名字猜成 ribbon，于是该建的链没建（实测 categories=['ribbon','skirt']
+    # 而 swingChains=[]），和 UI 上写的「选中链上任意一根即对整条链生效」对不上。
+    for picked in ("帯_01", "帯_02"):
+        forced = build({picked: "skirt"})
+        every = forced["newBones"] + forced["extraSwingBones"]
+        assert {b["swingCategory"] for b in every} == {"skirt"}, picked
+        assert [c["host"] for c in forced["swingChains"]] == ["Hips"], picked
+    # 同链多处点名冲突时取最靠近链根的那次，保证一条链只有一个类别
+    mixed = build({"帯_01": "cloth", "帯_02": "skirt"})
+    assert {b["swingCategory"] for b in mixed["newBones"]} == {"cloth"}
+
+    forced = build({"帯_01": "skirt"})
+    every = forced["newBones"] + forced["extraSwingBones"]
+    # 换档必须真的换出不同参数，否则这个开关是个摆设
+    assert (next(b for b in every if b["name"] == "帯_02")["swing"]["limitZ"]
+            != next(b for b in auto["newBones"] if b["name"] == "帯_02")["swing"]["limitZ"])
 
 
 def test_hair_and_hairprop_share_one_package():
@@ -669,3 +772,83 @@ def test_bundle_textures_only_cover_used_groups():
     ops = (ROOT / "gakumas_mi" / "operators.py").read_text(encoding="utf-8")
     assert "for group in used_groups" in ops
     assert "for group in range(target_n)" not in ops, "贴图又按目标段数出了，空段会硬要 co 贴图"
+
+
+def test_forked_chain_is_not_built():
+    """分叉的链不建：`UpdateChainInfo` 只沿**第一个**子节点建层。
+
+    一根骨带两个子分支时，我们却按"最深那支"报了个链长，等于静默建了条只覆盖一半的链。
+    不建是安全降级——那些骨照样进 `swingDynamicBones` 逐骨模拟（原版飘带就是这么摆的），
+    只是没有链那层环形碰撞。
+    """
+    def chains(names, parents):
+        records = [{"name": n, "localPosition": [0, 0, 0], "length": 0.1} for n in names]
+        return core.build_source_extra_bones(
+            records, names, parent_by_name=parents,
+            body_remap={"Hips": "Hips"})["swingChains"]
+
+    forked = chains(["SkirtRoot", "SkirtLeft", "SkirtRight"],
+                    {"SkirtRoot": "Hips", "SkirtLeft": "SkirtRoot", "SkirtRight": "SkirtRoot"})
+    assert forked == []
+    linear = chains(["SkirtA", "SkirtB"], {"SkirtA": "Hips", "SkirtB": "SkirtA"})
+    assert [c["rootBones"] for c in linear] == [["SkirtA"]]
+
+
+def test_swing_category_rules_match_the_scanner():
+    """插件的分类规则必须和产出基准表的扫描器一致 —— **词表和顺序都要**。
+
+    词表分叉：Gown/Shirt/Inner 曾在扫描器算 cloth、在插件落 ribbon。
+    顺序分叉：`BeltChain`(belt→cloth / chain→ribbon)、`CapeRibbon`、`CollarBow` 这类两边
+    词表都命中的名字，先判哪个就归哪类；插件曾把 cloth 排在 ribbon 前面，这几个名字两边
+    分类相反。**上一版测试把规则转成 dict，正好丢掉了顺序，所以没拦住。**
+    """
+    source = (ROOT / "tools" / "scan_vanilla_swing_bones.py").read_text(encoding="utf-8")
+    start = source.index("CATEGORY_RULES = (")
+    end = source.index(chr(10) + ")", start) + 2
+    scanner = eval(source[start:end].split("=", 1)[1].strip())
+    plugin = list(core._SWING_CATEGORY_RULES)
+
+    # skin 是身体软组织，插件不提供这一档；其余类别的**相对顺序**必须一致
+    scanner_order = [name for name, _ in scanner if name != "skin"]
+    assert [name for name, _ in plugin] == scanner_order
+
+    for (name, tokens), (plugin_name, plugin_tokens) in zip(
+            [item for item in scanner if item[0] != "skin"], plugin):
+        assert name == plugin_name
+        missing = sorted(set(tokens) - set(plugin_tokens))
+        assert not missing, (name, missing)
+
+    # 两边词表都命中的名字，分类结果必须一样
+    def scanner_category(part):
+        lower = part.lower()
+        for name, tokens in scanner:
+            if any(token in lower for token in tokens):
+                return name
+        return "ribbon"
+
+    for part in ("BeltChain", "CapeRibbon", "CollarBow", "ClothTie", "InnerLace",
+                 "Gown", "Shirt", "Inner", "Acce", "Neckless"):
+        assert core.swing_category(part) == scanner_category(part), part
+
+
+def test_unknown_swing_category_is_rejected():
+    """手写覆盖文件里拼错的类别必须报错，不能静默降级。
+
+    以前 `{"SkirtA": "skrit"}` 会原样留在 sidecar 里：参数悄悄回退到 ribbon，还因为非法
+    类别查不到 useChain 而不建链 —— 两处静默降级，作者只会觉得"设了没用"。
+    """
+    records = [{"name": "SkirtA", "localPosition": [0, 0, 0], "length": 0.1}]
+    try:
+        core.build_source_extra_bones(
+            records, ["SkirtA"], parent_by_name={"SkirtA": "Hips"},
+            body_remap={"Hips": "Hips"}, categories={"SkirtA": "skrit"})
+    except ValueError as error:
+        assert "skrit" in str(error) and "skirt" in str(error)
+    else:
+        raise AssertionError("拼错的类别没有被拒绝")
+
+    # 正确的类别照常工作
+    report = core.build_source_extra_bones(
+        records, ["SkirtA"], parent_by_name={"SkirtA": "Hips"},
+        body_remap={"Hips": "Hips"}, categories={"SkirtA": "skirt"})
+    assert report["newBones"][0]["swingCategory"] == "skirt"

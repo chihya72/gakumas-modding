@@ -1,4 +1,4 @@
-# GakumasMI Blender 插件 1.0.0
+# GakumasMI Blender 插件 1.1.0
 
 面向《学园偶像大师》的作者侧 Blender 插件：导入参考模型、对骨名、准备贴图、导出成品
 AssetBundle。**只做 AB（原生蒙皮）路线**，3DMigoto 逆蒙皮的传权与导出已整体移除——作者
@@ -62,10 +62,11 @@ base/mask/shade 三张贴图，**永不碰 PS hash 或寄存器槽位**——AB 
 是作者基本功。身体骨名由八家预设和面板映射表兜底，装饰物理按源父骨/语义规则默认处理，
 异常件用覆盖表修正。
 
-**装饰物理的当前边界（1.0.0）**：「跟裙摆」（蹭游戏自带裙摆骨）和「刚性跟父骨」是可用的；
-**「自建摇物链」尚无稳定的画面级成功案例，是下一个开发重点**，详见
+**装饰物理的当前边界（1.1.0）**：「跟裙摆」（蹭游戏自带裙摆骨）和「刚性跟父骨」
+可用；「自建摇物链」已于 2026-08-11 用 `hmsz-fuyuko-icu` 取得第一个画面级成功案例，但
+幅度与穿插仍需逐件目视验收。详见
 [当前状态与路线](https://github.com/chihya72/gakumas-modding/blob/main/research/current-status-and-roadmap.md)
-的「下一开发重点：自建摇物链」。
+的「自建摇物骨打通」。
 
 成品 `.bundle` + `mod.json` 放进 Mod Runtime 的 `gakumas-mod/mods/<id>/`
 （chinosk6 的 `gkms-localify-dmm` 用的是它自己的 `gakumas-local/local-files/mods/<id>/`）。

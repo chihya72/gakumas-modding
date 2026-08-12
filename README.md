@@ -4,13 +4,13 @@
 Blender + 本项目插件就能换装 / 换模，**不装 Unity、不写 3DMigoto 配置**。只做视觉 Mod
 （模型 / 贴图 / 材质 / 显隐），不碰文本汉化、逻辑、数值。
 
-> **状态（插件 v1.0.0，正式版）**：插件只做 **AB（AssetBundle）路线**，3DMigoto 逆蒙皮的传权与导出
+> **状态（插件 v1.1.0，正式版）**：插件只做 **AB（AssetBundle）路线**，3DMigoto 逆蒙皮的传权与导出
 > 已整体移除。身体与发型（含 co/配套发饰）的换模 + 贴图 + 骨映射闭环已实机验证：三步面板
 > 从发布 ZIP 全新安装走通，并产出了 **7 个进游戏的成品 mod**（6 件服装 + 1 个发型，覆盖
 > `atbm-cstm-0140` / `fktn-cstm-0119` / `fktn-othr-0002` / `hmsz-cstm-0059` / `ttmr-cstm-0111`
 > / `ttmr-cstm-0119` / `ttmr-hair-0002`）。八家骨名预设里 MMD 与 SCSP 有真实模型样本，另外
-> 六家只按公开命名规范写成、没拿到对应模型，认不出来时走面板逐行点选。**自建摇物链目前
-> 尚无稳定的画面级成功案例，是下一个开发重点**；现有成品用刚性/跟裙摆绕开。逐项验证等级见
+> 六家只按公开命名规范写成、没拿到对应模型，认不出来时走面板逐行点选。**自建摇物骨已于
+> 2026-08-11 用 `hmsz-fuyuko-icu` 取得第一个稳定画面级案例**；幅度手感仍需逐件目视调整。逐项验证等级见
 > [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md)。
 
 ## 核心思路
@@ -21,7 +21,8 @@ T-pose，所以不能照搬 GIMI/WWMI。现在的解法**不去逆解**：把作
 
 - **作者模型自带的权重原样保留**，插件只把骨名换成游戏骨名，不做权重传递；
 - 骨架以游戏原版那套为准：同名骨不改 bindpose（实测逐元素偏差 0）；源模型自带的装饰骨
-  （蝴蝶结、缎带）可作为**源专属新增骨**由运行时按 sidecar 现场新建；自建物理链尚无稳定案例；
+  （蝴蝶结、缎带）可作为**源专属新增骨**由运行时按 sidecar 在 prefab graft 阶段新建；
+  `hmsz-fuyuko-icu` 的飘带/长链已画面级验证；
 - 骨名认不出来时由作者在「骨骼映射表」里点选，覆盖率不取决于插件认识多少种命名规范；
 - 导出前查 21 个承重关节有没有拿到权重，缺任一根拒绝导出并点名。
 
@@ -62,7 +63,9 @@ blender-addon/gakumas_mi-<版本>.zip   Blender「从磁盘安装」选它
 游戏内管理 UI 曾经是独立的 `xinput9_1_0.dll`，现已并进同一个 `xinput1_3.dll`，玩家只装一个文件。
 
 插件导出的 `.bundle` + `mod.json` 放进 `gakumas-mod/mods/<mod-id>/`；
-`gakumas-mod-runtime` 另外要求骨架 sidecar 带 `runtimeProtocol` 与 `buildId`。
+`gakumas-mod-runtime` 另外要求骨架 sidecar 带匹配的 `runtimeProtocol` 与 `buildId`。旧插件导出的
+无协议包或协议不匹配包会被新版 Runtime 拒绝完整替换；这是防止错误骨架数据混用的预期行为，
+应从原 `.blend` 用当前插件重新导出，不要手改 sidecar 冒充兼容。
 chinosk6 的 `gkms-localify-dmm` 读的是它自己的 `gakumas-local/local-files/mods/<mod-id>/`，
 两个目录互不读取，具体放哪个见 [gakumas_mi/README.md](gakumas_mi/README.md)。
 

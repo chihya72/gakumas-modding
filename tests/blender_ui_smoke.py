@@ -154,6 +154,51 @@ try:
         assert bpy.ops.gmi.extract_profile_from_frame_dump() == {"FINISHED"}
         assert hints.call_args.kwargs["mesh_name"] == "Geo_Hair"
 
+    # 骨骼映射表单的「部件类型」列：它决定新骨的摆动参数取原版哪一档、要不要建
+    # ActorSwingChain，所以既要保证读得出来，也要保证只在「自建摇物链」时可点——
+    # 别的策略不新建骨，那一列可点就是误导。
+    item = scene.gmi_bone_map.add()
+    item.source = "帯_01"
+    item.strategy = "integrate"
+    item.swing_category = "skirt"
+    assert operators._form_swing_categories(scene) == {"帯_01": "skirt"}
+    item.target = "Hips"                    # 填了目标骨=确定映射，类别失效
+    assert operators._form_swing_categories(scene) == {}
+    item.target = ""
+    item.strategy = "rigid"                 # 不新建骨的策略同样不该产出类别
+    assert operators._form_swing_categories(scene) == {}
+
+    class ListRow:
+        def __init__(self, sink):
+            self.sink, self.enabled = sink, True
+            self.scale_x, self.ui_units_x, self.alignment = 1.0, 0.0, "EXPAND"
+
+        def row(self, **_kwargs):
+            return ListRow(self.sink)
+
+        def label(self, **_kwargs):
+            return None
+
+        def prop(self, data, name, **_kwargs):
+            assert hasattr(data, name), name
+            self.sink.append((name, self.enabled))
+
+        def prop_search(self, data, name, *_args, **_kwargs):
+            assert hasattr(data, name), name
+
+        def operator(self, *_args, **_kwargs):
+            return type("FakeOperatorProps", (), {})()
+
+    def draw_row():
+        sink = []
+        ui.GMI_UL_bone_map.draw_item(
+            None, bpy.context, ListRow(sink), scene, item, None, scene, "", 0)
+        return dict(sink)
+
+    assert draw_row()["swing_category"] is False, "非 integrate 时部件类型必须置灰"
+    item.strategy = "integrate"
+    assert draw_row()["swing_category"] is True
+
     print("GMI_UI_SMOKE_OK", bpy.app.version_string, sorted(icons))
 finally:
     gakumas_mi.unregister()

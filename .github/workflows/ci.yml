@@ -24,7 +24,7 @@ jobs:
       - name: 安装依赖
         run: pip install numpy pillow pytest UnityPy
 
-      # tests/test_*.py 的 35 个契约测试（含 bundle/source、工具和发布入口回归）。
+      # tests/test_*.py 的契约测试（含 bundle/source、工具和发布入口回归）。
       - name: 契约测试
         run: python -m pytest tests -q
 

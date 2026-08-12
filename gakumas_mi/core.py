@@ -1686,6 +1686,8 @@ def _bundle_sidecar(component):
         if not component["extra_nodes"]:
             sidecar["newBones"] = source_report["newBones"].get("newBones", [])
         sidecar["extraSwingBones"] = source_report["newBones"].get("extraSwingBones", [])
+        # 建链数据（宿主骨 + 按链长分好组的链根）。运行时照单建，不做启发式。
+        sidecar["swingChains"] = source_report["newBones"].get("swingChains", [])
         # Runtime BuildHybridBoneArray creates new bones from bones[] and reads each entry's
         # swing (parseSwing). New bones live in bones[] without a swing field → the runtime
         # falls back to SetDefaultValues (mass=0/spring=0, inert) → they flail when driven or
@@ -2900,9 +2902,57 @@ def build_accessory_physics_remap(
     }
 
 
+def load_swing_presets(path=None):
+    """学马原生摆动参数基准表（`tools/scan_vanilla_swing_bones.py` 扫 530 套原版 body 得出）。"""
+    source = Path(path) if path else Path(__file__).with_name("swing_presets.json")
+    return load_json(source)["categories"]
+
+
+# 部件类别：决定用哪一档原版参数，以及要不要建 ActorSwingChain。判定顺序有意义
+# （LegSleeve 是袖不是裙）。认不出来落 ribbon —— 最保守的一档：自由悬垂、不建链。
+_SWING_CATEGORY_RULES = (
+    ("sleeve", ("sleeve", "cuff", "袖")),
+    ("skirt", ("skirt", "pants", "smock", "jacket", "coat", "dress", "hakama",
+               "裙", "裤")),
+    # 词表**和顺序**都必须和 tools/scan_vanilla_swing_bones.py 的 CATEGORY_RULES 一致 ——
+    # 基准表按那边的分类聚合，这边分错就等于查错档。顺序同样要紧：`BeltChain` /
+    # `CapeRibbon` / `CollarBow` 这种两边词表都命中的名字，先判哪个就归哪类，
+    # ribbon 必须排在 cloth 前面。
+    ("ribbon", ("ribbon", "string", "lace", "bow", "tie", "cord", "strap", "tassel",
+                "rope", "chain", "acce", "neckless", "带", "结", "绳")),
+    ("cloth", ("cloth", "poncho", "frill", "cape", "apron", "muffler", "scarf",
+               "stole", "hood", "collar", "belt", "sash", "furisode", "gown",
+               "shirt", "inner", "披风", "围")),
+)
+
+
+def swing_category(name):
+    lower = str(name).lower()
+    for category, tokens in _SWING_CATEGORY_RULES:
+        if any(token in lower for token in tokens):
+            return category
+    return "ribbon"
+
+
 def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
-                             body_remap=None, default_swing=None):
-    """Build runtime-created source bones plus a synthetic tip per leaf."""
+                             body_remap=None, default_swing=None, categories=None,
+                             presets=None):
+    """Build runtime-created source bones plus a synthetic tip per leaf.
+
+    每根骨的摆动参数按 **部件类别 × 链上角色** 从原版基准表取（`swing_presets.json`，
+    530 套原版 body 的中位数）。角色由链结构定，不靠骨名：
+
+      root  链根（父不是新骨）—— 原版基本都是惰性锚(spring/mass 近 0)，自身不摆、由子骨摆
+      mid   链中段 —— 真正在摆的
+      tip   合成链尾 `*_End` —— 定义末节朝向并补齐最后一层；缺了它会少一节有效链段
+
+    以前这里只写 damping/stiffness/spring/mass/rootWeight/pendulum 六项，其余交给运行时
+    `SetDefaultValues`。对照原版数据那是错的：`pendulumRange` 原版 84.6% 取 1.0（它是 pendulum
+    的作用范围，留 0 等于重力项被乘没了）、`wind` 84.6% 取 1.0、`useLimit` 88.3% 是 1 且带真实
+    角度限位。少写这几项，骨在数据上"参数齐全"，实际却既不下垂也不受风。
+
+    ``categories`` = ``{骨名: 类别}``（作者显式指定，最高优先）；不给就按骨名猜。
+    """
     records = {
         str(item["name"]): dict(item) for item in source_bones or ()
         if isinstance(item, dict) and item.get("name")
@@ -2910,14 +2960,15 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
     wanted = {str(name) for name in extra_names if str(name) in records}
     parents = parent_by_name or {}
     body = body_remap or {}
-    # rootWeight / pendulum 不给的话，运行时 SetDefaultValues 会留下 1.0 / 0——
-    # 即「完全刚性跟随根骨 + 没有重力项」，装饰件被锁死在作者摆的静止姿态上翘着不下垂。
-    # 这里的 0.3 / 0.001 取自游戏自己的裙摆骨实测值（见 runtime 的 LocalIpBoneSwing 注释）。
-    swing = dict(default_swing or {
-        "damping": 0.5, "stiffness": 0.02, "spring": 0.5,
-        "mass": 0.15, "useWindGlobalForce": True,
-        "rootWeight": 0.3, "pendulum": 0.001,
-    })
+    presets = presets or load_swing_presets()
+    explicit = {str(k): str(v) for k, v in (categories or {}).items()}
+    # 手写覆盖文件里拼错的类别以前会原样留在 sidecar 里：参数悄悄回退到 ribbon，还因为
+    # 非法类别查不到 useChain 而不建链 —— 两处静默降级。UI 枚举不会产出这种输入，外部
+    # JSON 会，所以在这里挡住。
+    unknown = sorted({value for value in explicit.values() if value not in presets})
+    if unknown:
+        raise ValueError(
+            f"未知的部件类型 {unknown}；可用的是 {sorted(presets)}（检查装饰物理覆盖 JSON 的 swingCategories）")
 
     def parent_name(name):
         parent = parents.get(name)
@@ -2931,6 +2982,74 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
             parent = parents.get(parent)
         return "Hips"
 
+    def chain_root(name):
+        """这根骨所属链的链根（父不在新骨集合里的那根）。"""
+        current, visited = name, set()
+        while current not in visited:
+            visited.add(current)
+            parent = parents.get(current)
+            if parent not in wanted:
+                return current
+            current = parent
+        return name
+
+    # 作者点名的类别要对**整条链**生效，不管点的是链根还是中段。以前只沿父链往上找，
+    # 点中段时链根找不到 → 链根仍按名字猜成 ribbon → build_swing_chains 看链根的类别 →
+    # 该建的链没建（实测 categories=['ribbon','skirt'] 而 swingChains=[]）。
+    # 冲突时取**最靠近链根**的那次点名，保证同一条链只有一个类别。
+    chain_category = {}
+    for name in sorted(wanted):
+        if name not in explicit:
+            continue
+        root = chain_root(name)
+        depth, current = 0, name
+        while current != root:
+            current = parents.get(current)
+            depth += 1
+        if depth < chain_category.get(root, (10 ** 9, None))[0]:
+            chain_category[root] = (depth, explicit[name])
+
+    def category_of(name):
+        root = chain_root(name)
+        if root in chain_category:
+            return chain_category[root][1]
+        return swing_category(root)
+
+    def swing_for(name, role, category):
+        preset = dict(presets.get(category, presets["ribbon"])["roles"][role])
+        preset.pop("range", None)
+        # useWindGlobalForce 在游戏里是 bool。基准表按众数统计出来是 1/0，源模型抽出来
+        # 也常是 1 —— 写成数字会让运行时的 nlohmann 抛 type_error.302，而那会让**整份
+        # sidecar 解析失败、骨架 graft 整个跳过**（表现是网格根本没换、只有贴图生效）。
+        preset["useWindGlobalForce"] = bool(preset.get("useWindGlobalForce", True))
+        # 角度限位默认关掉：它是**按骨轴授权**的，而作者的骨轴和学马的不一样。实测原版
+        # 摇物骨的子骨 100% 在 local -X（X=骨轴/扭转轴，所以锁成 [0,0]），MMD 源的子骨在
+        # local -Z。原样搬过去等于把两条真·摆动轴一条锁死一条夹紧、反而放开扭转轴——
+        # dress-2219/fuyuko 的飘带"参数全对却纹丝不动"就是这么来的。
+        # 不做主轴置换：作者 rig 的骨轴可能是任意斜向，枚举不完，而猜错的代价正是"完全
+        # 不动"这种最难查的故障。限位只是防穿模的精修，原版自己也有 18% 的飘带骨不开。
+        # 源模型显式给了 useLimit 的（IP 源同用 ActorAnimation 中间件，轴向一致）照它的来。
+        preset["useLimit"] = 0
+        # 碰撞分组：原版是逐服装归属（Skirt0/Tops0/Custm0…），对 mod 新骨没有对应语义。
+        # 显式写 -1(Everything) 而不是靠运行时兜底缺省 —— 缺省值不进 sidecar 就查不出来。
+        preset.setdefault("collisionMask", -1)
+        # 源模型自带 swing（IP 源同用 ActorAnimation 中间件，能直接抽出授权值）优先，
+        # 但只覆盖它真给了的那几项，其余仍走原版基准 —— 源里没有 pendulumRange/wind/limit。
+        override = dict(records.get(name, {}).get("swing") or {})
+        if default_swing:
+            override = {**dict(default_swing), **override}
+        preset.update(override)
+        preset["useWindGlobalForce"] = bool(preset["useWindGlobalForce"])
+        return preset
+
+    is_leaf = {
+        name: not any(parents.get(child) == name for child in wanted)
+        for name in wanted
+    }
+    role_of = {
+        name: "root" if parent_name(name) not in wanted else "mid" for name in wanted
+    }
+
     result = []
     pending = set(wanted)
     while pending:
@@ -2939,15 +3058,16 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
             raise ValueError("新骨骼父链存在循环，无法生成 sidecar")
         for name in sorted(ready):
             item = records[name]
+            category = category_of(name)
             result.append({
                 "name": name,
                 "parentName": parent_name(name),
                 "localPosition": list(item.get("localPosition") or [0.0, 0.0, 0.0]),
                 "localRotation": list(item.get("localRotation") or [0.0, 0.0, 0.0, 1.0]),
                 "localScale": list(item.get("localScale") or [1.0, 1.0, 1.0]),
-                # 源模型自带 swing（IP 包能抽出 ActorSwing 参数）时用它自己的，但
-                # rootWeight/pendulum 那两项源里通常没有，缺了就会被锁死不下垂 → 补默认值
-                "swing": {**swing, **dict(item.get("swing") or {})},
+                "swingCategory": category,
+                "swingRole": role_of[name],
+                "swing": swing_for(name, role_of[name], category),
             })
             if item.get("bindPose") is not None:
                 result[-1]["bindPose"] = item["bindPose"]
@@ -2955,20 +3075,85 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
 
     extra_tips = []
     for name in sorted(wanted):
-        if not any(parent == name for parent in parents.values() if parent in wanted):
-            item = records[name]
-            length = float(item.get("length") or 0.0)
-            if length <= 1e-8:
-                continue
-            extra_tips.append({
-                "name": f"{name}_End",
-                "parentName": name,
-                "localPosition": [0.0, 0.0, -length],
-                "localRotation": [0.0, 0.0, 0.0, 1.0],
-                "localScale": [1.0, 1.0, 1.0],
-                "swing": dict(swing),
-            })
-    return {"newBones": result, "extraSwingBones": extra_tips}
+        if not is_leaf[name]:
+            continue
+        length = float(records[name].get("length") or 0.0)
+        if length <= 1e-8:
+            continue
+        category = category_of(name)
+        extra_tips.append({
+            "name": f"{name}_End",
+            "parentName": name,
+            "localPosition": [0.0, 0.0, -length],
+            "localRotation": [0.0, 0.0, 0.0, 1.0],
+            "localScale": [1.0, 1.0, 1.0],
+            "swingCategory": category,
+            "swingRole": "tip",
+            "swing": swing_for(f"{name}_End", "tip", category),
+        })
+    return {
+        "newBones": result,
+        "extraSwingBones": extra_tips,
+        "swingChains": build_swing_chains(result, extra_tips, presets),
+    }
+
+
+def build_swing_chains(new_bones, extra_tips, presets=None):
+    """哪些新骨要挂 `ActorSwingChain`，挂在哪根宿主骨上，按链长分组。
+
+    原版实测：裙类 94% 挂链、披风类 54% 挂链，而**飘带/绳结类只有 2.6%**——蝴蝶结和
+    飘带在原版里就是裸 `ActorSwingDynamicBone`，靠 `swingDynamicBones` 逐骨模拟，
+    根本没有链。链多带一层 `around/radius` 的环形碰撞解算，那是裙摆专用的。所以这里
+    只给 `useChain` 的类别建链。
+
+    **必须按链长分组**：`UpdateChainInfo` 只给一条链它最短成员那么多层，长短混在一条
+    链里会把长链截断。分组在这里离线算，运行时照单执行、不做启发式。
+    """
+    presets = presets or load_swing_presets()
+    parent_of = {item["name"]: item["parentName"] for item in new_bones}
+    parent_of.update({item["name"]: item["parentName"] for item in extra_tips})
+    category_of = {item["name"]: item.get("swingCategory") for item in new_bones}
+    created = set(parent_of)
+
+    children_of = {}
+    for child, parent in parent_of.items():
+        children_of.setdefault(parent, []).append(child)
+
+    def depth(name):
+        # 含链尾 tip 的链长，和 UpdateChainInfo 的走法一致。
+        return 1 + max((depth(child) for child in children_of.get(name, ())), default=0)
+
+    def forked(name):
+        """链上有没有分叉。UpdateChainInfo 只沿**第一个**子节点建层，所以一根骨带两个子分支
+        时，另一支不可能进入链层 —— 而我们却按"最深那支"报了个链长，等于静默建了条只覆盖
+        一半的链。分叉的链干脆不建：那些骨照样进 swingDynamicBones 逐骨模拟（原版飘带就是
+        这么摆的），只是没有链那层环形碰撞，属于安全降级。"""
+        stack = [name]
+        while stack:
+            current = stack.pop()
+            branches = children_of.get(current, ())
+            if len(branches) > 1:
+                return True
+            stack.extend(branches)
+        return False
+
+    groups = {}
+    for item in new_bones:
+        if item["swingRole"] != "root":
+            continue
+        category = category_of.get(item["name"]) or "ribbon"
+        if not presets.get(category, {}).get("useChain"):
+            continue
+        # 链长 1 = 只有一根骨、没有链尾 → 没有可摆的骨，建了也是空转。
+        length = depth(item["name"])
+        if length < 2 or forked(item["name"]):
+            continue
+        groups.setdefault((item["parentName"], category, length), []).append(item["name"])
+
+    return [{"host": host, "category": category, "chainLength": length,
+             "rootBones": sorted(roots)}
+            for (host, category, length), roots in sorted(groups.items())
+            if host not in created]
 
 
 _FP16_MAX = 65504.0

@@ -7,7 +7,7 @@
 
 | 位置 | 职责 | 新文件落点规则 |
 |---|---|---|
-| `gakumas_mi/` | Blender 作者插件（版本 0.9.x） | 插件代码/预设只放这里；目录名固定，Blender 按它 import |
+| `gakumas_mi/` | Blender 作者插件（版本 1.0.x） | 插件代码/预设只放这里；目录名固定，Blender 按它 import |
 | `3dmigoto_gkms/` | 抓帧环境（随插件同版本发布） | d3d11.dll、d3dx.ini、ShaderFixes、键位说明 |
 | `tools/` | 离线脚本（导出/构建/审计/打包） | 一个脚本一个文件，snake_case |
 | `tests/` | Python 回归/冒烟测试 | `test` 语义文件名，CI 可跑的进 `ci.yml` |

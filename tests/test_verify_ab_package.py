@@ -39,16 +39,24 @@ def test_verify_ab_package_passes_minimal_contract(tmp_path):
             "localPosition": [0, 0, 0],
             "localRotation": [0, 0, 0, 1],
             "localScale": [1, 1, 1],
-            "swing": {"damping": 0.5, "stiffness": 0.02, "spring": 0.5,
-                      "mass": 0.15, "useWindGlobalForce": True},
+            # 字段照 swing_presets.json 的 ribbon/mid 档写全：少 pendulumRange/wind
+            # 这类字段时骨"参数齐全"却不下垂也不受风，verify 必须能拦住。
+            "swing": {"damping": 0.5, "stiffness": 0.008, "spring": 0.3, "mass": 0.7,
+                      "useWindGlobalForce": True, "pendulum": 0.003,
+                      "pendulumRange": 1.0, "wind": 1.0, "rootWeight": 0.3,
+                      "colliderRadius": 0.018, "colliderType": 0, "collisionMask": -1},
         }, {
             "name": "Streamer_R_A0",
             "parentIndex": 2,
             "localPosition": [0, 0, 0],
             "localRotation": [0, 0, 0, 1],
             "localScale": [1, 1, 1],
-            "swing": {"damping": 0.5, "stiffness": 0.02, "spring": 0.5,
-                      "mass": 0.15, "useWindGlobalForce": True},
+            # 字段照 swing_presets.json 的 ribbon/mid 档写全：少 pendulumRange/wind
+            # 这类字段时骨"参数齐全"却不下垂也不受风，verify 必须能拦住。
+            "swing": {"damping": 0.5, "stiffness": 0.008, "spring": 0.3, "mass": 0.7,
+                      "useWindGlobalForce": True, "pendulum": 0.003,
+                      "pendulumRange": 1.0, "wind": 1.0, "rootWeight": 0.3,
+                      "colliderRadius": 0.018, "colliderType": 0, "collisionMask": -1},
         }],
         "sourceRigRemap": {"bones": {name: name for name in critical}},
     }
@@ -80,9 +88,11 @@ def test_verify_ab_package_passes_minimal_contract(tmp_path):
         "left": 1,
         "right": 1,
         "unclassified": 0,
+        "runtimeCreated": 0,
         "invalidParentCount": 0,
         "missingParameterCount": 0,
     }
+
 
     # 正式 release 目录同时有部署用顶层 mod.json 和完整 bundle-src；验证器必须检查
     # bundle-src，不能被顶层精简部署清单截走。
@@ -98,3 +108,101 @@ def test_verify_ab_package_passes_minimal_contract(tmp_path):
     packaged_report = verify.verify_package(release_root)
     assert packaged_report["ok"]
     assert Path(packaged_report["bundleSource"]) == bundle_src.resolve()
+
+
+def test_verify_checks_runtime_created_bones_too():
+    """链尾走顶层 `extraSwingBones`，运行时同样会把它们建成 ActorSwingDynamicBone。
+
+    验证器只查 `bones[]` 时，给链尾一个空 `swing` 会得到 0 错 0 警 —— 而那些骨在游戏里
+    落进 `SetDefaultValues` 的惰性默认值，正是"日志全绿画面不动"那一类的源头。
+    """
+    sidecar = {"bones": [], "extraSwingBones": [
+        {"name": "Bow_A_End", "parentName": "Bow_A", "swing": {}}]}
+    report = {"errors": [], "warnings": []}
+    verify._check_swing(report, sidecar)
+    assert report["swing"]["runtimeCreated"] == 1
+    assert report["swing"]["missingParameterCount"] == 1
+    assert report["errors"]
+
+    sidecar["extraSwingBones"][0]["swing"] = {
+        "damping": 0.5, "stiffness": 0.008, "spring": 0.3, "mass": 0.7,
+        "useWindGlobalForce": True, "pendulum": 0.003, "pendulumRange": 1.0,
+        "wind": 1.0, "rootWeight": 0.3,
+        "colliderRadius": 0.018, "colliderType": 0, "collisionMask": -1,
+    }
+    report = {"errors": [], "warnings": []}
+    verify._check_swing(report, sidecar)
+    assert report["swing"]["missingParameterCount"] == 0
+    assert not report["errors"]
+
+
+def _write_hair_contract(tmp_path, sidecar, geometries):
+    (tmp_path / "mod.json").write_text(json.dumps({
+        "runtimeProtocol": 1,
+        "buildId": "test-build",
+        "replacements": [{
+            "part": "hair",
+            "skeleton": "Assets/Mods/test/test_bones.json.txt",
+        }],
+    }), encoding="utf-8")
+    payload = {"runtimeProtocol": 1, "buildId": "test-build", **sidecar}
+    (tmp_path / "test_bones.json.txt").write_text(json.dumps(payload), encoding="utf-8")
+    for name, geometry in geometries.items():
+        (tmp_path / name).write_text(json.dumps(geometry), encoding="utf-8")
+
+
+def test_verify_rejects_missing_runtime_bone_physics_in_final_result(tmp_path):
+    _write_hair_contract(tmp_path, {
+        "bones": [{"name": "Hips", "parentIndex": -1}],
+        "extraSwingBones": [{"name": "Bow_A_End", "parentName": "Hips", "swing": {}}],
+    }, {
+        "hair.geojson.txt": {"m_VertexCount": 0, "m_Colors": [], "m_Skin": []},
+    })
+
+    report = verify.verify_package(tmp_path)
+
+    assert not report["ok"]
+    assert any("摇物骨缺少物理参数" in message for message in report["errors"])
+
+
+def test_verify_checks_every_renderer_geometry(tmp_path):
+    _write_hair_contract(tmp_path, {"bones": []}, {
+        "Geo_Hair.geojson.txt": {"m_VertexCount": 0, "m_Colors": [], "m_Skin": []},
+        "Geo_HairProp.geojson.txt": {"m_VertexCount": 1, "m_Colors": [], "m_Skin": []},
+    })
+
+    report = verify.verify_package(tmp_path)
+
+    assert not report["ok"]
+    assert len(report["geometries"]) == 2
+    assert any("Geo_HairProp.geojson.txt" in message for message in report["errors"])
+
+
+def test_verify_rejects_non_integer_chain_length():
+    """`chainLength: "2"` 以前被跳过（验证器 0 错），而运行时按整数读。"""
+    sidecar = {
+        "bones": [{"name": "Hips"}],
+        "extraSwingBones": [{"name": "Bow_A", "parentName": "Hips"}],
+        "swingChains": [{"host": "Hips", "rootBones": ["Bow_A"], "chainLength": "2"}],
+    }
+    report = {"errors": [], "warnings": []}
+    verify._check_swing(report, sidecar)
+    assert any("chainLength" in problem for problem in report["swingChains"]["problems"])
+    assert report["errors"]
+
+
+def test_verify_reports_bad_bones_container_instead_of_crashing(tmp_path):
+    """`bones: 7` 以前让核包工具抛 TypeError('int' object is not iterable)。"""
+    (tmp_path / "mod.json").write_text(json.dumps({
+        "runtimeProtocol": 1,
+        "buildId": "test-build",
+        "replacements": [{"part": "hair", "skeleton": "Assets/Mods/test/test_bones.json.txt"}],
+    }), encoding="utf-8")
+    (tmp_path / "test_bones.json.txt").write_text(
+        json.dumps({"runtimeProtocol": 1, "buildId": "test-build", "bones": 7}), encoding="utf-8")
+    (tmp_path / "test.geojson.txt").write_text(
+        json.dumps({"m_VertexCount": 0, "m_Colors": [], "m_Skin": []}), encoding="utf-8")
+
+    report = verify.verify_package(tmp_path)
+    assert not report["ok"]
+    assert any("bones 必须是数组" in message for message in report["errors"])

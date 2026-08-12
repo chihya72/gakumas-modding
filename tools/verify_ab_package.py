@@ -151,7 +151,22 @@ def _check_ownership(report, sidecar: dict):
             bad_parents.append({"name": name, "parentName": parent})
         if "swing" not in item:
             _record(report, "warnings", f"新骨 {name} 未声明 swing 参数")
+    # 循环父链：A.parent=B、B.parent=A。运行时 buildBone 有 states 环检测会拒绝整份
+    # sidecar，导出侧也不该产出它 —— 而验证器此前只查父名存不存在，环照样放行。
+    parent_of = {item.get("name"): item.get("parentName") for item in declared_records}
+    cycles = []
+    for start in parent_of:
+        seen, current = set(), start
+        while current in parent_of:
+            if current in seen:
+                cycles.append(start)
+                break
+            seen.add(current)
+            current = parent_of[current]
+    if cycles:
+        _record(report, "errors", "新骨父链存在循环: " + ", ".join(sorted(set(cycles))))
     check = {
+        "boneCycles": sorted(set(cycles)),
         "sourceBoneLeaks": source_leaks,
         "declaredNewBones": sorted(declared),
         "invalidNewBoneParents": bad_parents,
@@ -179,7 +194,43 @@ def _side_of(name: str):
 
 def _check_swing(report, sidecar: dict):
     bones = [item for item in sidecar.get("bones", []) if isinstance(item, dict)]
-    required = {"damping", "stiffness", "spring", "mass", "useWindGlobalForce"}
+    # pendulumRange / wind / rootWeight / pendulum 少写一个骨就"参数齐全但不动"：
+    # pendulumRange 留 0 等于把重力项乘没了，wind 留 0 = 不受风，rootWeight 留 1.0 =
+    # 完全刚性跟随根骨。530 套原版实测这四项分别是 84.6% / 84.6% / 89.5% 取上述值
+    # （中位数即取这几个值，不是「一律」）。
+    required = {"damping", "stiffness", "spring", "mass", "useWindGlobalForce",
+                "pendulum", "pendulumRange", "wind", "rootWeight",
+                # 碰撞体三项也必须显式写出：靠运行时缺省的话，sidecar 里查不出来用的是什么
+                "colliderRadius", "colliderType", "collisionMask"}
+    # 只查 bones[] 是不够的：链尾走顶层 `extraSwingBones`，运行时同样会把它们建成
+    # ActorSwingDynamicBone，缺参数照样落进默认值。最小复现里给链尾一个空 swing，
+    # 旧版验证器返回 0 错 0 警 —— 正是"日志全绿画面不动"那一类的源头。
+    # 顶层与 sourceRigRemap 下的嵌套写法都收：newBones 被并进 bones[] 时顶层那份会省掉，
+    # 只查顶层就会漏掉整批运行时新建的骨。
+    nested = sidecar.get("sourceRigRemap")
+    nested = nested.get("newBones") if isinstance(nested, dict) else None
+    nested = nested if isinstance(nested, dict) else {}
+
+    def _records(field):
+        """收集某个字段下的骨记录。**容器类型要防**：`extraSwingBones: 7` 之类会让
+        `for item in source` 直接抛 TypeError —— 验证工具的职责是把坏包报成错误，
+        不是自己崩掉。"""
+        seen, out = set(), []
+        for holder, source in (("顶层", sidecar.get(field)), ("sourceRigRemap", nested.get(field))):
+            if source is None:
+                continue
+            if not isinstance(source, list):
+                _record(report, "errors",
+                        f"{holder} {field} 必须是数组，实际是 {type(source).__name__}")
+                continue
+            for item in source:
+                if isinstance(item, dict) and item.get("name") not in seen:
+                    seen.add(item.get("name"))
+                    out.append(item)
+        return out
+
+    extras = _records("extraSwingBones")
+    news = _records("newBones")
     counts = {"left": 0, "right": 0, "unclassified": 0}
     invalid_parents = []
     missing_parameters = []
@@ -195,19 +246,135 @@ def _check_swing(report, sidecar: dict):
         missing = sorted(required - set(swing))
         if missing:
             missing_parameters.append({"name": name, "missing": missing})
+    # 运行时新建的骨（链尾 / newBones）必须自带 swing，缺整块也算缺参数
+    runtime_created = 0
+    for item in extras + news:
+        name = item.get("name") or "<unnamed>"
+        runtime_created += 1
+        swing = item.get("swing")
+        if not isinstance(swing, dict):
+            missing_parameters.append({"name": name, "missing": ["swing"]})
+            continue
+        missing = sorted(required - set(swing))
+        if missing:
+            missing_parameters.append({"name": name, "missing": missing})
     check = {
         "total": sum(counts.values()),
         **counts,
+        "runtimeCreated": runtime_created,
         "invalidParentCount": len(invalid_parents),
         "missingParameterCount": len(missing_parameters),
     }
     if invalid_parents:
         _record(report, "errors", "摇物骨存在无效 parentIndex")
     if missing_parameters:
-        _record(report, "warnings", "摇物骨缺少物理参数: " + ", ".join(item["name"] for item in missing_parameters))
+        _record(report, "errors", "摇物骨缺少物理参数: " + ", ".join(item["name"] for item in missing_parameters))
     if counts["left"] and counts["left"] != counts["right"]:
         _record(report, "warnings", f"摇物骨左右数量不对称: Left={counts['left']} Right={counts['right']}")
     report["swing"] = check
+    _check_swing_chains(report, sidecar, bones, extras + news)
+
+
+def _check_swing_chains(report, sidecar: dict, bones, created):
+    """`swingChains` 是运行时照单执行的建链规格，错了它不会自己纠正。
+
+    运行时只按名字找宿主骨和链根、把链根塞进 rootBones —— 名字不存在就整条链落空（只留
+    一行 warn），同一根骨被两条链认领则会被同时模拟。这些都得在导出期挡住。
+    """
+    raw = sidecar.get("swingChains")
+    if raw is None:
+        return
+    problems = []
+    if not isinstance(raw, list):
+        # dict 之类会被 `for item in raw` 静默迭代成键，整段校验空转
+        _record(report, "errors", f"swingChains 必须是数组，实际是 {type(raw).__name__}")
+        report["swingChains"] = {"total": 0, "problems": ["容器类型错误"]}
+        return
+    for index, chain in enumerate(raw):
+        if not isinstance(chain, dict):
+            problems.append(f"chain[{index}] 不是对象（{type(chain).__name__}）")
+
+    chains = [item for item in raw if isinstance(item, dict)]
+    bone_names = {item.get("name") for item in bones}
+    created_names = {item.get("name") for item in created}
+    parent_of = {item.get("name"): item.get("parentName") for item in created}
+    known = bone_names | created_names
+    children = {}
+    for name, parent in parent_of.items():
+        children.setdefault(parent, []).append(name)
+
+    def depth_of(root):
+        """按真实父子拓扑算链深（含链尾），沿最深那支。
+
+        **必须防环**：`A.parentName=B、B.parentName=A` 这种循环父链会让遍历永不终止
+        （实测跑 3 秒不返回）。环本身是坏数据，由 _check_bone_cycles 报错，这里只保证
+        不挂死。"""
+        best, stack, seen = 0, [(root, 1)], set()
+        while stack:
+            current, length = stack.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            best = max(best, length)
+            for child in children.get(current, ()):
+                stack.append((child, length + 1))
+        return best
+
+    seen_roots = {}
+    for index, chain in enumerate(chains):
+        host = chain.get("host")
+        if not isinstance(host, str) or host not in known:
+            problems.append(f"chain[{index}] 宿主骨 {host!r} 不在骨架里")
+        roots = chain.get("rootBones")
+        if not isinstance(roots, list):
+            problems.append(f"chain[{index}] rootBones 必须是数组，实际是 {type(roots).__name__}")
+            continue
+        if not roots:
+            problems.append(f"chain[{index}] 没有链根")
+        depths = {}
+        for root in roots:
+            if not isinstance(root, str) or root not in known:
+                problems.append(f"chain[{index}] 链根 {root!r} 不在骨架里")
+                continue
+            if root in seen_roots:
+                problems.append(f"链根 {root!r} 同时被 chain[{seen_roots[root]}] 和 chain[{index}] 认领")
+            seen_roots[root] = index
+            # 链根的父必须是宿主骨，否则运行时挂上去的层级和导出器算的链长对不上
+            if parent_of.get(root, host) != host:
+                problems.append(
+                    f"chain[{index}] 链根 {root!r} 的父是 {parent_of.get(root)!r}，不是宿主 {host!r}")
+            depths[root] = depth_of(root)
+            # 分叉：一根骨带两个子分支时 UpdateChainInfo 只走第一支，另一支不会进层。
+            # visited 是防环用的 —— 循环父链会让这个遍历永远 ping-pong（环本身由
+            # _check_ownership 报错，这里只保证不挂死）。
+            stack, visited = [root], set()
+            while stack:
+                current = stack.pop()
+                if current in visited:
+                    break
+                visited.add(current)
+                branches = children.get(current, [])
+                if len(branches) > 1:
+                    problems.append(
+                        f"chain[{index}] 从 {root!r} 起在 {current!r} 处分叉，只有一支会进链层")
+                    break
+                stack.extend(branches)
+        # 混长：UpdateChainInfo 把整条链截到**最短成员**的长度，长链会被削掉尾部若干层
+        if len(set(depths.values())) > 1:
+            problems.append(
+                f"chain[{index}] 链根深度不一致 {depths}，长链会被截到最短成员的长度")
+        declared = chain.get("chainLength")
+        # 类型先判：`"2"` 这种字符串以前直接跳过整段比对，验证器全绿而运行时按整数读
+        # （bool 同理——nlohmann 的 get<int> 不收布尔）。
+        if declared is not None and (isinstance(declared, bool) or not isinstance(declared, int)):
+            problems.append(
+                f"chain[{index}] chainLength 必须是整数，实际是 {type(declared).__name__}")
+        elif depths and isinstance(declared, int) and declared != max(depths.values()):
+            problems.append(
+                f"chain[{index}] chainLength={declared} 与实际拓扑深度 {max(depths.values())} 不符")
+    report["swingChains"] = {"total": len(chains), "problems": problems}
+    if problems:
+        _record(report, "errors", "swingChains 契约不符: " + "; ".join(problems))
 
 
 def verify_package(root, log_paths=(), hash_paths=()):
@@ -234,6 +401,15 @@ def verify_package(root, log_paths=(), hash_paths=()):
         sidecar = {}
     else:
         sidecar = _read_json(sidecar_path)
+    # 坏包要报成错误，不是让核包工具自己崩。`bones: 7` 会让下面三处
+    # （_check_ownership/_check_swing/_check_weights）各自 `for item in 7` 抛 TypeError，
+    # 所以在唯一的入口处归一化一次，别在每个检查里各防一遍。
+    if not isinstance(sidecar, dict):
+        _record(report, "errors", f"sidecar 顶层必须是对象，实际是 {type(sidecar).__name__}")
+        sidecar = {}
+    elif "bones" in sidecar and not isinstance(sidecar["bones"], list):
+        _record(report, "errors", f"sidecar bones 必须是数组，实际是 {type(sidecar['bones']).__name__}")
+        sidecar = {**sidecar, "bones": []}
     if not geo_paths:
         _record(report, "errors", "找不到 *.geojson.txt")
 
@@ -278,12 +454,27 @@ def verify_package(root, log_paths=(), hash_paths=()):
     if sidecar:
         _check_ownership(report, sidecar)
         _check_swing(report, sidecar)
+    geometry_reports = []
     for geo_path in geo_paths:
         geo = _read_json(geo_path)
-        _check_colors(report, geo)
+        geometry_report = {"path": str(geo_path), "errors": [], "warnings": []}
+        _check_colors(geometry_report, geo)
         if sidecar:
-            _check_weights(report, geo, sidecar, is_body)
-        break
+            _check_weights(geometry_report, geo, sidecar, is_body)
+        for level in ("errors", "warnings"):
+            for message in geometry_report[level]:
+                _record(report, level, f"{geo_path.name}: {message}")
+        geometry_reports.append({
+            "path": geometry_report["path"],
+            "colors": geometry_report.get("colors"),
+            "weights": geometry_report.get("weights"),
+        })
+    report["geometries"] = geometry_reports
+    # 保留单 Renderer 时代的顶层摘要，避免现有报告消费者失效；完整结果以上面的数组为准。
+    if geometry_reports:
+        report["colors"] = geometry_reports[0]["colors"]
+        if geometry_reports[0]["weights"] is not None:
+            report["weights"] = geometry_reports[0]["weights"]
 
     for path in log_paths:
         path = Path(path)

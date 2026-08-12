@@ -201,7 +201,8 @@ def draw_export_step(layout, scene, context):
     if bones:
         bones.label(text="预设认识的骨架预填后无需改动；导出报「承重关节没拿到权重」时用这里",
                     icon="INFO")
-        bones.label(text="左列=目标游戏骨（身体骨填这个）；右列=装饰物理策略（飘带/花边选这个）")
+        bones.label(text="左=目标游戏骨（身体骨填这个）；中=装饰物理策略（飘带/花边选这个）；"
+                         "右=部件类型（选了「自建摇物链」才可点）")
         row = bones.row(align=True)
         op = row.operator("gmi.build_bone_map", text="扫描源骨骼", icon="VIEWZOOM")
         op.only_unmapped = True
@@ -290,28 +291,41 @@ class GMI_PT_step_export(_GMIStepPanel):
         draw_export_step(layout, context.scene, context)
 
 
+# 骨映射表右侧控件的固定宽度(UI 单位,1 单位 ≈ 20px @100% 缩放)。骨名列吃掉剩下的宽度——
+# 让四列等分的话骨名会被截成 "RightRi... 0."，而作者恰恰要靠骨名判断这根骨是什么部件。
+# 嫌窄嫌宽直接改这四个数。
+_MASS_WIDTH, _TARGET_WIDTH, _STRATEGY_WIDTH, _CATEGORY_WIDTH = 3.4, 9.0, 8.0, 8.0
+
+
 class GMI_UL_bone_map(bpy.types.UIList):
     """一行 = 一根带权重的源骨。左边源骨名 + 权重占比，右边下拉搜索选游戏骨。"""
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_prop, index):
         row = layout.row(align=True)
         filled = bool(item.target.strip())
-        info = row.row(align=True)
-        info.scale_x = 0.55
-        info.label(text=item.source,
-                   icon="CHECKMARK" if filled else ("DOT" if item.strategy != "auto"
-                                                    else "ERROR"))
-        mass = info.row()
-        mass.scale_x = 0.35
+        row.label(text=item.source,
+                  icon="CHECKMARK" if filled else ("DOT" if item.strategy != "auto"
+                                                   else "ERROR"))
+        mass = row.row()
+        mass.ui_units_x = _MASS_WIDTH
+        mass.alignment = "RIGHT"
         mass.label(text=f"{item.mass:.2f}%")
         inspect = row.operator("gmi.show_bone_weights", text="", icon="BRUSH_DATA")
         inspect.source = item.source
-        row.prop_search(item, "target", context.scene, "gmi_bone_targets",
-                        text="", icon="BONE_DATA")
+        target = row.row(align=True)
+        target.ui_units_x = _TARGET_WIDTH
+        target.prop_search(item, "target", context.scene, "gmi_bone_targets",
+                           text="", icon="BONE_DATA")
         # 填了目标骨就是确定映射,装饰物理策略对它没意义,不画
         strategy = row.row(align=True)
+        strategy.ui_units_x = _STRATEGY_WIDTH
         strategy.enabled = not filled
         strategy.prop(item, "strategy", text="")
+        # 部件类型只对「自建摇物链」有意义 —— 别的策略不新建骨,没有参数可选
+        category = row.row(align=True)
+        category.ui_units_x = _CATEGORY_WIDTH
+        category.enabled = not filled and item.strategy == "integrate"
+        category.prop(item, "swing_category", text="")
 
 
 CLASSES = (

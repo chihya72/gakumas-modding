@@ -697,6 +697,14 @@ def _form_physics_overrides(scene):
             if item.source and item.strategy != "auto" and not item.target.strip()}
 
 
+def _form_swing_categories(scene):
+    """表单里点名过部件类型的行。只对自建摇物链有意义,别的策略不新建骨。"""
+    return {item.source: item.swing_category
+            for item in getattr(scene, "gmi_bone_map", ())
+            if item.source and item.swing_category != "auto"
+            and item.strategy == "integrate" and not item.target.strip()}
+
+
 def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
     explicit = {}
     if scene.gmi_bone_remap_file:
@@ -716,7 +724,7 @@ def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
     remap = dict(report["bones"])
     remap.update(explicit)
     if skeleton is not None:
-        physics_overrides = {}
+        physics_overrides, override_data = {}, {}
         if getattr(scene, "gmi_physics_override_file", ""):
             override_data = core.load_json(
                 Path(bpy.path.abspath(scene.gmi_physics_override_file)))
@@ -737,10 +745,14 @@ def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
         remap = core.merge_accessory_bone_remap(
             remap, physics_report["bones"], physics_report["rigidParent"]
         )
+        # 部件类型决定摆动参数取原版哪一档、要不要建链；同样表单优先于外部 JSON
+        swing_categories = dict(override_data.get("swingCategories") or {})
+        swing_categories.update(_form_swing_categories(scene))
         records = _source_bone_sidecar_records(obj)
         report["newBones"] = core.build_source_extra_bones(
             records, physics_report["newBones"],
             parent_by_name=_source_bone_parents(obj), body_remap=remap,
+            categories=swing_categories,
         )
         # 新骨链的根挂在游戏骨下，local 必须按游戏骨架的静止姿势重算
         _retarget_new_bone_roots(report["newBones"]["newBones"], records, skeleton)
@@ -2437,10 +2449,25 @@ class GMI_bone_map_item(bpy.types.PropertyGroup):
         items=[
             ("auto", "自动", "跟源父骨；胸/Bust 名称按 Bust*_S，异常件用覆盖策略"),
             ("rigid", "刚性跟父骨", "无物理，跟最近的已映射身体父骨——不确定时选它"),
-            ("integrate", "自建摇物链（实验）", "新建骨 + ActorSwing 链；尚无稳定实机画面案例，正式成品暂勿依赖"),
+            ("integrate", "自建摇物链", "新建骨 + 自己的摆动物理；飘带/蝴蝶结用这个。2026-08-11 已实机确认可用，手感（幅度）仍在调"),
             ("follow_skirt", "跟裙摆", "蹭最近的裙摆摇物骨（裙边花边），无视距离"),
             ("follow_nearest", "跟随最近骨骼",
              "跟随最近的目标摇物骨；超过安全距离时改为刚性跟父骨"),
+        ],
+        default="auto",
+    )
+    swing_category: bpy.props.EnumProperty(
+        name="部件类型",
+        description="只对「自建摇物链」的骨有效。决定摆动参数取原版哪一档，以及要不要建 "
+                    "ActorSwingChain——530 套原版实测：裙类 94% 挂链、飘带绳结类只有 2.6%。"
+                    "自动=按骨名猜（认不出来按飘带处理，最保守）。"
+                    "选中链上任意一根即对整条链生效",
+        items=[
+            ("auto", "自动", "按骨名猜；认不出来按飘带（自由悬垂、不建链）"),
+            ("ribbon", "飘带 / 蝴蝶结", "自由悬垂，不建链——原版的飘带绳结就是这样"),
+            ("cloth", "披风 / 褶边 / 领腰", "建链，比裙摆轻"),
+            ("sleeve", "袖口", "原版用 Slide 型，限位很紧"),
+            ("skirt", "裙 / 裤 / 外套下摆", "建链 + 环形碰撞，最重"),
         ],
         default="auto",
     )
@@ -2484,6 +2511,7 @@ class GMI_OT_build_bone_map(Operator):
             return {"CANCELLED"}
         kept = dict(_form_bone_map(scene))          # 保住作者已经填过的
         kept_strategy = dict(_form_physics_overrides(scene))
+        kept_category = dict(_form_swing_categories(scene))
         scene.gmi_bone_targets.clear()
         for name in sorted(bone_map):
             scene.gmi_bone_targets.add().name = name
@@ -2501,6 +2529,8 @@ class GMI_OT_build_bone_map(Operator):
             item.mass = mass
             if name in kept_strategy:
                 item.strategy = kept_strategy[name]
+            if name in kept_category:
+                item.swing_category = kept_category[name]
             rows += 1
         scene.gmi_bone_map_index = 0
         empty = sum(1 for item in scene.gmi_bone_map if not item.target.strip())
@@ -2570,6 +2600,7 @@ class GMI_OT_save_bone_map(Operator):
         scene = context.scene
         bones = _form_bone_map(scene)
         physics = _form_physics_overrides(scene)
+        categories = _form_swing_categories(scene)
         if not bones and not physics:
             self.report({"ERROR"}, "表单里还没有填写任何目标骨或装饰物理策略")
             return {"CANCELLED"}
@@ -2581,11 +2612,13 @@ class GMI_OT_save_bone_map(Operator):
         # 骨映射和装饰物理写同一份文件:两个读取入口各取自己的键。"physics" 必须写出来
         # (哪怕是空的),否则物理读取会 fallback 成整个 dict、把 bones 当策略用。
         core._write_json(Path(path), {
-            "schemaVersion": 1, "bones": bones, "physics": physics,
+            "schemaVersion": 2, "bones": bones, "physics": physics,
+            "swingCategories": categories,
         })
         if physics:
             scene.gmi_physics_override_file = path
-        self.report({"INFO"}, f"已存 {len(bones)} 条骨映射 + {len(physics)} 条装饰物理到 {path}")
+        self.report({"INFO"}, f"已存 {len(bones)} 条骨映射 + {len(physics)} 条装饰物理 + "
+                              f"{len(categories)} 条部件类型到 {path}")
         return {"FINISHED"}
 
 
@@ -2603,18 +2636,23 @@ class GMI_OT_load_bone_map(Operator):
         data = core.load_json(Path(path))
         bones = data.get("bones", data)
         physics = data.get("physics", {}) if isinstance(data, dict) else {}
-        valid = {item.identifier for item in
-                 GMI_bone_map_item.bl_rna.properties["strategy"].enum_items}
+        categories = data.get("swingCategories", {}) if isinstance(data, dict) else {}
+        enum_ids = lambda prop: {item.identifier for item in
+                                 GMI_bone_map_item.bl_rna.properties[prop].enum_items}
+        valid, valid_categories = enum_ids("strategy"), enum_ids("swing_category")
         hit = 0
         for item in scene.gmi_bone_map:
+            # 部件类型是策略的附属，两者可以同时命中同一行 —— 别用 elif 把它挤掉
+            if categories.get(item.source) in valid_categories:
+                item.swing_category = categories[item.source]
             if item.source in bones:
                 item.target = str(bones[item.source])
                 hit += 1
             elif physics.get(item.source) in valid:
                 item.strategy = physics[item.source]
                 hit += 1
-        self.report({"INFO"}, f"读入 {len(bones)} 条骨映射 + {len(physics)} 条装饰物理，"
-                              f"命中表内 {hit} 行")
+        self.report({"INFO"}, f"读入 {len(bones)} 条骨映射 + {len(physics)} 条装饰物理 + "
+                              f"{len(categories)} 条部件类型，命中表内 {hit} 行")
         return {"FINISHED"}
 
 

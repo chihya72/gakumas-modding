@@ -39,9 +39,11 @@
 
 ### 1.1 换装 = 让游戏引擎穿上你的网格
 
-AB 路线把 mod 网格作为真正的 Unity Mesh 交给 chinosk6 插件,`set_sharedMesh` 塞回原(学马活体)renderer。
-网格的顶点/法线/UV/**colors32(描边)**/submesh 插件**不动**;它只改 bindpose(空间校正)、boneWeights(骨序 remap)、贴图。
-→ 描边/透明/物理由引擎原生正确。详见 runtime-mechanism.md。
+AB 路线把 mod 网格作为真正的 Unity Mesh 交给游戏侧 Runtime，`set_sharedMesh` 塞回原（学马活体）renderer。
+作者数据里的 UV/**colors32（描边）**/submesh 语义保留；Runtime 会按 renderer 空间同步变换
+顶点/法线/切线，并改 bindpose（空间校正）、boneWeights（骨序 remap）和贴图。
+→ 描边/透明/物理由引擎原生正确。Runtime 当前机制见
+[`../../gakumas-mod-runtime/docs/roadmap.md`](../../gakumas-mod-runtime/docs/roadmap.md)。
 
 ### 1.2 「翻译」vs「整搬」——一切麻烦的根源
 
@@ -60,7 +62,8 @@ AB 路线把 mod 网格作为真正的 Unity Mesh 交给 chinosk6 插件,`set_sh
 
 ### 1.4 物理的跨引擎现实
 
-- scsp/偶像荣耀与学马**同 QualiArts ActorSwing 框架**(偶像荣耀已核实类名逐字相同;**SCSP 未核实,待验**),摆动参数**可从源提取**。
+- scsp/偶像荣耀与学马使用同类 QualiArts ActorSwing 数据；SCSP 源的 typetree 参数提取与
+  `hmsz-fuyuko-icu` 端到端样本均已验证，摆动参数可从源提取。
 - MMD(刚体+关节)、Blender(通常无)**与学马是不同物理系统,参数搬不过来** → 新骨挂学马原生 ActorSwing + **默认/手调/蹭** 参数。
 - 物理生效前提(P4 findings):sidecar 必须补①每骨摆动参数 ②每条链**链尾 tip 骨**(无权重、不在 m_Bones,单列 `extraSwingBones`),缺一不摆。
 
@@ -147,17 +150,23 @@ mod 顶点组 ──分类──┤                                             
 
 ### P4. 无损新骨嫁接(Track B-新骨)
 - sidecar 发射源专属骨:name/parentName(解析到目标活体骨)/localTRS。
-- 摆动参数:同引擎源从源 bundle 提;跨引擎源用默认；当前 GakumasMI 路径使用默认参数。
+- 摆动参数：源 sidecar 明确给出的字段优先；缺项按“部件类别 × 链上角色”从原版
+  `swing_presets.json` 基准补齐，跨引擎源不照搬不兼容的物理系统。
 - 补每链 tip 骨到 `extraSwingBones`；runtime 支持 `newBones` 与 tip 按 `parentName` 建链。
-- **依赖**:游戏侧插件运行时建新骨物理，当前插件仓库 Release x64 编译已通过。
+- **依赖**:游戏侧 Runtime 建新骨物理；同级 `gakumas-mod-runtime` 的 Release x64 编译已通过。
 - **当前完成范围**:sidecar/runtime 已通；P5 已补齐 bundle skeleton/bindpose/`m_Skin` 索引闭环。
 - **已验证**:插件 Release x64 编译、sidecar 解析契约、离线导出回归。
-- **实机验收证据**：`atbm-0140` 日志为 `matchedBones=56 createdBones=288 bones=344 boneWeights=170292 droppedInfluences=0 fallbackVertices=0`、`meshApplied=1`，并建出 5 组 `ChainInfo`（7/8/9/10/11 层）；`ActorSwing colliders applied: 288/288`。`active=0` 是刚建链/LOD 阶段的正常状态，不判失败；持续自摆仍需人工观察。
-- ⚠️ **2026-08-04 更新：画面级观察的结果是「不摆」。** dress-2219（`hmsz-cstm-0059`）修完
-  0.9.3 的四项 sidecar 写入约定后，日志同样全绿（`createdBones=26 swingPrepared=36`、链尾齐全、
-  3 条链注册），装饰件在游戏里维持静止姿态。**所以 P4 的实机验收目前只到"链建出来了"，
-  不到"它会摆"**；成品用刚性/跟裙摆绕开。排查现场与下一步见
-  [`current-status-and-roadmap.md`](current-status-and-roadmap.md) 的「下一开发重点：自建摇物链」。
+- **日志侧证据**：`atbm-0140` 日志为 `matchedBones=56 createdBones=288 bones=344 boneWeights=170292 droppedInfluences=0 fallbackVertices=0`、`meshApplied=1`，并建出 5 组 `ChainInfo`（7/8/9/10/11 层）；`ActorSwing colliders applied: 288/288`。~~`active=0` 是刚建链/LOD 阶段的正常状态，不判失败~~ ⚠️ **2026-08-11 推翻**：`active` 是序列化授权字段，运行时新建的层拿到的 0 **就是**病因（链不参与模拟），不是正常现象。见 [`ab-route-notes.md`](ab-route-notes.md) §3。
+  这组 `atbm` 数据只证明 Mesh/graft/建链链路，**没有独立的画面级摆动确认**。
+- ✅ **2026-08-11：画面级跑通**（`hmsz-fuyuko-icu` / `hmsz-cstm-0059`）。飘带正常摆动、长链末端
+  花边不再抽、右飘带不再穿腿；日志侧同时全绿（骨 15/15 进 `swingDynamicBones`、并行表同长
+  238/238、参数活体读回一致、链尾 4/4、层的 `active`/`radius` 与原版同构）。修掉的六处与被推翻
+  的旧结论见 [`current-status-and-roadmap.md`](current-status-and-roadmap.md) 的「2026-08-11：
+  自建摇物骨打通」，完整流水线见 [`ab-route-notes.md`](ab-route-notes.md) §10。
+  - ~~2026-08-04：画面级观察的结果是「不摆」，P4 只到"链建出来了"、成品用刚性/跟裙摆绕开~~
+    —— 已被上面这次跑通推翻，绕开方案不再是结论。
+  - 唯一剩下的是手感：摆动幅度偏小，属调参范围。调参这条路的负结果（五个参数拉满只动
+    ±35%）见 [`ab-route-notes.md`](ab-route-notes.md) §12。
 
 ### P5. 权重导出(换标签,不刷)
 - 现有路径:`_inverse_skin_export_data(source_rig_weights=True)` 原样读顶点组 + 按对照表映射骨索引。
@@ -195,11 +204,11 @@ mod 顶点组 ──分类──┤                                             
 
 **结论:把复杂度分两类,别混为一谈**
 - **一次性基建**(崩溃修复、运行时 ActorSwing 三修、swing 参数自动合并):埋在插件/运行时里,开发者一键导出时白嫖,**不给每个 mod 增加任何操作**。是"从跑不起来→能跑",不是"变难"。
-- **每 mod 启发式**(骨分类、蹭 vs 整搬、花边挂腿这类):这才是可能让一键变脆的地方。但每修一个边角(如花边→按名蹭裙摆)都是**对启发式的永久加固**,未来同类 mod 白嫖。fuyuko 是压力测试样本(SCSP 未核实源 + 左右不对称 + 花边绑腿 + bow 拆链),不是常态。
+- **每 mod 启发式**(骨分类、蹭 vs 整搬、花边挂腿这类):这才是可能让一键变脆的地方。但每修一个边角(如花边→按名蹭裙摆)都是**对启发式的永久加固**,未来同类 mod 白嫖。fuyuko 是压力测试样本(SCSP 镜像源 + 左右不对称 + 花边绑腿 + bow 拆链),不是常态。
 
 **诚实边界:没有启发式能 100% 猜对源模型的怪异绑骨。** 硬堆启发式去猜一切 = 把事情做复杂(ponytail 反模式)。正解 = **自动兜 90% + 傻瓜 override 兜 10%**:开发者不懂骨,只在画面明显不对时说一句"这块跟着那块动"。
 
-**泛用解已落地(2026-07-27):`build_accessory_physics_remap` 采用三层分类** —— **override(作者显式) > 语义/名称规则 > 源父骨兜底**。策略:`integrate`(自己物理,飘带/蝴蝶结)/`follow_skirt`(蹭最近裙摆,花边)/`follow:<骨>`(蹭指定)/`rigid`(无物理跟源父骨)。未显式要求时不再按位置猜；包含 `胸`/`Bust`/`Chest` 的组按最近的 `Bust*_S`，其余装饰跟源父骨映射。`gmi_physics_override_file` 仍支持最长前缀覆盖；位置最近只能用 `follow_nearest` override 显式启用。当前为 B：契约测试通过，翻转后的策略尚未实机验收。
+**泛用解已落地(2026-07-27):`build_accessory_physics_remap` 采用三层分类** —— **override(作者显式) > 语义/名称规则 > 源父骨兜底**。策略:`integrate`(自己物理,飘带/蝴蝶结)/`follow_skirt`(蹭最近裙摆,花边)/`follow:<骨>`(蹭指定)/`rigid`(无物理跟源父骨)。未显式要求时不再按位置猜；包含 `胸`/`Bust`/`Chest` 的组按最近的 `Bust*_S`，其余装饰跟源父骨映射。`gmi_physics_override_file` 仍支持最长前缀覆盖；位置最近只能用 `follow_nearest` override 显式启用。当前为 A：默认翻转已由真实服装确认，异常件仍需作者 override。
 
 **设计:装饰骨物理 = 两个正交决策,别耦合**
 1. **挂哪(parent)**:解析到某游戏骨。源父骨好就用源父骨;源父骨可疑(如花边网格在裙摆、骨却绑在大腿)才 override。
@@ -225,7 +234,7 @@ mod 顶点组 ──分类──┤                                             
 | hmsz-0000-ruinurs | QualiArts 同骨架 | ✅ 完好 |
 | pm.ttmr.madoka-swimsuit | QualiArts(65796 顶点 / 9 材质归并) | ✅ 完好 |
 | qa-madoka-ttmr-hair-0002-2b | hair + hairprop | ✅ meshApplied=2 |
-| **atbm-0140-chisaki** | **MMD 外部源**(45 材质) | ✅ createdBones=288、多层 ChainInfo、物理 |
+| **atbm-0140-chisaki** | **MMD 外部源**(45 材质) | ✅ Mesh/graft/5 组多层 ChainInfo；可见摆动未单独确认 |
 | fuyuko-super (dress_2219) | SCSP 镜像源 | ✅ RC1 已完整通过：**原始 `dress_2219` 手指动就炸已确认是 prep 坏绑定**；重新导出后 fuyuko 加载、graft、手部和装饰物理均完成实机确认。→ 它证明"手指失败不是 AB 架构问题"，不能把旧 prep 失败算作当前 AB 缺陷 |
 
 **关键**:`atbm-0140` 证明**外部源(MMD)→ AB 能成**,前提是 prep 按 [`../docs/wiki/10-外部模型转换实战规范.md`](../docs/wiki/10-外部模型转换实战规范.md) 做到位。
@@ -241,21 +250,27 @@ mod 顶点组 ──分类──┤                                             
 ### 分源类型可行度
 - **QualiArts 同骨架**(IP / 学马自有服装):**生产可用**,3 样本验证,几乎零 prep。
 - **MMD / 外部源 + 完整 prep**:**可行(已验证 1 例)**,成本在 prep。
-- **镜像源(SCSP 这类)**:**未验证**,唯一尝试失败于 prep;需重做 prep 才能判定。
+- **镜像源(SCSP 这类)**:**可行（已验证 1 例）**；`hmsz-fuyuko-icu` 在修复坏绑定 prep 后完成
+  Mesh、graft、手部与装饰摇物的画面级确认。镜像与关节对齐仍是 prep 硬门槛。
 
 ### 剩余风险(按严重度)
-1. **插件依赖没上游(最大产品化风险)**:`gkms-localify-dmm` 当前整个插件改动树都只在本地；无损骨架 graft、ActorSwing 新骨、本轮 4 处修复**全都只在本地**。社区装的发布版没有这些。分发要么上游合并,要么自带 DLL。
+1. **导出器与独立 Runtime 的版本同步**：当前游戏侧实现已在同级 `gakumas-mod-runtime` 独立仓库，
+   但导出包的 `runtimeProtocol` / `buildId` 必须与部署 DLL 匹配。旧包被拒绝是保护；发布时必须
+   同步分发兼容的插件与 Runtime。
 2. **AB 不容错 → prep 是硬门槛**(见上)。
 3. **装饰物理需逐件调**:三层分类 + override 已落地,复杂服装仍要看画面。
 4. Unity 版本锁 `6000.0.67f1`(bundle 头写死)。
-5. **新骨物理画面级已证伪一次**:dress-2219 上链建出来了、日志全绿,装饰件不摆(2026-08-04)。
-   在查清之前,自建摇物链不是可交付能力,装饰件走刚性/跟裙摆。
+5. **装饰物理仍需逐件目视**：自建摇物已用 `hmsz` 画面级跑通，但幅度手感和穿插不能只靠
+   参数/建链日志验收；`atbm` 仍只有 graft/ChainInfo 日志证据。
 
 ### 已付的一次性成本(不再是风险)
 模板库备齐(**1817 个文件 / ~908 body 模板,全 R32**,作者只选不建)、免 Unity 的 UnityPy 补丁链、一键导出入插件、崩溃类已根治(不内嵌合成对象,改运行时建骨)。
 
 ### 结论
-**路线成立;对「同骨架 + 规范 prep 的外部源」已是生产可用状态。** 换来原生蒙皮/描边/透明/物理(蹭游戏已有摆动骨;**新骨自建摆动当前不生效**)、免逆蒙皮算子、免 Unity。代价是**把容错从运行时挪到了 prep**。要成为可推广产品,优先级:①解决插件分发 ②prep 工具化并加代码闸门 ③装饰物理 override UI。
+**路线成立；对「同骨架 + 规范 prep 的外部源」已是生产可用状态。**换来原生蒙皮/描边/透明/
+物理（既可蹭游戏已有摆动骨，也可为源专属骨建立 ActorSwing；`hmsz` 已画面级验证）、免逆蒙皮
+算子、免 Unity。代价是**把容错从运行时挪到了 prep**。要成为可推广产品，优先级是：①插件与
+Runtime 版本同步分发 ② prep 工具化并加代码闸门 ③装饰物理 override UI。
 
 ## 6.8 prep 能否自动执行(2026-07-25 判断)
 
@@ -363,30 +378,29 @@ geojson/bundle 侧:
 ## 11. 接手入口
 
 - 游戏侧运行时仓库：同级的 `../gakumas-mod-runtime/`（产物 `xinput1_3.dll`）
-- **主回归（最常用）**：`python -m pytest tests/ -q`（当前 35 passed）
+- **主回归（最常用）**：`python -m pytest tests/ -q`（当前 45 项）
 - Blender 导出回归：`blender --background --factory-startup --python-exit-code 1 --python tests/blender_smoke.py`
 - Blender UI 回归：`blender --background --factory-startup --python-exit-code 1 --python tests/blender_ui_smoke.py`
-- 运行时 Release 编译（在 `../gakumas-mod-runtime/`）：`.\generate.bat` 后
-  `msbuild build\gakumas_mod_runtime.sln /p:Configuration=Release /p:Platform=x64`
+- 运行时 Release 编译与离线测试（在 `../gakumas-mod-runtime/`）：`.\tools\package.ps1 -Version dev`
 - 插件运行日志：游戏目录下 `gakumas-mod/mod-plugin.log`
 - **崩溃二分已完成、结论见「进度」段(不内嵌合成对象)**，该任务作废，别再重做。
 - 离线量化闸门：`blender --background <blend> --python tools/simulate_ab_skinning.py -- <remap.json>`（pose 游戏骨架弯手指，量手指区 edge-stretch，参考体为已知正确基线）。**改法先离线量再让作者导出。**⚠该指标相对 rest，若 rest 本身被改坏它会假性变好，必须同时看几何/目视。
 - prep 侧闸门与教训见 [`../docs/wiki/10-外部模型转换实战规范.md`](../docs/wiki/10-外部模型转换实战规范.md) §0-3b / §2-6 / §5（⭐v3 条目）。
 - CI 里还会跑 5 个纯 core 脚本（`tests/material_bake_smoke.py` 等，见 `.github/workflows/ci.yml`）。
   移除 3DMigoto 后 `mod_ini_contract.py` / `weight_transfer_smart.py` 两组已删。
-- 模板工具：新目标模板 `tools/repair_template_bone_names.py --mode index`，已导出成品用 `--mode hash`。插件包用 `dist/` 下最新 `gakumas_mi-1.0.0-code-*.zip`。
+- 模板工具：新目标模板 `tools/repair_template_bone_names.py --mode index`，已导出成品用 `--mode hash`。插件包用 `dist/` 下最新 `gakumas_mi-1.1.0-code-*.zip`。
 - ⚠**装完新插件必须彻底重启 Blender**（内存里的旧模块不会自动重载；另注意 `gmi_bone_remap_file` 的显式映射优先于自动分类）。
 
-主仓库基础 checkpoint 已提交并推送；当前冻结期改动与插件 runtime 改动会在本轮单独提交，接手时不要
-`reset --hard` 或覆盖已有变更。插件仓库的远端推送仍受 HTTPS 认证阻塞。
+接手时先分别检查 modding 与 Runtime 两个独立仓库的 `git status`，保留未提交变更；不要
+`reset --hard` 或用另一个仓库的文件覆盖当前工作树。当前状态只以本页指向的
+`current-status-and-roadmap.md`、Runtime `docs/roadmap.md` 和最新实机日志为准。
 
 ## 12. 一句话给接手人
 
-**接手顺序固定为：先落盘 → 翻转 → 版本协议 → README → 核包工具 → RC → B→A → 分发。**
-前五项已完成并提交；RC1 的新版 ZIP 安装、真 UI 映射、闸门拦截/放行、核包、新 DLL 和两套
-Mod 实机测试也已完成并归档。**当前唯一外部动作是由作者手动推送插件仓库现有提交，
-随后完成 Gate A 合并和 Gate B 分发；本助手不执行该推送。**
-旧的无协议 Mod 被新版 DLL 拒绝属于版本校验的预期兼容性行为，不是当前 RC1 的重导任务。
+版本协议、核包工具、真 Blender UI、闸门与首批实机样本均已闭环；自建摇物骨也已于
+2026-08-11 画面级确认。旧的无协议 Mod 被新版 DLL 拒绝属于版本校验的预期兼容性行为，作者
+应从原 `.blend` 用当前插件重导。发布前仍需保证插件/Runtime 协议成对、45 项 pytest 与两套
+Blender 闭环通过，并按 `current-status-and-roadmap.md` 的 A/B/C 证据等级更新结论。
 装饰默认已从"位置蹭"翻成"跟源父骨"，另有 `胸`→`Bust*_S` 规则；物理手感完美仍不是首发条件。
 对齐/删头/图集明确不在插件范围内，是作者基本功。
 
