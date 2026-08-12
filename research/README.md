@@ -12,6 +12,7 @@
 | [`ab-route-notes.md`](ab-route-notes.md) | AB 路线：三段契约、运行时换网格机制、新增物理骨规范、无损边界、原生 `m_bdyco` 透明边界 |
 | [`universal-mod-automation-plan.md`](universal-mod-automation-plan.md) | 通用化的问题模型、架构、算法规格与诚实边界 |
 | [`hair-pipeline.md`](hair-pipeline.md) | 发型/发饰：资产结构、制作流程、踩坑总表 + shader 逐通道逆向证据 |
+| [`known-risks.md`](known-risks.md) | **本仓制作工具已知风险与排查索引**：遇到导入、烘焙、导出或打包异常先查这里 |
 | [`lessons-learned.md`](lessons-learned.md) | **反面教训汇总**：已排除的三条路线、作废的做法、被推翻的结论（动手前先扫一眼） |
 
 抓帧操作已并入 [`../3dmigoto_gkms/README.md`](../3dmigoto_gkms/README.md)（产品文档跟产品走）。

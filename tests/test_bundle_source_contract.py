@@ -763,6 +763,16 @@ def test_packaging_vendors_patch_script():
     assert "patch_unity_bundle.py" in pkg, "打包脚本不再 vendor patch 脚本，一键打包在装好的插件里会找不到它"
 
 
+def test_bundle_patch_subprocess_is_bounded_and_utf8():
+    """外部 Python 不能无限挂住 Blender，输出编码也不能跟着系统代码页漂移。"""
+    ops = (ROOT / "gakumas_mi" / "operators.py").read_text(encoding="utf-8")
+    assert '[python_exe, "-X", "utf8", str(script)' in ops
+    assert 'encoding="utf-8"' in ops
+    assert 'errors="replace"' in ops
+    assert 'timeout=_BUNDLE_PATCH_TIMEOUT_SECONDS' in ops
+    assert 'except subprocess.TimeoutExpired' in ops
+
+
 def test_bundle_textures_only_cover_used_groups():
     """贴图按【用到的段】出，不按目标资源的段数出。
 

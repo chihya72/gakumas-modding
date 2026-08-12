@@ -8,6 +8,9 @@ import bpy
 from bpy.types import Operator
 
 
+_BUNDLE_PATCH_TIMEOUT_SECONDS = 10 * 60
+
+
 def _resolve_patch_script():
     """定位 patch_unity_bundle.py：装好的插件里打包脚本把它 vendor 进了 addon 目录；
     开发仓 checkout 里它只在 ../tools。找不到就报错，别静默。"""
@@ -85,17 +88,28 @@ def _run_bundle_patch(scene, mod_root, output_bundle):
         raise ValueError("请先选择有效的 R32 模板 bundle")
     python_exe = (scene.gmi_bundle_python or "python").strip()
     script = _resolve_patch_script()
-    cmd = [python_exe, str(script),
+    cmd = [python_exe, "-X", "utf8", str(script),
            "--template", template,
            "--mod-root", str(mod_root),
            "--output", str(output_bundle)]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_BUNDLE_PATCH_TIMEOUT_SECONDS,
+        )
     except FileNotFoundError:
         raise RuntimeError(
             f"找不到 Python 可执行文件：{python_exe}\n"
             "在「外部 Python」栏填绝对路径，例如 C:\\Program Files\\Python\\Python312\\python.exe；"
             "查路径：命令行跑 python -c \"import sys;print(sys.executable)\"")
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"模板补丁超过 {_BUNDLE_PATCH_TIMEOUT_SECONDS // 60} 分钟，已终止外部 Python；"
+            "请检查模板、磁盘空间和补丁输入，确认没有卡死后再试") from exc
     if proc.returncode != 0:
         output = "\n".join(
             stream.strip() for stream in (proc.stdout or "", proc.stderr or "") if stream.strip()

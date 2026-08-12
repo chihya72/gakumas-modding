@@ -13,6 +13,10 @@ Blender + 本项目插件就能换装 / 换模，**不装 Unity、不写 3DMigot
 > 2026-08-11 用 `hmsz-fuyuko-icu` 取得第一个稳定画面级案例**；幅度手感仍需逐件目视调整。逐项验证等级见
 > [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md)。
 
+> **维护与排障必读**：本仓 Blender 插件、离线工具和制作流程的审计结论、已知风险与按现象
+> 排查入口见 [research/known-risks.md](research/known-risks.md)。遇到导入、烘焙、导出或打包异常时
+> 先查这份台账。
+
 ## 核心思路
 
 学马仕角色网格是 Unity **CPU 蒙皮**，抓帧拿到的 `VB0` 是已蒙皮的当前姿势，没有骨骼/权重/
@@ -74,6 +78,7 @@ chinosk6 的 `gkms-localify-dmm` 读的是它自己的 `gakumas-local/local-file
 | 文档 | 内容 |
 |---|---|
 | [docs/wiki/Home.md](docs/wiki/Home.md) | **作者使用手册**：环境、概念、三步工作流、发型/透明专题、排错 |
+| [research/known-risks.md](research/known-risks.md) | **本仓制作工具审计结论与已知风险台账**：导入、烘焙、导出或打包异常先查 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 仓库规范（新建文件前必读） |
 | [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) | 进度 / 完成度 / 计划（**最新状态以此为准**） |
 | [research/ab-route-notes.md](research/ab-route-notes.md) | AB 路线的数据侧脚本与新骨摆动物理记录 |
