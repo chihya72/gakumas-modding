@@ -283,6 +283,51 @@ python tools/verify_ab_package.py <包>/bundle-src              # 必须 PASS
 > `authoring - 副本 - 副本.blend` 逐行比过，只差 7 行（`Streamer_*` 的 ribbon↔skirt），
 > 其余 116 行相同。**换 blend 等于一次改掉一批作者决定，不能拿"和旧包哈希对得上"当理由。**
 
+#### F. 挂饰乱飞的真根因：内置名字规则泄漏到同组邻居（2026-08-19，已修）
+
+**问对了问题才查到**：不是"新包分类错了"，而是"旧 AB 为什么是对的"。逐包对 sidecar：
+
+```text
+                        旧 AB（08-04，画面正确）      E 之前的包
+Bag_R / Chain_R / Key_R  → Hips（刚性，没有物理）      自建摇物骨，进 skirt 链
+Leg_pendant_L_*          → LeftUpLeg（刚性）           LeftUpLeg（没变）
+Leg_pendant_R_*          → RightLeg（刚性）            RightBackSideSkirt4_S ← 裙摆末端摇物骨
+Skirt_L/R_A*             → 蹭原版 LeftFrontSkirt2_S…   自建摇物骨
+新建骨总数                26                            69
+```
+
+作者说的"旧 AB 正确，只是物理不够拟真"字面成立：**那些挂饰当时根本没有物理**，焊在胯上/腿上。
+
+**左右不对称是 bug 的指纹。** `Leg_pendant` 左右是镜像的同一样东西，却走了两条分支：
+
+```text
+左：组 LeftUpLeg_1|L3 = [Leg_pendant_L_A0/A1/Aend]              → 无指令 → 刚性 → LeftUpLeg
+右：组 RightLeg_1|L2  = [Lace_R_A0, Lace_R_Aend,
+                        Leg_pendant_R_A0, Leg_pendant_R_Aend]  → lace 语义 → 整组 follow_skirt
+```
+
+`structural_bone_groups` 按「锚点 + 链长 + 网格连片」归组 —— 右边花边与挂坠恰好同锚点、同两节，
+被并成一组；`directive_for` 把**整组**判成一个指令，lace 的 `follow_skirt` 就带着腿上的挂坠
+一起去蹭裙摆末端摇物骨。左边挂坠三节、没并组，所以是刚性。
+
+`verify_ab_package` 那条 `摇物骨左右分布不对称: Left=31 Right=34` 的 WARN 就是它的指纹，
+**被当成"源模型本来就不对称"放过去了一次**。下次见到左右计数不等，先当 bug 查。
+
+**修法**（`core.directive_for` → `units_for`）：三档作用域分开 ——
+作者覆盖整组生效（显式意图）、源链整条一起 `integrate`（拆开等于劈断链）、
+**内置名字规则只对名字命中的骨生效**。修完在真模型上逐条对上旧 AB 的真值：
+
+```text
+Leg_pendant_L_* → LeftUpLeg（刚性）           旧 AB 同
+Leg_pendant_R_* → RightLeg （刚性）           旧 AB 同
+Lace_R_*        → RightFrontSkirt4_S          正是 physics-override 注释里记的那根
+```
+
+双向验：`tests/test_name_rule_scope.py` 四条；撤掉修复前两条变红。
+
+**方法论**：这次能查到，是因为判据换成了「与画面已确认正确的旧包逐条比对」，
+而不是「我觉得哪个类别更像」。E 那次翻车正是缺这个真值。
+
 #### 接手决策（按这个顺序，不要跳步）
 
 1. **冻结三个证据点**：A 的好基线仍需重新生成并补 SHA；B 的 `c068/095EDA04…` 偏移包和
