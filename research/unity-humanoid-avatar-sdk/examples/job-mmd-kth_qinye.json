@@ -1,0 +1,55 @@
+{
+  "kind": "body",
+  "target": "mdl_chr_external_body",
+  "fbx": "C:/Users/10725/AppData/Local/Temp/claude/D--GIT-gakumas-modding/b1ad2578-99e3-4b2d-b491-455fa9a4eeca/scratchpad/mmd-out/kth_qinye.fbx",
+  "outputDirectory": "C:/Users/10725/AppData/Local/Temp/claude/D--GIT-gakumas-modding/b1ad2578-99e3-4b2d-b491-455fa9a4eeca/scratchpad/mmd-out/build",
+  "keepMeshes": [
+    "kth_ss202_mesh"
+  ],
+  "dropMaterials": [
+    "eyewhite",
+    "ch_pr001_030iku_eyel_m+",
+    "ch_pr001_030iku_eyer_m+",
+    "eyeh@1",
+    "eyeh@2",
+    "ch_pr001_017kth_face_m",
+    "ch_pr001_017kth_hair",
+    "ch_pr001_017kth_hairh@2",
+    "decorations_crown",
+    "decorations_bowknot",
+    "decorations_star"
+  ],
+  "materials": [
+    {
+      "name": "cb_ss202_017kth_skin_m",
+      "role": "skin",
+      "bareSkin": true
+    },
+    {
+      "name": "leg",
+      "role": "cloth",
+      "bareSkin": true
+    },
+    {
+      "name": "cb_ss202_017kth_dress1",
+      "role": "cloth",
+      "bareSkin": false
+    },
+    {
+      "name": "cb_ss202_017kth_dress2",
+      "role": "cloth",
+      "bareSkin": false
+    },
+    {
+      "name": "cb_ss202_017kth_02cut_m",
+      "role": "cloth",
+      "bareSkin": false
+    },
+    {
+      "name": "gloves",
+      "role": "cloth",
+      "bareSkin": false
+    }
+  ],
+  "stockJointRig": false
+}

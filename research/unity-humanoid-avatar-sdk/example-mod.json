@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "example-humanoid-avatar",
+  "name": "Example Humanoid Avatar",
+  "version": "0.1.0",
+  "author": "author",
+  "description": "Example package for the Unity Humanoid Avatar SDK route.",
+  "enabled": true,
+  "bundle": "example-humanoid-avatar.bundle",
+  "asset": "Assets/GakumasAvatarSDK/Build/example-humanoid-avatar.prefab",
+  "descriptor": "Assets/GakumasAvatarSDK/Build/example-humanoid-avatar.avatar.json",
+  "targets": [
+    {
+      "characterId": "fktn"
+    }
+  ]
+}

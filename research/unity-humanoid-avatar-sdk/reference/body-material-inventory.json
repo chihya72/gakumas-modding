@@ -1,0 +1,898 @@
+{
+ "costumes": 530,
+ "materials": {
+  "m_bdy": 530,
+  "m_bdyco": 341,
+  "m_bdytrs": 21
+ },
+ "slots": {
+  "m_bdy|_BaseMap": {
+   "<本套>_bdy_col": 519,
+   "<本角色>-cstm-0118_bdy_col": 9,
+   "<本角色>-cstm-0116_bdy_col": 2
+  },
+  "m_bdy|_DefMap": {
+   "<本套>_bdy_def": 519,
+   "<本角色>-cstm-0118_bdy_def": 9,
+   "<本角色>-cstm-0116_bdy_def": 2
+  },
+  "m_bdy|_RampAddMap": {
+   "<本套>_bdy_rma": 518,
+   "<本角色>-cstm-0118_bdy_rma": 9,
+   "t_chr_cmmn-trng-0002_bdy_rma": 1,
+   "<本角色>-cstm-0116_bdy_rma": 2
+  },
+  "m_bdy|_RampMap": {
+   "<本角色>-base-0000_rmp": 527,
+   "<本套>_rmp": 1,
+   "t_chr_kllj-base-0000_rmp": 2
+  },
+  "m_bdy|_ShadeMap": {
+   "<本套>_bdy_sdw": 519,
+   "<本角色>-cstm-0118_bdy_sdw": 9,
+   "<本角色>-cstm-0116_bdy_sdw": 2
+  },
+  "m_bdyco|_BaseMap": {
+   "<本套>_bdyco_col_alp": 338,
+   "<本角色>-cstm-0116_bdyco_col_alp": 2,
+   "t_chr_trvi-trng-0003_bdyco_col_alp": 1
+  },
+  "m_bdyco|_DefMap": {
+   "<本套>_bdyco_def": 338,
+   "<本角色>-cstm-0116_bdyco_def": 2,
+   "t_chr_trvi-trng-0003_bdyco_def": 1
+  },
+  "m_bdyco|_RampAddMap": {
+   "<本套>_bdy_rma": 339,
+   "<本角色>-cstm-0116_bdy_rma": 2
+  },
+  "m_bdyco|_RampMap": {
+   "<本角色>-base-0000_rmp": 338,
+   "<本角色>-base-0001_rmp": 1,
+   "t_chr_kllj-base-0000_rmp": 2
+  },
+  "m_bdyco|_ShadeMap": {
+   "<本套>_bdyco_sdw": 338,
+   "<本角色>-cstm-0116_bdyco_sdw": 2,
+   "t_chr_trvi-trng-0003_bdyco_sdw": 1
+  },
+  "m_bdytrs|_BaseMap": {
+   "<本套>_bdyco_col_alp": 21
+  },
+  "m_bdytrs|_DefMap": {
+   "<本套>_bdyco_def": 21
+  },
+  "m_bdytrs|_RampMap": {
+   "<本角色>-base-0000_rmp": 21
+  },
+  "m_bdytrs|_ShadeMap": {
+   "<本套>_bdyco_sdw": 21
+  }
+ },
+ "floats": {
+  "m_bdy|_ActorIndex": {
+   "15.0": 530
+  },
+  "m_bdy|_AlphaClip": {
+   "0.0": 530
+  },
+  "m_bdy|_AnisotropicScale": {
+   "1.0": 530
+  },
+  "m_bdy|_Blend": {
+   "0.0": 530
+  },
+  "m_bdy|_BumpScale": {
+   "1.0": 530
+  },
+  "m_bdy|_ColorMask": {
+   "15.0": 530
+  },
+  "m_bdy|_ColorMask1": {
+   "15.0": 530
+  },
+  "m_bdy|_ColorMask2": {
+   "15.0": 526
+  },
+  "m_bdy|_ColorMask3": {
+   "15.0": 526
+  },
+  "m_bdy|_Cull": {
+   "2.0": 530
+  },
+  "m_bdy|_Cutoff": {
+   "0.5": 530
+  },
+  "m_bdy|_Debug": {
+   "0.0": 526
+  },
+  "m_bdy|_DefDebugMask": {
+   "15.0": 529,
+   "1.0": 1
+  },
+  "m_bdy|_DetailNormalMapScale": {
+   "1.0": 530
+  },
+  "m_bdy|_DstAlphaBlend": {
+   "0.0": 530
+  },
+  "m_bdy|_DstBlend": {
+   "0.0": 519,
+   "10.0": 11
+  },
+  "m_bdy|_DstBlend1": {
+   "0.0": 526
+  },
+  "m_bdy|_DstBlend2": {
+   "0.0": 526
+  },
+  "m_bdy|_DstBlend3": {
+   "0.0": 526
+  },
+  "m_bdy|_EnableEmission": {
+   "0.0": 530
+  },
+  "m_bdy|_EnableLayerMap": {
+   "0.0": 530
+  },
+  "m_bdy|_EnvironmentReflections": {
+   "1.0": 530
+  },
+  "m_bdy|_ForwardRefractRatio": {
+   "0.0": 526
+  },
+  "m_bdy|_GlossMapScale": {
+   "1.0": 530
+  },
+  "m_bdy|_Glossiness": {
+   "0.0": 526,
+   "0.4472": 1,
+   "0.3606": 3
+  },
+  "m_bdy|_GlossyReflections": {
+   "1.0": 530
+  },
+  "m_bdy|_LayerWeight": {
+   "0.0": 530
+  },
+  "m_bdy|_Metallic": {
+   "0.0": 530
+  },
+  "m_bdy|_Mode": {
+   "0.0": 530
+  },
+  "m_bdy|_OcclusionStrength": {
+   "1.0": 530
+  },
+  "m_bdy|_Parallax": {
+   "0.02": 530
+  },
+  "m_bdy|_QueueOffset": {
+   "0.0": 530
+  },
+  "m_bdy|_ReceiveShadows": {
+   "1.0": 530
+  },
+  "m_bdy|_RefractThickness": {
+   "0.0": 530
+  },
+  "m_bdy|_RenderMode": {
+   "0.0": 530
+  },
+  "m_bdy|_ShaderType": {
+   "0.0": 530
+  },
+  "m_bdy|_Smoothness": {
+   "0.5": 526,
+   "0.4472": 1,
+   "0.3606": 3
+  },
+  "m_bdy|_SmoothnessTextureChannel": {
+   "0.0": 530
+  },
+  "m_bdy|_SpecularAdd": {
+   "0.0": 526
+  },
+  "m_bdy|_SpecularHighlights": {
+   "1.0": 530
+  },
+  "m_bdy|_SrcAlphaBlend": {
+   "1.0": 530
+  },
+  "m_bdy|_SrcBlend": {
+   "1.0": 519,
+   "5.0": 11
+  },
+  "m_bdy|_SrcBlend1": {
+   "1.0": 526
+  },
+  "m_bdy|_SrcBlend2": {
+   "1.0": 526
+  },
+  "m_bdy|_SrcBlend3": {
+   "1.0": 526
+  },
+  "m_bdy|_StencilComp": {
+   "8.0": 530
+  },
+  "m_bdy|_StencilPass": {
+   "2.0": 530
+  },
+  "m_bdy|_StencilReadMask": {
+   "108.0": 530
+  },
+  "m_bdy|_StencilRef": {
+   "64.0": 530
+  },
+  "m_bdy|_StencilWriteMask": {
+   "108.0": 530
+  },
+  "m_bdy|_Surface": {
+   "0.0": 530
+  },
+  "m_bdy|_UVSec": {
+   "0.0": 530
+  },
+  "m_bdy|_UseLastFramePositions": {
+   "0.0": 530
+  },
+  "m_bdy|_VertexColor": {
+   "1.0": 530
+  },
+  "m_bdy|_WorkflowMode": {
+   "1.0": 530
+  },
+  "m_bdy|_ZWrite": {
+   "1.0": 530
+  },
+  "m_bdyco|_ActorIndex": {
+   "15.0": 341
+  },
+  "m_bdyco|_AlphaClip": {
+   "0.0": 341
+  },
+  "m_bdyco|_AnisotropicScale": {
+   "1.0": 341
+  },
+  "m_bdyco|_Blend": {
+   "0.0": 341
+  },
+  "m_bdyco|_BumpScale": {
+   "1.0": 341
+  },
+  "m_bdyco|_ColorMask": {
+   "15.0": 341
+  },
+  "m_bdyco|_ColorMask1": {
+   "15.0": 341
+  },
+  "m_bdyco|_ColorMask2": {
+   "15.0": 335
+  },
+  "m_bdyco|_ColorMask3": {
+   "15.0": 335
+  },
+  "m_bdyco|_Cull": {
+   "0.0": 341
+  },
+  "m_bdyco|_Cutoff": {
+   "0.5": 341
+  },
+  "m_bdyco|_Debug": {
+   "0.0": 335
+  },
+  "m_bdyco|_DefDebugMask": {
+   "15.0": 341
+  },
+  "m_bdyco|_DetailNormalMapScale": {
+   "1.0": 341
+  },
+  "m_bdyco|_DstAlphaBlend": {
+   "0.0": 341
+  },
+  "m_bdyco|_DstBlend": {
+   "0.0": 339,
+   "10.0": 2
+  },
+  "m_bdyco|_DstBlend1": {
+   "0.0": 335
+  },
+  "m_bdyco|_DstBlend2": {
+   "0.0": 335
+  },
+  "m_bdyco|_DstBlend3": {
+   "0.0": 335
+  },
+  "m_bdyco|_EnableEmission": {
+   "0.0": 341
+  },
+  "m_bdyco|_EnableLayerMap": {
+   "0.0": 341
+  },
+  "m_bdyco|_EnvironmentReflections": {
+   "1.0": 341
+  },
+  "m_bdyco|_ForwardRefractRatio": {
+   "0.0": 335
+  },
+  "m_bdyco|_GlossMapScale": {
+   "1.0": 341
+  },
+  "m_bdyco|_Glossiness": {
+   "0.0": 336,
+   "0.3606": 3,
+   "0.4472": 2
+  },
+  "m_bdyco|_GlossyReflections": {
+   "1.0": 341
+  },
+  "m_bdyco|_LayerWeight": {
+   "0.0": 341
+  },
+  "m_bdyco|_Metallic": {
+   "0.0": 341
+  },
+  "m_bdyco|_Mode": {
+   "0.0": 336,
+   "3.0": 5
+  },
+  "m_bdyco|_OcclusionStrength": {
+   "1.0": 341
+  },
+  "m_bdyco|_Parallax": {
+   "0.02": 341
+  },
+  "m_bdyco|_QueueOffset": {
+   "0.0": 341
+  },
+  "m_bdyco|_ReceiveShadows": {
+   "1.0": 341
+  },
+  "m_bdyco|_RefractThickness": {
+   "0.0": 341
+  },
+  "m_bdyco|_RenderMode": {
+   "0.0": 341
+  },
+  "m_bdyco|_ShaderType": {
+   "1.0": 341
+  },
+  "m_bdyco|_Smoothness": {
+   "0.5": 335,
+   "0.3606": 3,
+   "0.0": 1,
+   "0.4472": 2
+  },
+  "m_bdyco|_SmoothnessTextureChannel": {
+   "0.0": 341
+  },
+  "m_bdyco|_SpecularAdd": {
+   "0.0": 335
+  },
+  "m_bdyco|_SpecularHighlights": {
+   "1.0": 341
+  },
+  "m_bdyco|_SrcAlphaBlend": {
+   "1.0": 341
+  },
+  "m_bdyco|_SrcBlend": {
+   "1.0": 339,
+   "5.0": 2
+  },
+  "m_bdyco|_SrcBlend1": {
+   "1.0": 335
+  },
+  "m_bdyco|_SrcBlend2": {
+   "1.0": 335
+  },
+  "m_bdyco|_SrcBlend3": {
+   "1.0": 335
+  },
+  "m_bdyco|_StencilComp": {
+   "8.0": 341
+  },
+  "m_bdyco|_StencilPass": {
+   "2.0": 341
+  },
+  "m_bdyco|_StencilReadMask": {
+   "108.0": 341
+  },
+  "m_bdyco|_StencilRef": {
+   "64.0": 341
+  },
+  "m_bdyco|_StencilWriteMask": {
+   "96.0": 341
+  },
+  "m_bdyco|_Surface": {
+   "0.0": 336,
+   "1.0": 5
+  },
+  "m_bdyco|_UVSec": {
+   "0.0": 341
+  },
+  "m_bdyco|_UseLastFramePositions": {
+   "0.0": 341
+  },
+  "m_bdyco|_VertexColor": {
+   "1.0": 341
+  },
+  "m_bdyco|_WorkflowMode": {
+   "1.0": 341
+  },
+  "m_bdyco|_ZWrite": {
+   "1.0": 341
+  },
+  "m_bdytrs|_ActorIndex": {
+   "15.0": 21
+  },
+  "m_bdytrs|_AlphaClip": {
+   "0.0": 21
+  },
+  "m_bdytrs|_AnisotropicScale": {
+   "1.0": 21
+  },
+  "m_bdytrs|_Blend": {
+   "0.0": 21
+  },
+  "m_bdytrs|_BumpScale": {
+   "1.0": 21
+  },
+  "m_bdytrs|_ColorMask": {
+   "15.0": 21
+  },
+  "m_bdytrs|_ColorMask1": {
+   "15.0": 21
+  },
+  "m_bdytrs|_ColorMask2": {
+   "15.0": 21
+  },
+  "m_bdytrs|_ColorMask3": {
+   "15.0": 21
+  },
+  "m_bdytrs|_Cull": {
+   "0.0": 21
+  },
+  "m_bdytrs|_Cutoff": {
+   "0.5": 21
+  },
+  "m_bdytrs|_Debug": {
+   "0.0": 21
+  },
+  "m_bdytrs|_DefDebugMask": {
+   "15.0": 21
+  },
+  "m_bdytrs|_DetailNormalMapScale": {
+   "1.0": 21
+  },
+  "m_bdytrs|_DstAlphaBlend": {
+   "10.0": 21
+  },
+  "m_bdytrs|_DstBlend": {
+   "10.0": 21
+  },
+  "m_bdytrs|_DstBlend1": {
+   "0.0": 21
+  },
+  "m_bdytrs|_DstBlend2": {
+   "0.0": 21
+  },
+  "m_bdytrs|_DstBlend3": {
+   "0.0": 21
+  },
+  "m_bdytrs|_EnableEmission": {
+   "0.0": 21
+  },
+  "m_bdytrs|_EnableLayerMap": {
+   "0.0": 21
+  },
+  "m_bdytrs|_EnvironmentReflections": {
+   "1.0": 21
+  },
+  "m_bdytrs|_ForwardRefractRatio": {
+   "0.0": 21
+  },
+  "m_bdytrs|_GlossMapScale": {
+   "1.0": 21
+  },
+  "m_bdytrs|_Glossiness": {
+   "0.0": 21
+  },
+  "m_bdytrs|_GlossyReflections": {
+   "1.0": 21
+  },
+  "m_bdytrs|_LayerWeight": {
+   "0.0": 21
+  },
+  "m_bdytrs|_Metallic": {
+   "0.0": 21
+  },
+  "m_bdytrs|_Mode": {
+   "0.0": 21
+  },
+  "m_bdytrs|_OcclusionStrength": {
+   "1.0": 21
+  },
+  "m_bdytrs|_Parallax": {
+   "0.02": 21
+  },
+  "m_bdytrs|_QueueOffset": {
+   "0.0": 21
+  },
+  "m_bdytrs|_ReceiveShadows": {
+   "1.0": 21
+  },
+  "m_bdytrs|_RefractThickness": {
+   "0.0": 21
+  },
+  "m_bdytrs|_RenderMode": {
+   "0.0": 21
+  },
+  "m_bdytrs|_ShaderType": {
+   "2.0": 21
+  },
+  "m_bdytrs|_Smoothness": {
+   "0.5": 21
+  },
+  "m_bdytrs|_SmoothnessTextureChannel": {
+   "0.0": 21
+  },
+  "m_bdytrs|_SpecularAdd": {
+   "0.0": 21
+  },
+  "m_bdytrs|_SpecularHighlights": {
+   "1.0": 21
+  },
+  "m_bdytrs|_SrcAlphaBlend": {
+   "0.0": 21
+  },
+  "m_bdytrs|_SrcBlend": {
+   "1.0": 21
+  },
+  "m_bdytrs|_SrcBlend1": {
+   "1.0": 21
+  },
+  "m_bdytrs|_SrcBlend2": {
+   "1.0": 21
+  },
+  "m_bdytrs|_SrcBlend3": {
+   "1.0": 21
+  },
+  "m_bdytrs|_StencilComp": {
+   "8.0": 21
+  },
+  "m_bdytrs|_StencilPass": {
+   "0.0": 21
+  },
+  "m_bdytrs|_StencilReadMask": {
+   "108.0": 21
+  },
+  "m_bdytrs|_StencilRef": {
+   "64.0": 21
+  },
+  "m_bdytrs|_StencilWriteMask": {
+   "108.0": 21
+  },
+  "m_bdytrs|_Surface": {
+   "0.0": 21
+  },
+  "m_bdytrs|_UVSec": {
+   "0.0": 21
+  },
+  "m_bdytrs|_UseLastFramePositions": {
+   "0.0": 21
+  },
+  "m_bdytrs|_VertexColor": {
+   "1.0": 21
+  },
+  "m_bdytrs|_WorkflowMode": {
+   "1.0": 21
+  },
+  "m_bdytrs|_ZWrite": {
+   "0.0": 21
+  },
+  "m_bdy|_AlphaLookType": {
+   "2.0": 11
+  },
+  "m_bdy|_VirtualAlpha": {
+   "1.0": 11
+  },
+  "m_bdy|_AlphaToMask": {
+   "0.0": 4
+  },
+  "m_bdy|_BlendModePreserveSpecular": {
+   "1.0": 4
+  },
+  "m_bdy|_ClearCoatMask": {
+   "0.0": 4
+  },
+  "m_bdy|_ClearCoatSmoothness": {
+   "0.0": 4
+  },
+  "m_bdy|_DetailAlbedoMapScale": {
+   "1.0": 4
+  },
+  "m_bdy|_DstBlendAlpha": {
+   "0.0": 4
+  },
+  "m_bdy|_SrcBlendAlpha": {
+   "1.0": 4
+  },
+  "m_bdyco|_AlphaToMask": {
+   "0.0": 6
+  },
+  "m_bdyco|_BlendModePreserveSpecular": {
+   "1.0": 6
+  },
+  "m_bdyco|_ClearCoatMask": {
+   "0.0": 6
+  },
+  "m_bdyco|_ClearCoatSmoothness": {
+   "0.0": 6
+  },
+  "m_bdyco|_DetailAlbedoMapScale": {
+   "1.0": 6
+  },
+  "m_bdyco|_DstBlendAlpha": {
+   "10.0": 5,
+   "0.0": 1
+  },
+  "m_bdyco|_SrcBlendAlpha": {
+   "1.0": 6
+  },
+  "m_bdyco|_AlphaLookType": {
+   "2.0": 2
+  },
+  "m_bdyco|_VirtualAlpha": {
+   "1.0": 2
+  },
+  "m_bdyco|_AlphaIntensity": {
+   "0.2": 1
+  },
+  "m_bdyco|_EmissiveScanlinePower": {
+   "15.0": 1
+  },
+  "m_bdyco|_EmissiveScanlineSpeed": {
+   "0.8": 1
+  },
+  "m_bdyco|_ScanlineAlpha": {
+   "0.5": 1
+  },
+  "m_bdyco|_ScanlineDensity": {
+   "1000.0": 1
+  },
+  "m_bdyco|_ScanlineRange": {
+   "0.2": 1
+  },
+  "m_bdy|_AlphaIntensity": {
+   "0.2": 1
+  },
+  "m_bdy|_EmissiveScanlinePower": {
+   "15.0": 1
+  },
+  "m_bdy|_EmissiveScanlineSpeed": {
+   "0.8": 1
+  },
+  "m_bdy|_ScanlineAlpha": {
+   "0.5": 1
+  },
+  "m_bdy|_ScanlineDensity": {
+   "1000.0": 1
+  },
+  "m_bdy|_ScanlineRange": {
+   "0.2": 1
+  }
+ },
+ "colors": {
+  "m_bdy|_BaseColor": {
+   "(1.0, 1.0, 1.0, 1.0)": 530
+  },
+  "m_bdy|_Color": {
+   "(1.0, 1.0, 1.0, 1.0)": 529,
+   "(0.8, 0.8, 0.8, 1.0)": 1
+  },
+  "m_bdy|_DefValue": {
+   "(0.5, 0.0, 1.0, 0.0)": 500,
+   "(0.0, 0.0, 0.0, 0.0)": 7,
+   "(0.5, 0.0, 0.0, 0.0)": 17,
+   "(0.482, 0.805, 0.214, 1.0)": 1,
+   "(0.354, 0.484, 0.0, 0.429)": 1,
+   "(0.564, 1.0, 1.0, 1.0)": 1,
+   "(0.498, 0.72, 0.0, 0.195)": 1,
+   "(0.5, 0.615, 0.0, 0.75)": 2
+  },
+  "m_bdy|_EmissionColor": {
+   "(0.0, 0.0, 0.0, 1.0)": 530
+  },
+  "m_bdy|_FadeParam": {
+   "(0.75, 2.0, 0.4, 4.0)": 530
+  },
+  "m_bdy|_HeadDirection": {
+   "(0.0, 0.0, 0.0, 1.0)": 526,
+   "(0.0, 0.0, 1.0, 1.0)": 4
+  },
+  "m_bdy|_HeadUpDirection": {
+   "(0.0, 0.0, 0.0, 1.0)": 526,
+   "(0.0, 1.0, 0.0, 1.0)": 4
+  },
+  "m_bdy|_HighlightRotation": {
+   "(1.0, 0.0, 0.0, 1.0)": 526
+  },
+  "m_bdy|_LayerParams": {
+   "(0.0, 0.0, 0.0, 0.0)": 526
+  },
+  "m_bdy|_LayerWeight": {
+   "(0.0, 0.0, 0.0, 0.0)": 526
+  },
+  "m_bdy|_LineDefParam": {
+   "(0.5, 0.1, 0.0, 0.0)": 526
+  },
+  "m_bdy|_MultiplyColor": {
+   "(1.0, 1.0, 1.0, 1.0)": 530
+  },
+  "m_bdy|_MultiplyOutlineColor": {
+   "(1.0, 1.0, 1.0, 1.0)": 530
+  },
+  "m_bdy|_OutlineColor": {
+   "(0.0, 0.0, 0.0, 0.0)": 530
+  },
+  "m_bdy|_RampAddColor": {
+   "(1.0, 1.0, 1.0, 1.0)": 498,
+   "(1.682, 1.682, 1.682, 1.0)": 1,
+   "(3.816, 3.199, 1.202, 1.0)": 12,
+   "(1.304, 1.03, 0.672, 1.0)": 12,
+   "(3.816, 3.216, 1.219, 1.0)": 1,
+   "(1.741, 1.376, 0.897, 1.0)": 1,
+   "(0.84, 0.84, 0.84, 0.839)": 1,
+   "(0.695, 0.695, 0.695, 1.0)": 2,
+   "(0.399, 0.406, 0.434, 1.0)": 1,
+   "(0.399, 0.399, 0.399, 1.0)": 1
+  },
+  "m_bdy|_RimColor": {
+   "(0.0, 0.0, 0.0, 0.0)": 530
+  },
+  "m_bdy|_ShadeColor": {
+   "(0.5, 0.5, 0.5, 1.0)": 526
+  },
+  "m_bdy|_SpecColor": {
+   "(0.2, 0.2, 0.2, 1.0)": 530
+  },
+  "m_bdy|_SpecularThreshold": {
+   "(0.6, 0.05, 0.0, 0.0)": 530
+  },
+  "m_bdyco|_BaseColor": {
+   "(1.0, 1.0, 1.0, 1.0)": 338,
+   "(0.8, 0.8, 0.8, 1.0)": 3
+  },
+  "m_bdyco|_Color": {
+   "(1.0, 1.0, 1.0, 1.0)": 338,
+   "(0.8, 0.8, 0.8, 1.0)": 3
+  },
+  "m_bdyco|_DefValue": {
+   "(0.5, 0.0, 1.0, 0.0)": 315,
+   "(0.0, 0.0, 0.0, 0.0)": 7,
+   "(0.5, 0.0, 0.0, 0.0)": 17,
+   "(0.5, 0.78, 0.74, 0.394)": 2
+  },
+  "m_bdyco|_EmissionColor": {
+   "(0.0, 0.0, 0.0, 1.0)": 341
+  },
+  "m_bdyco|_FadeParam": {
+   "(0.75, 2.0, 0.4, 4.0)": 341
+  },
+  "m_bdyco|_HeadDirection": {
+   "(0.0, 0.0, 0.0, 1.0)": 335,
+   "(0.0, 0.0, 1.0, 1.0)": 6
+  },
+  "m_bdyco|_HeadUpDirection": {
+   "(0.0, 0.0, 0.0, 1.0)": 335,
+   "(0.0, 1.0, 0.0, 1.0)": 6
+  },
+  "m_bdyco|_HighlightRotation": {
+   "(1.0, 0.0, 0.0, 1.0)": 335
+  },
+  "m_bdyco|_LayerParams": {
+   "(0.0, 0.0, 0.0, 0.0)": 335
+  },
+  "m_bdyco|_LayerWeight": {
+   "(0.0, 0.0, 0.0, 0.0)": 335
+  },
+  "m_bdyco|_LineDefParam": {
+   "(0.5, 0.1, 0.0, 0.0)": 335
+  },
+  "m_bdyco|_MultiplyColor": {
+   "(1.0, 1.0, 1.0, 1.0)": 341
+  },
+  "m_bdyco|_MultiplyOutlineColor": {
+   "(1.0, 1.0, 1.0, 1.0)": 341
+  },
+  "m_bdyco|_OutlineColor": {
+   "(0.0, 0.0, 0.0, 0.0)": 341
+  },
+  "m_bdyco|_RampAddColor": {
+   "(1.0, 1.0, 1.0, 1.0)": 327,
+   "(3.816, 3.199, 1.202, 1.0)": 7,
+   "(1.304, 1.03, 0.672, 1.0)": 7
+  },
+  "m_bdyco|_RimColor": {
+   "(0.0, 0.0, 0.0, 0.0)": 341
+  },
+  "m_bdyco|_ShadeColor": {
+   "(0.5, 0.5, 0.5, 1.0)": 335
+  },
+  "m_bdyco|_SpecColor": {
+   "(0.2, 0.2, 0.2, 1.0)": 341
+  },
+  "m_bdyco|_SpecularThreshold": {
+   "(0.6, 0.05, 0.0, 0.0)": 341
+  },
+  "m_bdytrs|_BaseColor": {
+   "(1.0, 1.0, 1.0, 1.0)": 21
+  },
+  "m_bdytrs|_Color": {
+   "(1.0, 1.0, 1.0, 1.0)": 21
+  },
+  "m_bdytrs|_DefValue": {
+   "(0.5, 0.0, 1.0, 0.0)": 21
+  },
+  "m_bdytrs|_EmissionColor": {
+   "(0.0, 0.0, 0.0, 1.0)": 21
+  },
+  "m_bdytrs|_FadeParam": {
+   "(0.75, 2.0, 0.4, 4.0)": 21
+  },
+  "m_bdytrs|_HeadDirection": {
+   "(0.0, 0.0, 0.0, 1.0)": 21
+  },
+  "m_bdytrs|_HeadUpDirection": {
+   "(0.0, 0.0, 0.0, 1.0)": 21
+  },
+  "m_bdytrs|_HighlightRotation": {
+   "(1.0, 0.0, 0.0, 1.0)": 21
+  },
+  "m_bdytrs|_LayerParams": {
+   "(0.0, 0.0, 0.0, 0.0)": 21
+  },
+  "m_bdytrs|_LayerWeight": {
+   "(0.0, 0.0, 0.0, 0.0)": 21
+  },
+  "m_bdytrs|_LineDefParam": {
+   "(0.5, 0.1, 0.0, 0.0)": 21
+  },
+  "m_bdytrs|_MultiplyColor": {
+   "(1.0, 1.0, 1.0, 1.0)": 21
+  },
+  "m_bdytrs|_MultiplyOutlineColor": {
+   "(1.0, 1.0, 1.0, 1.0)": 21
+  },
+  "m_bdytrs|_OutlineColor": {
+   "(0.0, 0.0, 0.0, 0.0)": 21
+  },
+  "m_bdytrs|_RampAddColor": {
+   "(1.0, 1.0, 1.0, 1.0)": 21
+  },
+  "m_bdytrs|_RimColor": {
+   "(0.0, 0.0, 0.0, 0.0)": 21
+  },
+  "m_bdytrs|_ShadeColor": {
+   "(0.5, 0.5, 0.5, 1.0)": 21
+  },
+  "m_bdytrs|_SpecColor": {
+   "(0.2, 0.2, 0.2, 1.0)": 21
+  },
+  "m_bdytrs|_SpecularThreshold": {
+   "(0.6, 0.05, 0.0, 0.0)": 21
+  },
+  "m_bdyco|_EmissiveScanlineColor": {
+   "(1.19, 1.703, 5.149, 1.0)": 1
+  },
+  "m_bdyco|_VirtualColor": {
+   "(0.934, 1.012, 1.405, 1.0)": 1
+  },
+  "m_bdy|_EmissiveScanlineColor": {
+   "(1.19, 1.703, 5.149, 1.0)": 1
+  },
+  "m_bdy|_VirtualColor": {
+   "(0.934, 1.012, 1.405, 1.0)": 1
+  }
+ }
+}
