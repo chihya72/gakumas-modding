@@ -908,6 +908,7 @@ def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
             driver_bones=_form_driver_bones(scene),
             weight_by_name=dict(_weighted_group_mass(obj)),
             dominant_by_name=_dominant_group_counts(obj),
+            swing_anchor_geometry=bool(getattr(scene, "gmi_swing_anchor_geometry", False)),
         )
         # 新骨链的根挂在游戏骨下，local 必须按游戏骨架的静止姿势重算
         _retarget_new_bone_roots(report["newBones"]["newBones"], records, skeleton)
@@ -1640,7 +1641,9 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
     data["bundle_extra_skeleton_nodes"] = extra_nodes
     data["bundle_extra_bind_poses"] = extra_bind_poses
     # 这里是模块级函数，报警交给算子统一发（见 export_bundle_source 里的 anchor_only_note）
-    anchor_note = core.anchor_only_chain_note(new_bone_report.get("anchorOnlyChains"))
+    anchor_note = core.anchor_only_chain_note(
+        new_bone_report.get("anchorOnlyChains"),
+        applied=bool(getattr(scene, "gmi_swing_anchor_geometry", False)))
     remap_report["undecided"] = undecided_record
     data["source_rig_report"] = remap_report
     if anchor_note:

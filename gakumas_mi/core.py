@@ -3127,16 +3127,20 @@ def empty_swing_chain_error(empty_chains, limit=12):
             "要么把这些骨的策略改成刚性跟父骨，要么先在 Blender 里把权重画上去。")
 
 
-def anchor_only_chain_note(anchor_only, limit=12):
-    """链根自己扛着全部几何时的留痕文案（不拦，只说明按 `mid` 出了参数）。"""
+def anchor_only_chain_note(anchor_only, applied=False, limit=12):
+    """链根自己扛着全部几何 —— 这条链装了摇物也不会动。只报，不替作者决定。"""
     names = [str(n) for n in anchor_only or ()]
     if not names:
         return None
     shown = "、".join(names[:limit]) + ("…" if len(names) > limit else "")
+    if applied:
+        return (f"{len(names)} 条链已按「链根自己摆」出参数：{shown}。"
+                "这是显式开关的结果，这几块几何在游戏里会晃起来。")
     return (f"{len(names)} 条链的几何全绑在链根上、子骨是空的：{shown}。"
-            "链根原本是惰性锚（自身不摆），照拓扑出参数会变成「摆的骨没有几何、"
-            "有几何的骨不摆」——已按链中段的参数出，让链根自己摆。"
-            "想要更接近原版的分层感，就在 Blender 里把根的权重分一部分给子骨。")
+            "链根是惰性锚（自身不摆、由子骨摆），所以**这几条链装了摇物也不会动**。"
+            "想让它们动，三选一：勾「链根自己摆」、在 Blender 里把根的权重分一部分给子骨、"
+            "或者把策略改成刚性跟父骨（省掉不起作用的摇物骨）。"
+            "不管它也行 —— 那几块几何就是跟着父骨刚性走。")
 
 def undecided_export_error(rows, allow=False, limit=12):
     """闸门 9（§8.1 第 9 条 / 契约 §4.2）：`undecided` 不许静默进导出。
@@ -3623,7 +3627,7 @@ def bone_side(name):
 def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
                              body_remap=None, default_swing=None, categories=None,
                              presets=None, driver_bones=None, weight_by_name=None,
-                             dominant_by_name=None):
+                             dominant_by_name=None, swing_anchor_geometry=False):
     """Build runtime-created source bones plus a synthetic tip per leaf.
 
     每根骨的摆动参数按 **部件类别 × 链上角色** 从原版基准表取（`swing_presets.json`，
@@ -3780,8 +3784,12 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
                 continue
             if any(holds_geometry(child) for child in descendants(name)):
                 continue
-            param_role[name] = "mid"
             anchor_only.append(name)
+            # **默认只报不改**：让链根自己摆是在替作者决定物理，而他可能就是要这块不动
+            # （实机验过：开了之后腰侧挂坠/腰包/胸前蝴蝶结全晃起来，作者说不需要）。
+            # 静默改求解器和静默换落点是同一类错误，所以这里只留发现，动手要显式开关。
+            if swing_anchor_geometry:
+                param_role[name] = "mid"
 
     result = []
     pending = set(wanted)

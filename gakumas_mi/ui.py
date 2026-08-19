@@ -242,6 +242,9 @@ def draw_export_step(layout, scene, context):
                 if scene.gmi_allow_undecided:
                     bones.label(text="这一版会被标记为「有未决定的骨」，别当默认工作流",
                                 icon="INFO")
+            # 几何全在链根、子骨是空的那些链：默认不动（装了摇物也不会动），
+            # 要它动是显式决定 —— 开了会改变画面。
+            bones.prop(scene, "gmi_swing_anchor_geometry")
             row = bones.row(align=True)
             row.operator("gmi.save_bone_map", text="存为 JSON", icon="FILE_TICK")
             row.operator("gmi.load_bone_map", text="从 JSON 读入", icon="IMPORT")

@@ -19,13 +19,32 @@ def _records(*names):
     return [{"name": n, "localPosition": [0.0, -0.05, 0.0], "length": 0.05} for n in names]
 
 
-def _build(names, weights, parents, dominant=None):
+def _build(names, weights, parents, dominant=None, swing_anchor=True):
     """`weights` = 任意权重（判空链），`dominant` = 主导顶点（判几何归属）。默认两者一致。"""
     return core.build_source_extra_bones(
         _records(*names), list(names), parent_by_name=parents,
         body_remap={"Hips": "Hips"}, weight_by_name=weights,
         dominant_by_name=weights if dominant is None else dominant,
+        swing_anchor_geometry=swing_anchor,
         categories={n: "ribbon" for n in names})
+
+
+def test_anchor_downgrade_is_off_by_default():
+    """默认只报不改 —— 让链根自己摆是在替作者决定物理。
+
+    实机验过：开了之后腰侧挂坠 / 腰包 / 胸前蝴蝶结全晃起来，而作者要的是它们别动。
+    """
+    names = ["Chain_R_A0", "Chain_R_Aend"]
+    parents = {"Chain_R_A0": "Hips", "Chain_R_Aend": "Chain_R_A0"}
+    report = _build(names, {"Chain_R_A0": 0.9}, parents, swing_anchor=False)
+    root = next(b for b in report["newBones"] if b["name"] == "Chain_R_A0")
+    presets = core.load_swing_presets()["ribbon"]["roles"]
+    assert "swingParamRole" not in root
+    assert root["swing"]["mass"] == presets["root"]["mass"], "默认不许动参数"
+    # 但发现要报出来，作者才知道这条链装了摇物也不会动
+    assert report["anchorOnlyChains"] == ["Chain_R_A0"]
+    note = core.anchor_only_chain_note(report["anchorOnlyChains"])
+    assert "也不会动" in note and "Chain_R_A0" in note
 
 
 def test_root_holding_all_geometry_swings_itself():
