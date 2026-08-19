@@ -30,7 +30,7 @@
 | 4 打包 | ✅ | zip `10.8 MiB`；bundle 对象 `11/11` 逐项一致；覆盖 Blender `4.2/4.5.3` |
 | 5 Runtime 收严 | ✅ | `hmsz-fuyuko-icu` 会话：`graft=2`、`droppedInfluences=0`、`fallbackVertices=0`；`driverRefused/RolledBack/Missing/nullReference/error=0`；`swingDynamicBones=[203,206,236,238]`；300 帧 `16/23` 根移动。**该 Mod 已不在 `mods/` 里**，要复跑这组数字得先装回去；2026-08-19 的 2a 会话用同一把尺子同样退出码 `0`（`swingDynamicBones=[203,206,236,318]`、`swingMoved=16`） |
 | 6 物理 | 🟡 2/3 | 驱动器作用域 `1/1`、置灰+闸门 `1/1`；`collisionMask` **定性实机 `0/1`** —— 注意真值不只"量过"：`swing_presets.json` 2026-08-18 02:50 就已按众数装上，B/D 两个包都是照它出的（见下方叉点 §B/§D），欠的是一次**有对照**的画面判定 |
-| 7 三类样本 | 🟡 | 样本 `1` 与 `2a` 已进游戏（2a 四轮 A→B→D→E，见下方叉点）；整体漂移已消，小挂饰按 ribbon 重出的 E 包（`2b7a9dca48cf8031`）已装、**画面待作者确认**。`2b` / `3` 未做。顺序与判据见 [`ab-target-rig-ingame-checklist.md`](ab-target-rig-ingame-checklist.md) |
+| 7 三类样本 | 🟡 | 样本 `1` 与 `2a` 已进游戏（2a 四轮 A→B→D→E）；整体漂移已消，**小挂饰仍未收敛**：E 把五条链改 ribbon，挂饰没修好还把裙摆花边拖出锯齿，已回退到 D（`a157b8da783ac081`）。原因与下次的做法见下方叉点 §E。`2b` / `3` 未做。判据见 [`ab-target-rig-ingame-checklist.md`](ab-target-rig-ingame-checklist.md) |
 
 补做的三项（原计划列了但一直没接）也已完成：几何判部件类型**进生产**、五档补齐 `bake`/`reject`
 两档并接上闸门、节数不同的塌链会被标出来。
@@ -165,7 +165,7 @@ mod-workspace/experiments/batch7-sample2a-hmsz-fixed-helper-rig/
   sidecar: 225 bones / 26 extraSwingBones / 3 swingChains
 ```
 
-当时游戏中装的是这版，外加 `batch7-sample1-fktn-miku`（2026-08-19 已被下面的 E 取代）。实机结果是：
+游戏中装的是这版，外加 `batch7-sample1-fktn-miku`（E 失败后已回退到这里）。实机结果是：
 
 - 腰线、主体裙摆、角色右侧飘带回到身体中心；
 - `Bag / Belt / Key / Bow / Streamer` 等小挂饰仍有局部偏移；
@@ -227,54 +227,47 @@ D/E 对照证明：人体骨 local 数据相同；22 个链根变化；链根以
 `batch7_sample2a_reduce_to_d_plus_roots.py` 收口后的结果。E 目前**只在实验目录，未打包进
 游戏、未安装、未启动游戏**。
 
-#### E. 小挂饰按 ribbon 出的包（2026-08-19，当前游戏里装的就是这版）
+#### E. 小挂饰按 ribbon 出的包 —— **失败，已回退**（2026-08-19）
 
-**症状**：腰侧的挂坠 / 钥匙 / 包 / 蝴蝶结悬空乱飘（作者截图，大腿外侧一截）。
+**结论先写**：这一版进游戏后小挂饰**没修好**，而且**裙摆花边炸了**（作者截图：花边边缘
+变成锯齿）。游戏已回退到 D（`c5c0c7fff2b273a9` / `a157b8da783ac081`），
+`inputs/physics-override.json` 也退回原样。
 
-**先排除了"摆错位置"**：逐骨算 `静止世界矩阵 x bindpose`，69 根 created 装饰骨全部
-偏离单位阵 `0.0 mm`。静止姿势是对的，画面上的乱是**解算**造成的。
+**站得住的那部分**（下次接着用）：
 
-**根因：几何分类把小挂饰判成了 skirt。** D 的 sidecar 里：
+- 静止姿势没问题 —— 逐骨算 `静止世界矩阵 x bindpose`，69 根 created 装饰骨全部偏离单位阵
+  `0.0 mm`。挂饰在画面上乱是**解算**造成的，不是摆错位置；
+- 小挂饰确实被几何分类判成了 `skirt`：`swingChains[0] host=Hips category=skirt chainLength=3`,
+  `roots=[Bag_R_A0, Chain_R_A0, Key_R_A0, Spine_Bow_L_A0, Spine_Bow_R_A0]`，
+  日志活体值 `Bag_R_A0 … spring=0.100 mass=0.500 collisionMask=1`。skirt 档一次带来三件事：
+  建裙摆环形碰撞链、撞半径 0.23 m 的胯胶囊、链根自己就摆（ribbon 根是惰性锚）；
+- 分类器自相矛盾：同一个蝴蝶结的两半 `Spine_Bow_*_A` 判 skirt、`Spine_Bow_*_B` 判 ribbon。
+
+**错在哪 —— 按骨名选了作用范围，没量影响面**。把五条链一起改成 ribbon，事后逐骨量：
 
 ```text
-swingChains[0]  host=Hips  category=skirt  chainLength=3
-                roots=[Bag_R_A0, Chain_R_A0, Key_R_A0, Spine_Bow_L_A0, Spine_Bow_R_A0]
-日志活体值      Bag_R_A0 … spring=0.100 mass=0.500 collisionMask=1
+骨                  带权顶点  主导顶点  只当配角   包围盒(mm)     质心(x,y,z)
+Chain_R_A0             66      30       36      35x36x88   (0.152,0.992, 0.014)
+Key_R_A0                3       3        0       9x 6x25   (0.156,0.998, 0.017)
+Bag_R_A0              966     966        0      85x83x61   (0.076,1.016, 0.097)
+Spine_Bow_L_A0        613       0      613          —      （从不主导）
+Spine_Bow_R_A0        572       0      572          —      （从不主导）
 ```
 
-skirt 档一次带来三件事：建裙摆专用的环形碰撞链、`collisionMask=1` 去撞半径 0.23 m 的胯胶囊、
-而且 **skirt 的链根自己就摆**（`mass 0.5 / spring 0.1`，对比 ribbon 根 `0.1 / 0`、cloth 根 `0 / 0`
-都是惰性锚）。7 cm 的挂坠按裙板解算再被胯胶囊顶开，就是截图那样。
+真正的挂坠只有 `Chain_R`（30）和 `Key_R`（3）；`Bag_R` 是胯前一个近千顶点的包；
+两条 `Spine_Bow_*_A` **一个主导顶点都没有，却在 1185 个顶点上当配角**（那些顶点属于后裙和
+大蝴蝶结）。把它们从"裙链里被约束的骨"改成"自由摆动的 ribbon"，就是拖着这 1185 个共享顶点
+乱走 —— 花边的锯齿是这么来的。
 
-**分类器自相矛盾是最硬的证据**：同一个蝴蝶结的两半被判成两类 —— `Spine_Bow_*_A` 判 skirt、
-`Spine_Bow_*_B` 判 ribbon（后者是 blend 表单里作者自己点的）。
+> **规矩：改一根骨的求解器之前，先量它的「带权顶点 / 主导顶点 / 只当配角」三个数。**
+> 只看骨名会把 `Bag`/`Bow` 当成小饰品；只看主导顶点会漏掉纯配角骨 —— 而配角骨改坏的是
+> 别人的形状，症状离被改的骨很远，最难归因。
 
-**修法：不改代码，只加输入。** `inputs/physics-override.json` 加五行；点名链上任意一根骨，
-整条链跟着改（`core.py` 的 `chain_category`）：
+**下次只动 `Chain_R_A0`（必要时加 `Key_R_A0`）一条链**，其余四条留在原处；
+装之前先跑上面那张表确认动的骨没有配角影响。
 
-```json
-"swingCategories": {
-  "Bag_R_A0": "ribbon", "Chain_R_A0": "ribbon", "Key_R_A0": "ribbon",
-  "Spine_Bow_L_A0": "ribbon", "Spine_Bow_R_A0": "ribbon"
-}
-```
-
-ribbon = `useChain=False` + mask 256 + 惰性锚根。原版 530 套里飘带/绳结类只有 `2.6%` 挂链，
-这是照原版的做法。
-
-**对照组证明只改了这一件事**（同一份 blend、同一版代码、只差这五行）：
-
-| | 对照（无覆盖） | E（当前装的） |
-|---|---|---|
-| buildId | `a157b8da783ac081` | `2b7a9dca48cf8031` |
-| bundle sha256 前 16 | `c5c0c7fff2b273a9` | `21d74f7b5211b66a` |
-| geojson（网格/权重/bindpose） | `c3724bcd59fa7e00` | **同左，逐字一致** |
-| 225 根骨的名字/父/静止变换 | — | **逐字一致** |
-| 差异 | — | **只有 10 根骨的 `swing` 块 + 少了那条 skirt/3 链** |
-| `verify_ab_package` | PASS | PASS |
-
-**顺带把 D 变成可复跑的了** —— 对照组重打出来的 bundle 与当时装在游戏里的 D **逐字节相同**
-（`c5c0c7fff2b273a9`）。§A 那个"没有可复跑基线"的坑，至少 D 这一格补上了。完整四步：
+**这次唯一的净收益：D 变成可复跑的了。** 对照组（同 blend、同代码、原样 override）重打出来的
+bundle 与当时装在游戏里的 D **逐字节相同**（`c5c0c7fff2b273a9`）。完整四步：
 
 ```bash
 blender --background --factory-startup --python-exit-code 1 \
@@ -285,12 +278,10 @@ python tools/patch_unity_bundle.py --template <模板> --mod-root <包>/bundle-s
 python tools/verify_ab_package.py <包>/bundle-src              # 必须 PASS
 ```
 
-> ⚠️ **blend 里存着作者的表单行，优先级高于 JSON**（`operators.py` 的 `_form_swing_categories`
-> 最后 update）。`authoring.blend` 里 `Streamer_*` 是 ribbon，而 `authoring - 副本 - 副本.blend`
-> 里被改成了 skirt —— 第一次重导选错了 blend，飘带就被连带塞进裙链，差点当成"我的改动"。
-> **选 blend 本身就是一个变量。**
-
-**还没验的**：这一版只做了离线闸门，画面要作者进游戏看挂饰是否贴身、不悬空、仍会晃。
+> ⚠️ **blend 里存着作者的 123 行表单，优先级高于 JSON**（`operators.py` 的
+> `_form_swing_categories` / `_form_physics_overrides` 最后 update）。`authoring.blend` 与
+> `authoring - 副本 - 副本.blend` 逐行比过，只差 7 行（`Streamer_*` 的 ribbon↔skirt），
+> 其余 116 行相同。**换 blend 等于一次改掉一批作者决定，不能拿"和旧包哈希对得上"当理由。**
 
 #### 接手决策（按这个顺序，不要跳步）
 
