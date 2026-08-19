@@ -90,7 +90,8 @@
   原版此类 0.00%）现在直接拦下导出。
 
 样本 2a 已定版收口（buildId `1375a006a8fc685f`，作者确认画面可接受）。逐次实验的叉点、量测和
-失败尝试见路线文档 §A–§G；导出脚本存档在 [`tools/experiments/`](tools/experiments/README.md)。
+失败尝试见路线文档 §A–§G；定版导出脚本在那个 mod 自己的工作目录里
+（`mod-workspace/mods/work/hmsz-cstm-0059_body_dress-2219-TEST/export-final-2026-08-19.py`）。
 
 ## 未发布 — target-rig 批次 1：两把尺子 + 一行一组
 

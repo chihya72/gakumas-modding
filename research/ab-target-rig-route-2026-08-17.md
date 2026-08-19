@@ -1133,6 +1133,5 @@ ribbon）时，表单当场标 ERROR，导出**直接拦下并说清怎么改**�
   —— 两副骨架桥与 whole-object 的实施记录，**对照组，勿再投入**
 - [`ab-target-rig-contract.md`](ab-target-rig-contract.md) —— 本文 §4 的落地面：导出器/闸门/sidecar 的硬约束
 - [`ab-target-rig-ingame-checklist.md`](ab-target-rig-ingame-checklist.md) —— 进游戏一次该看什么（判据全是命令和数字）
-- [`../tools/experiments/README.md`](../tools/experiments/README.md) —— 批次 7 那批实验的导出脚本存档（复现配方）
 - `gakumas-mod-runtime/docs/manifest-v2.md` —— sidecar 契约（改格式要同时 grep 这里）
 - `research/unity-humanoid-avatar-sdk/` —— Unity 实验工程，大量原版数字的原始出处
