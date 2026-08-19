@@ -30,7 +30,7 @@
 | 4 打包 | ✅ | zip `10.8 MiB`；bundle 对象 `11/11` 逐项一致；覆盖 Blender `4.2/4.5.3` |
 | 5 Runtime 收严 | ✅ | `hmsz-fuyuko-icu` 会话：`graft=2`、`droppedInfluences=0`、`fallbackVertices=0`；`driverRefused/RolledBack/Missing/nullReference/error=0`；`swingDynamicBones=[203,206,236,238]`；300 帧 `16/23` 根移动。**该 Mod 已不在 `mods/` 里**，要复跑这组数字得先装回去；2026-08-19 的 2a 会话用同一把尺子同样退出码 `0`（`swingDynamicBones=[203,206,236,318]`、`swingMoved=16`） |
 | 6 物理 | 🟡 2/3 | 驱动器作用域 `1/1`、置灰+闸门 `1/1`；`collisionMask` **定性实机 `0/1`** —— 注意真值不只"量过"：`swing_presets.json` 2026-08-18 02:50 就已按众数装上，B/D 两个包都是照它出的（见下方叉点 §B/§D），欠的是一次**有对照**的画面判定 |
-| 7 三类样本 | 🟡 | 样本 `1` 与 `2a` 已进游戏（2a 四轮 A→B→D→E）；整体漂移已消，**小挂饰仍未收敛**：E 把五条链改 ribbon，挂饰没修好还把裙摆花边拖出锯齿，已回退到 D（`a157b8da783ac081`）。原因与下次的做法见下方叉点 §E。`2b` / `3` 未做。判据见 [`ab-target-rig-ingame-checklist.md`](ab-target-rig-ingame-checklist.md) |
+| 7 三类样本 | 🟡 | **样本 `2a` 已定版收口**（`1375a006a8fc685f`，作者确认画面可接受，见叉点 §G）；过程中修掉四个插件缺陷，其中"物理指令按结构组而不是按链"让整条裙子被误判成自建摇物。样本 `1` 已进游戏，`2b` / `3` 未做。判据见 [`ab-target-rig-ingame-checklist.md`](ab-target-rig-ingame-checklist.md) |
 
 补做的三项（原计划列了但一直没接）也已完成：几何判部件类型**进生产**、五档补齐 `bake`/`reject`
 两档并接上闸门、节数不同的塌链会被标出来。
@@ -327,6 +327,67 @@ Lace_R_*        → RightFrontSkirt4_S          正是 physics-override 注释�
 
 **方法论**：这次能查到，是因为判据换成了「与画面已确认正确的旧包逐条比对」，
 而不是「我觉得哪个类别更像」。E 那次翻车正是缺这个真值。
+
+#### G. 收口：dress-2219 定版（2026-08-19）
+
+**这一批到此为止。** 作者确认画面可接受，样本 2a 的物理不再往下调。
+
+```text
+装机包      buildId 1375a006a8fc685f   bundle 5a5b563cb9e2b7fd…
+快照        mod-workspace/experiments/final-hmsz-dress2219-2026-08-19/（含 SHA256SUMS.txt + 定版 blend）
+blend       authoring - 副本 - 副本.blend（改动逐条见下；.bak/.bak2/.bak3 三份备份保留）
+runtime     c5fb1d7；游戏里跑的是 7c8a3fef（探针 v1，latch 有 bug）
+```
+
+**最终的物理配置**（全部落在 blend 表单里，`physics-override.json` 只有作者原来那句 `"Skirt": "follow_skirt"`）：
+
+| 部件 | 策略 | 依据 |
+|---|---|---|
+| `Skirt_L/R_*` 30 根 | `follow_skirt` → 蹭原版 `*Skirt*_S` | 与旧 AB 08-04 逐条相同（44/44） |
+| `Bag_R` / `Chain_R` / `Key_R` / `Belt_L` | `rigid` → `Hips` | 同上；作者要它们硬跟骨 |
+| `Leg_pendant_L/R` | `rigid` → `LeftUpLeg` / `RightLeg` | 同上 |
+| `Spine2_Bow_*` | `rigid` → `Spine2` | 作者要胸前蝴蝶结不动 |
+| `Lace_R`（靴口花边） | `integrate` + `ribbon` + **链根自己摆** | 见 §F 的量测：97 主导顶点全在链根 |
+| `Streamer_L/R` + `SStreamer_L` | `integrate` + `ribbon` | 见下方原版统计 |
+| `Spine_Bow_L/R_*` | 保持 `integrate` + `skirt` | **没动过、也没量过画面**，见"仍然开着的口子" |
+
+**飘带定 `ribbon` 的依据（48292 根原版摇物骨扫出来的）**：
+
+```text
+                       原版 Ribbon/Streamer/Sash 类     原版 Skirt 类
+样本                    5085 根                         15865 根
+挂在链上的              0 / 5085  =  0.0%               15057 / 15865 = 94.9%
+collisionMask 众数      256 / -1                        1 / 2
+limitZ 众数             (-90,0) (-180,180) (-60,0)      (-20,0) (-40,0)
+```
+
+**原版 5085 根飘带类骨，挂链的是 0 根。** 这不是倾向，是结构上的二分 —— `ActorSwingChain`
+的环形 `around/radius` 解算是给"一圈裙板互相不穿插"用的，背后两根飘带凑不成一圈。
+作者 blend 里原本写的 `skirt` 是与原版相反的一档（挂链 + 撞胯胶囊 + 摆动夹到 20°）。
+
+**仍然开着的口子**（都不阻塞这一批，但下次接手要知道）：
+
+1. **`Spine_Bow_L/R` 还是 skirt 档**，按名字属于原版 ribbon 族。真要改只该动 `_B` 两条
+   （主导 48/110 顶点）；`_A` 两条主导 0、却在 1185 个顶点上当配角，动它就是拖坏后裙和
+   大蝴蝶结的形状（§E 花边被拖出锯齿那次的原因）。
+2. **飘带的实际摆幅从没量过。** 三次改动都是读参数推的。运行时探针（`c5fb1d7`）能给
+   逐骨 300 帧峰值，但游戏里跑的还是 latch 有 bug 的 v1 —— 要用得先关游戏换 DLL。
+   参照系已经有了：原版飘带骨 `CenterLeftLRibbon1_S` 峰值 `28.21°`，原版裙摆末端 `90.03°`。
+3. **未决定组还有 38 个**，靠闸门 9 的显式放行导出的，sidecar 里记着
+   `undecided {"count": 38, "allowed": true}`。
+
+**这一批真正的产出是插件侧的四个修复**，样本只是载具：
+
+| 提交 | 修的什么 |
+|---|---|
+| `40819e4` | 闸门 9：`undecided` 默认拦，放行留痕 |
+| `25c0457` | 内置名字规则不再泄漏到同组邻居（装饰骨左右不对称） |
+| `cf12f94` | **物理指令按链算不按结构组** —— 作者的 `follow_skirt` 一直被同组吞掉 |
+| `c6fbcd2` | 「链根自己摆」逐行开关 + 空摇物链硬拦 |
+
+第三条影响最大：结构分组在这个模型上一组装下 57 根骨（整条下半身），
+"整组一个指令、第一个带覆盖的骨说了算"让整条裙子被误判成自建摇物，
+自建骨 69 根 → 修完 18 根，左右分布 `31/34` → `9/9`。
 
 #### 接手决策（按这个顺序，不要跳步）
 
