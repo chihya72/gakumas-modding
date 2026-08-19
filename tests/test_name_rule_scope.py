@@ -76,11 +76,27 @@ def test_left_and_right_land_the_same_way():
     assert left == right == {"source_parent"}, (left, right)
 
 
-def test_author_override_still_applies_to_the_whole_group():
-    """作者覆盖是显式意图，整组生效 —— 这条不能被上面的收窄改掉。"""
+def test_author_override_scopes_to_its_own_chain():
+    """作者覆盖只作用在自己那条链上，不许顺着结构组跑到邻居身上。
+
+    结构分组在真模型上一组能装下整条下半身（实测 `Hips_1|L2` 一组 57 根骨：裙板 + 腰带 +
+    飘带 + 挂坠 + 蝴蝶结）。旧实现是"整组一个指令、第一个带覆盖的骨说了算"，于是把
+    `Bag_R/Chain_R/Key_R` 点成刚性会被同组 `Spine_Bow_L_B0` 的 integrate 吞掉，
+    把 `Spine2_Bow_*` 点成刚性会让同组的 `OPAI_*` 一起变刚性、骨直接消失。
+    """
     report = _run(overrides={"Lace": "follow_nearest"})
-    assert report["strategies"]["Leg_pendant_R_A0"] == "override_nearest"
     assert report["strategies"]["Lace_R_A0"] == "override_nearest"
+    # 同组、不同链的挂坠不受影响
+    assert report["strategies"]["Leg_pendant_R_A0"] == "source_parent"
+    assert report["rigidParent"]["Leg_pendant_R_A0"] == "RightLeg"
+
+
+def test_two_overrides_in_one_group_each_keep_their_own_chain():
+    """同一个结构组里两条链各自点了不同的策略，必须各归各的。"""
+    report = _run(overrides={"Lace_R_A0": "follow_nearest", "Leg_pendant_R_A0": "rigid"})
+    assert report["strategies"]["Lace_R_A0"] == "override_nearest"
+    assert report["strategies"]["Leg_pendant_R_A0"] == "rigid_parent"
+    assert report["rigidParent"]["Leg_pendant_R_A0"] == "RightLeg"
 
 
 def test_source_chain_stays_whole():
@@ -94,7 +110,11 @@ def test_source_chain_stays_whole():
         [{"name": "Hips", "position": (0.0, 1.0, 0.0)}],
         list(source), parent_by_name=parents, body_remap={"Hips": "Hips"},
         group_by_name={n: "Hips|L2" for n in source})
-    assert set(report["newBones"]) == set(source), report["newBones"]
+    # 链整条一起进 —— 拆开等于劈断链
+    assert {"Streamer_L_A0", "Streamer_L_A1"} <= set(report["newBones"])
+    # 但同组的另一条链不许被拖进来
+    assert "Deco_L_A0" not in report["newBones"], report["newBones"]
+    assert report["strategies"]["Deco_L_A0"] == "source_parent"
 
 
 if __name__ == "__main__":

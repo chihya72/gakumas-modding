@@ -3294,44 +3294,82 @@ def build_accessory_physics_remap(
                      for axis in range(3))
 
     def units_for(names):
-        """一个结构组 → `[(骨名列表, 指令)]`。
+        """一个结构组 → `[(骨名列表, 指令)]`，**按链切**。
 
-        分三档，作用域各不相同：
+        作用域三档：作者覆盖 > 内置名字规则 > 无（走刚性跟父骨）。三档都**只在自己那条链上**生效。
 
-        - **作者覆盖整组生效** —— 他点的就是这一组，显式意图；
-        - **源链整条一起 `integrate`** —— 拆开等于把一条链劈成两半；
-        - **内置的名字规则只对名字命中的骨生效**。
+        以前是"整组一个指令、第一个带覆盖的骨说了算"。结构分组按「锚点 + 链长 + 网格连片」
+        归组，在真模型上一组能装下整条下半身 —— 实测 `Hips_1|L2` 一组 57 根骨：裙板 + 腰带 +
+        飘带 + 挂坠 + 蝴蝶结。于是
 
-        最后一条以前是整组跟着走，实测会串味：`Lace_R` 与 `Leg_pendant_R` 都挂 `RightLeg_1`、
-        都两节，被结构分组并成一组，于是 lace 的 `follow_skirt` 把腿上的挂坠也送去蹭裙摆末端
-        摇物骨（`RightBackSideSkirt4_S`），实机表现是挂坠满天飞。而左边挂坠三节、没跟 lace
-        并组，走的是刚性 —— 同一件东西左右两种结果，**左右不对称就是这条泄漏的指纹**。
+        - 作者把 `Bag_R/Chain_R/Key_R` 点成刚性，却被同组 `Spine_Bow_L_B0` 的 `integrate` 吞掉；
+        - 把 `Spine2_Bow_*` 点成刚性，同组的 `OPAI_*` 跟着变刚性、骨直接消失；
+        - 花边的 `follow_skirt` 顺着组跑到腿部挂坠身上（左右不对称那次）。
+
+        链是自然的作用域：一条链必须整条同一个指令（拆开等于劈断链），而两条链之间没有理由串。
+        `kind`（逐骨蹭 / 按质心蹭）仍按**整个结构组**算 —— 一圈裙摆有几条链是结构信号，
+        拆成单链后每条都变成"按质心蹭"，那会把 40 根骨全绑到同一根摇物骨上。
         """
-        for name in names:  # author override wins outright
-            directive = override_for(name)
-            if directive:
-                return [(list(names), directive)]
-        semantics = {name: semantic_for(name) for name in names}
-        if "integrate" in semantics.values():  # preserve old any(is_source_chain) behaviour
-            return [(list(names), "integrate")]
-        buckets = {}
+        by_chain = {}
         for name in names:
-            buckets.setdefault(semantics[name], []).append(name)
-        return [(members, directive) for directive, members in buckets.items()]
+            by_chain.setdefault(chain_root_of(name), []).append(name)
 
+        units = []
+        for root, members in by_chain.items():
+            directive, best_depth = None, None
+            for name in members:  # 作者覆盖：取最靠近链根的那次点名
+                explicit_directive = override_for(name)
+                if not explicit_directive:
+                    continue
+                depth = chain_depth_of(name, root)
+                if best_depth is None or depth < best_depth:
+                    directive, best_depth = explicit_directive, depth
+            if directive is None:
+                semantics = [semantic_for(name) for name in members]
+                if "integrate" in semantics:  # 源链整条一起 integrate
+                    directive = "integrate"
+                else:
+                    directive = next((s for s in semantics if s), None)
+            units.append((members, directive))
+        return units
+
+    def chain_root_of(name):
+        current, visited = name, set()
+        while current not in visited:
+            visited.add(current)
+            parent = parents.get(current)
+            if parent not in accessory_set:
+                return current
+            current = parent
+        return name
+
+    def chain_depth_of(name, root):
+        depth, current, guard = 0, name, 0
+        while current != root and guard < 512:
+            current = parents.get(current)
+            if current is None:
+                return 10 ** 9
+            depth += 1
+            guard += 1
+        return depth
+    accessory_set = set(accessory)
     groups = {}
     for name in accessory:
         groups.setdefault(group_key(name), []).append(name)
 
     mapping, strategies, rigid, new_bones = {}, {}, {}, []
-    # 一个结构组可能拆成几个 unit（内置名字规则只对命中的骨生效，见 units_for）
-    for names, directive in [unit for members in groups.values()
-                             for unit in units_for(members)]:
-        # 一组里有几条链（成员的父不在本组 = 一条链的根），就决定"逐骨蹭最近"还是"按质心蹭"。
-        # 从前这里按 skirt/dress/cloth 词表判 —— 外语命名的裙摆全落进"按质心"，40 根骨一起
-        # 蹭同一根摇物骨。链数是同一件事的结构信号，不读名字。
-        kind = "segment" if sum(
-            1 for name in names if parents.get(name) not in names) > 1 else "group"
+    # `kind` 按**整个结构组**算：一组里有几条链（成员的父不在本组 = 一条链的根），
+    # 决定"逐骨蹭最近"还是"按质心蹭"。从前这里按 skirt/dress/cloth 词表判 —— 外语命名的
+    # 裙摆全落进"按质心"，40 根骨一起蹭同一根摇物骨。链数是同一件事的结构信号，不读名字。
+    # 指令按**链**算（见 units_for），两者作用域不同，别合并。
+    plan = []
+    for members in groups.values():
+        group_kind = "segment" if sum(
+            1 for name in members if parents.get(name) not in members) > 1 else "group"
+        plan.extend((unit_names, unit_directive, group_kind)
+                    for unit_names, unit_directive in units_for(members))
+
+    for names, directive, kind in plan:
 
         if directive == "integrate":
             new_bones.extend(names)
