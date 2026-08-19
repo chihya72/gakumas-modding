@@ -60,11 +60,6 @@ def register():
     bpy.types.Scene.gmi_unity_target = StringProperty(
         name="替换目标", default="mdl_chr_hmsz-cstm-0059_body")
     bpy.types.Scene.gmi_unity_report = StringProperty(name="上次检查结果", default="")
-    bpy.types.Scene.gmi_swing_anchor_geometry = BoolProperty(
-        name="链根自己摆",
-        description="几何全绑在链根、子骨是空的那些链，默认装了摇物也不会动。"
-                    "勾上让链根按链中段的参数自己摆——这会改变画面，别默认开",
-        default=False)
     bpy.types.Scene.gmi_allow_undecided = BoolProperty(
         name="允许未决定的骨导出",
         description="闸门 9 默认拦下还没决定处理方式的骨组。勾上就放行，"

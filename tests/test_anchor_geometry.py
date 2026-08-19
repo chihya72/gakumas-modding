@@ -19,13 +19,13 @@ def _records(*names):
     return [{"name": n, "localPosition": [0.0, -0.05, 0.0], "length": 0.05} for n in names]
 
 
-def _build(names, weights, parents, dominant=None, swing_anchor=True):
+def _build(names, weights, parents, dominant=None, swing_anchor=None):
     """`weights` = 任意权重（判空链），`dominant` = 主导顶点（判几何归属）。默认两者一致。"""
     return core.build_source_extra_bones(
         _records(*names), list(names), parent_by_name=parents,
         body_remap={"Hips": "Hips"}, weight_by_name=weights,
         dominant_by_name=weights if dominant is None else dominant,
-        swing_anchor_geometry=swing_anchor,
+        swing_anchor_bones=names if swing_anchor is None else swing_anchor,
         categories={n: "ribbon" for n in names})
 
 
@@ -36,7 +36,7 @@ def test_anchor_downgrade_is_off_by_default():
     """
     names = ["Chain_R_A0", "Chain_R_Aend"]
     parents = {"Chain_R_A0": "Hips", "Chain_R_Aend": "Chain_R_A0"}
-    report = _build(names, {"Chain_R_A0": 0.9}, parents, swing_anchor=False)
+    report = _build(names, {"Chain_R_A0": 0.9}, parents, swing_anchor=())
     root = next(b for b in report["newBones"] if b["name"] == "Chain_R_A0")
     presets = core.load_swing_presets()["ribbon"]["roles"]
     assert "swingParamRole" not in root
@@ -97,6 +97,21 @@ def test_no_weight_data_changes_nothing():
     root = next(b for b in report["newBones"] if b["name"] == "Chain_R_A0")
     assert "swingParamRole" not in root
     assert report["anchorOnlyChains"] == [] and report["emptyChains"] == []
+
+
+def test_the_switch_is_per_chain():
+    """同一个模型里靴口花边要摆、腰侧挂坠要焊死 —— 勾了的那条降档，没勾的不许跟着动。"""
+    names = ["Lace_R_A0", "Lace_R_Aend", "Chain_R_A0", "Chain_R_Aend"]
+    parents = {"Lace_R_A0": "Hips", "Lace_R_Aend": "Lace_R_A0",
+               "Chain_R_A0": "Hips", "Chain_R_Aend": "Chain_R_A0"}
+    weights = {"Lace_R_A0": 97, "Chain_R_A0": 30}
+    report = _build(names, weights, parents, swing_anchor={"Lace_R_A0"})
+    by_name = {b["name"]: b for b in report["newBones"]}
+    assert by_name["Lace_R_A0"]["swingParamRole"] == "mid"
+    assert "swingParamRole" not in by_name["Chain_R_A0"]
+    # 两条链都该被报出来，只有勾了的那条真的降了档
+    assert report["anchorOnlyChains"] == ["Chain_R_A0", "Lace_R_A0"]
+    assert report["anchorSwingApplied"] == ["Lace_R_A0"]
 
 
 def test_note_names_the_chains():

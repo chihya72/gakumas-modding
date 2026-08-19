@@ -242,9 +242,8 @@ def draw_export_step(layout, scene, context):
                 if scene.gmi_allow_undecided:
                     bones.label(text="这一版会被标记为「有未决定的骨」，别当默认工作流",
                                 icon="INFO")
-            # 几何全在链根、子骨是空的那些链：默认不动（装了摇物也不会动），
-            # 要它动是显式决定 —— 开了会改变画面。
-            bones.prop(scene, "gmi_swing_anchor_geometry")
+            # 「链根自己摆」是逐行的（画在每一行上），不再有全局开关 —— 同一个模型里
+            # 靴口花边要摆、腰侧挂坠要焊死，是两个决定。
             row = bones.row(align=True)
             row.operator("gmi.save_bone_map", text="存为 JSON", icon="FILE_TICK")
             row.operator("gmi.load_bone_map", text="从 JSON 读入", icon="IMPORT")
@@ -455,6 +454,11 @@ class GMI_UL_bone_map(bpy.types.UIList):
         category.ui_units_x = _CATEGORY_WIDTH
         category.enabled = not filled and item.strategy in {"integrate", "native_driver"}
         category.prop(item, "swing_category", text="")
+        # 「链根自己摆」：只有自建摇物链才有链根可言。这一组的几何全在链根上时，
+        # 不勾 = 装了摇物也不会动（导出时会报出来）。逐行，不是全局。
+        anchor = row.row(align=True)
+        anchor.enabled = not filled and item.strategy == "integrate"
+        anchor.prop(item, "swing_anchor", text="", icon="FORCE_WIND")
         # 运行时只实现了三类驱动器（Skirt / Frill / HumanoidSleeve）。选了「原版布料驱动器」
         # 又落在别的类别（ribbon，或"自动"猜成 ribbon）时，导出后这几根骨**既没有驱动器也
         # 没有摇物** —— 一个不会动的哑骨，日志还全绿。所以当场标出来，不让它静默过去。

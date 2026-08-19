@@ -3665,7 +3665,7 @@ def bone_side(name):
 def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
                              body_remap=None, default_swing=None, categories=None,
                              presets=None, driver_bones=None, weight_by_name=None,
-                             dominant_by_name=None, swing_anchor_geometry=False):
+                             dominant_by_name=None, swing_anchor_bones=None):
     """Build runtime-created source bones plus a synthetic tip per leaf.
 
     每根骨的摆动参数按 **部件类别 × 链上角色** 从原版基准表取（`swing_presets.json`，
@@ -3814,8 +3814,9 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
                     stack.append(child)
         return seen
 
+    anchor_swing = {str(n) for n in (swing_anchor_bones or ())}
     param_role = dict(role_of)
-    anchor_only = []
+    anchor_only, anchor_applied = [], []
     if dominant:
         for name, role in role_of.items():
             if role != "root" or not holds_geometry(name):
@@ -3824,10 +3825,12 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
                 continue
             anchor_only.append(name)
             # **默认只报不改**：让链根自己摆是在替作者决定物理，而他可能就是要这块不动
-            # （实机验过：开了之后腰侧挂坠/腰包/胸前蝴蝶结全晃起来，作者说不需要）。
-            # 静默改求解器和静默换落点是同一类错误，所以这里只留发现，动手要显式开关。
-            if swing_anchor_geometry:
+            # （实机验过：开了之后腰侧挂坠/腰包/胸前蝴蝶结全晃起来，作者说不需要，
+            # 而同一个模型里靴口花边恰恰要摆 —— 所以这是**逐链**的决定，不是全局开关）。
+            if name in anchor_swing or any(child in anchor_swing
+                                           for child in descendants(name)):
                 param_role[name] = "mid"
+                anchor_applied.append(name)
 
     result = []
     pending = set(wanted)
@@ -3888,6 +3891,7 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
         "extraSwingBones": extra_tips,
         "swingChains": build_swing_chains(result, extra_tips, presets),
         "anchorOnlyChains": sorted(anchor_only),
+        "anchorSwingApplied": sorted(anchor_applied),
         "emptyChains": sorted(
             name for name, role in role_of.items()
             if weights and role == "root"

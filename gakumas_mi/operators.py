@@ -803,6 +803,12 @@ def _form_swing_categories(scene):
             for name in row_bones(item)}
 
 
+def _form_swing_anchor_bones(scene):
+    """勾了「链根自己摆」的那些行覆盖的骨名。空集 = 全按默认（链根是惰性锚）。"""
+    return {name for item in getattr(scene, "gmi_bone_map", ())
+            if getattr(item, "swing_anchor", False)
+            for name in row_bones(item)}
+
 def _form_driver_bones(scene):
     """{骨名: 部件类型} —— 点名走「原版布料驱动器」的**那几根骨**。
 
@@ -908,7 +914,7 @@ def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
             driver_bones=_form_driver_bones(scene),
             weight_by_name=dict(_weighted_group_mass(obj)),
             dominant_by_name=_dominant_group_counts(obj),
-            swing_anchor_geometry=bool(getattr(scene, "gmi_swing_anchor_geometry", False)),
+            swing_anchor_bones=_form_swing_anchor_bones(scene),
         )
         # 新骨链的根挂在游戏骨下，local 必须按游戏骨架的静止姿势重算
         _retarget_new_bone_roots(report["newBones"]["newBones"], records, skeleton)
@@ -1643,7 +1649,7 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
     # 这里是模块级函数，报警交给算子统一发（见 export_bundle_source 里的 anchor_only_note）
     anchor_note = core.anchor_only_chain_note(
         new_bone_report.get("anchorOnlyChains"),
-        applied=bool(getattr(scene, "gmi_swing_anchor_geometry", False)))
+        applied=new_bone_report.get("anchorSwingApplied"))
     remap_report["undecided"] = undecided_record
     data["source_rig_report"] = remap_report
     if anchor_note:
@@ -2758,6 +2764,14 @@ class GMI_bone_map_item(bpy.types.PropertyGroup):
     )
     origin: bpy.props.StringProperty()          # preset / auto / ""
     mass: bpy.props.FloatProperty()             # 该骨的权重占比 %
+    # 几何全绑在链根、子骨是空的那种链（实测 Lace_R_A0 主导 97 顶点、Lace_R_Aend 0 个）：
+    # 链根按原版是惰性锚，照拓扑出参数 = 装了摇物也不会动。勾上让链根按链中段的参数自己摆。
+    # **逐行**而不是全局开关：同一个模型里，靴口花边要摆、腰侧挂坠要焊死，是两个决定。
+    swing_anchor: bpy.props.BoolProperty(
+        name="链根自己摆",
+        description="只对「自建摇物链」有意义。这一组的几何全在链根上时，"
+                    "不勾=链根是惰性锚、这条链在游戏里不会动；勾上=链根自己摆",
+        default=False)
     strategy: bpy.props.EnumProperty(
         name="装饰物理",
         description="只对没填目标骨的装饰骨有效。自动=跟源父骨（胸/Bust 按 Bust*_S）；"
