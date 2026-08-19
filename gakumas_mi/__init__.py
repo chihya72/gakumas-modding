@@ -60,6 +60,11 @@ def register():
     bpy.types.Scene.gmi_unity_target = StringProperty(
         name="替换目标", default="mdl_chr_hmsz-cstm-0059_body")
     bpy.types.Scene.gmi_unity_report = StringProperty(name="上次检查结果", default="")
+    bpy.types.Scene.gmi_allow_undecided = BoolProperty(
+        name="允许未决定的骨导出",
+        description="闸门 9 默认拦下还没决定处理方式的骨组。勾上就放行，"
+                    "但这一版会在 sidecar 和权重报告里标明——别拿它当默认工作流",
+        default=False)
     bpy.types.Scene.gmi_rig_report = StringProperty(
         name="上次对齐体检结果", default="",
         description="「量对齐 / 跨关节带」的结果（JSON）：逐骨关节位置差与静止朝向差、"

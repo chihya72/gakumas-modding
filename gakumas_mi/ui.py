@@ -236,6 +236,12 @@ def draw_export_step(layout, scene, context):
             if undecided:
                 bones.label(text=f"还有 {len(undecided)} 组没决定怎么处理"
                                  "（填目标骨 / 选装饰物理策略）", icon="ERROR")
+                # 闸门 9 默认拦下导出。放行开关画在警告旁边，作者一眼看得到代价；
+                # 勾了之后这一版会在 sidecar 和权重报告里留痕。
+                bones.prop(scene, "gmi_allow_undecided")
+                if scene.gmi_allow_undecided:
+                    bones.label(text="这一版会被标记为「有未决定的骨」，别当默认工作流",
+                                icon="INFO")
             row = bones.row(align=True)
             row.operator("gmi.save_bone_map", text="存为 JSON", icon="FILE_TICK")
             row.operator("gmi.load_bone_map", text="从 JSON 读入", icon="IMPORT")

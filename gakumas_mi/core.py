@@ -3112,6 +3112,35 @@ def row_state(target, strategy="auto", shared_target=False):
     return "undecided"
 
 
+def undecided_export_error(rows, allow=False, limit=12):
+    """闸门 9（§8.1 第 9 条 / 契约 §4.2）：`undecided` 不许静默进导出。
+
+    `rows` = [(组名, 状态)]。返回错误文案，`None` 表示放行。
+
+    默认拦：未决定的组会被静默塌成兜底骨（实测 2a 那份 `25.9%` 的权重就是这么出去的），
+    而塌错是"有值但错"，别的闸门永远抓不到 —— 只有这一档能看见。
+
+    `allow=True` = 作者显式选了"我知道，继续导"。这时不拦，但**必须留痕**：
+    调用方要把 `undecided_export_record()` 写进 sidecar 和权重报告，否则等于没拦也没记，
+    下一个人看到的包和"作者逐组决定过"的包长得一模一样。
+    """
+    pending = [str(name) for name, state in rows if state == "undecided"]
+    if not pending or allow:
+        return None
+    shown = "、".join(pending[:limit]) + ("…" if len(pending) > limit else "")
+    return (f"{len(pending)} 组骨还没决定怎么处理：{shown}。"
+            "每组挑一个：填目标骨（并到人体骨）/ 刚性跟父骨 / 自建摇物链 / 蹭原版裙摆 / 烘焙。"
+            "不决定就导出的话，这些骨会被静默塌到兜底骨上，几何跟着别的骨乱跑，"
+            "而且没有任何闸门抓得到。"
+            "确实想先导一版看画面：勾上「允许未决定的骨导出」，那一版会在 sidecar 和"
+            "权重报告里标明这件事。")
+
+
+def undecided_export_record(rows, allow=False):
+    """导出时留痕：这一版有没有未决定的骨、是不是走了显式放行。"""
+    pending = [str(name) for name, state in rows if state == "undecided"]
+    return {"count": len(pending), "allowed": bool(allow), "bones": pending}
+
 def merge_accessory_bone_remap(body_remap, *accessory_maps):
     """Add accessory guesses without overriding an explicit body mapping."""
     result = dict(body_remap or {})

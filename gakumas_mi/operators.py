@@ -739,6 +739,20 @@ def row_bones(item):
     return members or ([item.source] if item.source else [])
 
 
+def _row_state(item):
+    """一行（= 一组）的五档状态。一组多根骨指同一根目标骨 = 合并，不是 direct。"""
+    return core.row_state(item.target, item.strategy,
+                          shared_target=len(row_bones(item)) > 1)
+
+
+def _row_label(item):
+    """报错里指得出是哪一组：用组里第一根骨的名字，多根就带个计数。"""
+    members = row_bones(item)
+    if not members:
+        return "(空组)"
+    return members[0] if len(members) == 1 else f"{members[0]} 等 {len(members)} 根"
+
+
 def _form_bone_map(scene):
     """骨骼映射表单里作者填过的行。空目标=不干预,交给自动判断。"""
     return {name: item.target.strip()
@@ -1553,6 +1567,14 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
             + ("…" if len(rejected) > 12 else "")
             + "。这是显式决定，不是漏配：想导出就把它们改成别的处理（映射到目标骨 / 刚性跟父骨 /"
               "自建摇物链 / 烘焙），或者先从网格里删掉这些骨的权重")
+    # 闸门 9（B 档：默认拦，留一个显式放行开关，且放行必须留痕）。
+    undecided_rows = [(_row_label(item), _row_state(item))
+                      for item in getattr(scene, "gmi_bone_map", ())]
+    allow_undecided = bool(getattr(scene, "gmi_allow_undecided", False))
+    undecided_error = core.undecided_export_error(undecided_rows, allow_undecided)
+    if undecided_error:
+        raise ValueError(undecided_error)
+    undecided_record = core.undecided_export_record(undecided_rows, allow_undecided)
     pending_bake = [name for item in getattr(scene, "gmi_bone_map", ())
                     if item.strategy == "bake" for name in row_bones(item)]
     if pending_bake and not obj.get("gmi_baked_rest_offset"):
@@ -1589,6 +1611,7 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
     )
     data["bundle_extra_skeleton_nodes"] = extra_nodes
     data["bundle_extra_bind_poses"] = extra_bind_poses
+    remap_report["undecided"] = undecided_record
     data["source_rig_report"] = remap_report
     # 体检量的是 fingers/forearm，只有 body 有这些区域；hair/hairprop 上跑必然“无法评估”，
     # 那条警告会被当成骨名没映射的假警报。
