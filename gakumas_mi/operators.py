@@ -31,6 +31,26 @@ def _is_bone_group(name):
     return bool(name) and not name.startswith("GMI_") and name not in NON_BONE_GROUPS
 
 
+def _dominant_group_counts(obj):
+    """每根骨"主导"多少个顶点（在该顶点上权重最大）。
+
+    判"这块几何属于谁"只能用主导，不能用总权重：实测 `Spine_Bow_L_A0` 在 613 个顶点上有权重
+    却一个都不主导 —— 那些顶点属于后裙和大蝴蝶结。把这种纯配角骨当成"持有几何"去改它的
+    求解器，改坏的是**别人的形状**，症状离被改的骨很远（2026-08-19 把花边拖出锯齿就是这么来的）。
+    """
+    names = {group.index: group.name for group in obj.vertex_groups}
+    counts = {}
+    for vertex in obj.data.vertices:
+        best_name, best_weight = None, 0.0
+        for item in vertex.groups:
+            name = names.get(item.group)
+            if not _is_bone_group(name) or item.weight <= best_weight:
+                continue
+            best_name, best_weight = name, item.weight
+        if best_name is not None:
+            counts[best_name] = counts.get(best_name, 0) + 1
+    return counts
+
 def _weighted_group_mass(obj):
     """每个骨顶点组的权重占比(%),按占比降序返回。"""
     mass, total = {}, 0.0
@@ -880,11 +900,14 @@ def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
         swing_categories.update(override_data.get("swingCategories") or {})
         swing_categories.update(_form_swing_categories(scene))
         records = _source_bone_sidecar_records(obj)
+        # 权重进来是为了「链根扛着几何就让它自己摆」以及闸门①，见 core 里的注释
         report["newBones"] = core.build_source_extra_bones(
             records, physics_report["newBones"],
             parent_by_name=_source_bone_parents(obj), body_remap=remap,
             categories=swing_categories,
             driver_bones=_form_driver_bones(scene),
+            weight_by_name=dict(_weighted_group_mass(obj)),
+            dominant_by_name=_dominant_group_counts(obj),
         )
         # 新骨链的根挂在游戏骨下，local 必须按游戏骨架的静止姿势重算
         _retarget_new_bone_roots(report["newBones"]["newBones"], records, skeleton)
@@ -1575,6 +1598,11 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
     if undecided_error:
         raise ValueError(undecided_error)
     undecided_record = core.undecided_export_record(undecided_rows, allow_undecided)
+    # 闸门①：自建摇物链上没有任何带权重的骨 —— 建了也没人看得见，日志却全绿。
+    new_bone_report = (remap_report.get("newBones") or {}) if isinstance(remap_report, dict) else {}
+    empty_error = core.empty_swing_chain_error(new_bone_report.get("emptyChains"))
+    if empty_error:
+        raise ValueError(empty_error)
     pending_bake = [name for item in getattr(scene, "gmi_bone_map", ())
                     if item.strategy == "bake" for name in row_bones(item)]
     if pending_bake and not obj.get("gmi_baked_rest_offset"):
@@ -1611,8 +1639,12 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
     )
     data["bundle_extra_skeleton_nodes"] = extra_nodes
     data["bundle_extra_bind_poses"] = extra_bind_poses
+    # 这里是模块级函数，报警交给算子统一发（见 export_bundle_source 里的 anchor_only_note）
+    anchor_note = core.anchor_only_chain_note(new_bone_report.get("anchorOnlyChains"))
     remap_report["undecided"] = undecided_record
     data["source_rig_report"] = remap_report
+    if anchor_note:
+        data["anchor_only_note"] = anchor_note
     # 体检量的是 fingers/forearm，只有 body 有这些区域；hair/hairprop 上跑必然“无法评估”，
     # 那条警告会被当成骨名没映射的假警报。
     if component_id == "body":
@@ -2299,6 +2331,8 @@ class GMI_OT_export_bundle_source(Operator):
                             "那些顶点的形变与你在 Blender 里看到的不完全一致，"
                             "介意就回去把这些顶点的影响骨减到 4 个以内")
             # 坏绑定导出侧补不了，所以只能大声警告并让作者回上游重做 prep。
+            if data.get("anchor_only_note"):
+                self.report({"WARNING"}, data["anchor_only_note"])
             sanity = data.get("bind_sanity") or {}
             if sanity.get("failed"):
                 self.report({"WARNING"}, "绑定体检未通过（"

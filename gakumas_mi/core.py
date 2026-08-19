@@ -3112,6 +3112,32 @@ def row_state(target, strategy="auto", shared_target=False):
     return "undecided"
 
 
+def empty_swing_chain_error(empty_chains, limit=12):
+    """闸门①：一条自建摇物链上一个带权重的骨都没有 —— 建了也没人看得见。
+
+    这类链在日志里全绿（`swingPrepared` / `modBonesRegistered` 照常计数），
+    画面上什么都不会发生，是纯粹的静默洞，所以拦。
+    """
+    names = [str(n) for n in empty_chains or ()]
+    if not names:
+        return None
+    shown = "、".join(names[:limit]) + ("…" if len(names) > limit else "")
+    return (f"{len(names)} 条自建摇物链上没有任何带权重的骨：{shown}。"
+            "这些链在游戏里会被建出来、被解算、日志全绿，但画面上什么都不会动。"
+            "要么把这些骨的策略改成刚性跟父骨，要么先在 Blender 里把权重画上去。")
+
+
+def anchor_only_chain_note(anchor_only, limit=12):
+    """链根自己扛着全部几何时的留痕文案（不拦，只说明按 `mid` 出了参数）。"""
+    names = [str(n) for n in anchor_only or ()]
+    if not names:
+        return None
+    shown = "、".join(names[:limit]) + ("…" if len(names) > limit else "")
+    return (f"{len(names)} 条链的几何全绑在链根上、子骨是空的：{shown}。"
+            "链根原本是惰性锚（自身不摆），照拓扑出参数会变成「摆的骨没有几何、"
+            "有几何的骨不摆」——已按链中段的参数出，让链根自己摆。"
+            "想要更接近原版的分层感，就在 Blender 里把根的权重分一部分给子骨。")
+
 def undecided_export_error(rows, allow=False, limit=12):
     """闸门 9（§8.1 第 9 条 / 契约 §4.2）：`undecided` 不许静默进导出。
 
@@ -3596,7 +3622,8 @@ def bone_side(name):
 
 def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
                              body_remap=None, default_swing=None, categories=None,
-                             presets=None, driver_bones=None):
+                             presets=None, driver_bones=None, weight_by_name=None,
+                             dominant_by_name=None):
     """Build runtime-created source bones plus a synthetic tip per leaf.
 
     每根骨的摆动参数按 **部件类别 × 链上角色** 从原版基准表取（`swing_presets.json`，
@@ -3713,6 +3740,48 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
     role_of = {
         name: "root" if parent_name(name) not in wanted else "mid" for name in wanted
     }
+    # 链根按原版是**惰性锚**（spring/mass 近 0，自身不摆、由子骨摆）。可源模型常见一种链：
+    # 几何全绑在链根上、子骨是空的末端骨（实测 Chain_R 66 顶点全在根、Chain_R_Aend 0 个）。
+    # 那种链照拓扑出参数就是"摆的骨没有几何、有几何的骨不摆" —— 装了摇物画面纹丝不动，
+    # 而 swingPrepared / modBonesRegistered 全绿，闸门一条都不报。
+    # 所以参数档看几何在哪：根自己**主导**着顶点就按 mid 出（它自己摆）。
+    # 判据必须是主导而不是有权重 —— 纯配角骨（有权重、从不主导）改了求解器，
+    # 拖坏的是别人的形状，症状离被改的骨很远。
+    # `swingRole` 仍是拓扑真值 —— build_swing_chains 要靠它找链根，不能动。
+    # 两个判据分开，混用会各错一次：
+    #   `weights`   任意权重 —— 判"这条链上一根有几何的骨都没有"（闸门①）
+    #   `dominant`  主导顶点 —— 判"这块几何属于谁"（要不要让链根自己摆）
+    # 用 dominant 判闸门①会误伤纯配角骨（`Spine_Bow_*_A` 主导 0 却带着 613 个顶点的权重）；
+    # 用 weights 判角色降档会误伤同一批骨，让它们去拖别人的形状。
+    weights = {str(k): float(v) for k, v in (weight_by_name or {}).items()}
+    dominant = {str(k): float(v) for k, v in (dominant_by_name or {}).items()}
+
+    def has_weight(name):
+        return weights.get(name, 0.0) > 0.0
+
+    def holds_geometry(name):
+        return dominant.get(name, 0.0) > 0.0
+
+    def descendants(name):
+        stack, seen = [name], set()
+        while stack:
+            current = stack.pop()
+            for child in wanted:
+                if parents.get(child) == current and child not in seen:
+                    seen.add(child)
+                    stack.append(child)
+        return seen
+
+    param_role = dict(role_of)
+    anchor_only = []
+    if dominant:
+        for name, role in role_of.items():
+            if role != "root" or not holds_geometry(name):
+                continue
+            if any(holds_geometry(child) for child in descendants(name)):
+                continue
+            param_role[name] = "mid"
+            anchor_only.append(name)
 
     result = []
     pending = set(wanted)
@@ -3731,8 +3800,11 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
                 "localScale": list(item.get("localScale") or [1.0, 1.0, 1.0]),
                 "swingCategory": category,
                 "swingRole": role_of[name],
-                "swing": swing_for(name, role_of[name], category),
+                "swing": swing_for(name, param_role[name], category),
             })
+            if param_role[name] != role_of[name]:
+                # 留痕：这根骨是链根，但几何全在它身上，所以按 mid 出参数让它自己摆
+                result[-1]["swingParamRole"] = param_role[name]
             # P3：**作者点名的那几根骨**才改走姿势驱动器。以前这里收的是"类别集合"，
             # 于是一行选了 skirt，全模型所有 skirt 类别的新骨都跟着走 —— 作者点的是一条链，
             # 拿到的是整件衣服。默认空 dict：不点名就和以前逐字节一样，现有成品重导无差异。
@@ -3769,6 +3841,12 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
         "newBones": result,
         "extraSwingBones": extra_tips,
         "swingChains": build_swing_chains(result, extra_tips, presets),
+        "anchorOnlyChains": sorted(anchor_only),
+        "emptyChains": sorted(
+            name for name, role in role_of.items()
+            if weights and role == "root"
+            and not has_weight(name)
+            and not any(has_weight(child) for child in descendants(name))),
     }
 
 
