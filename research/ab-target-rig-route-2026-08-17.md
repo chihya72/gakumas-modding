@@ -26,7 +26,7 @@
 |---|---|---|
 | 1 仪表与词汇 | ✅ | 原版身体 `104/104` 根方向差 `0.00°`；小臂反例 `172°` 报红、位置差 `0`；chisaki `347` 骨 → `75` 行 |
 | 2 参考资产 | ✅ | 逐骨 `150` 根（无权重 `18`）；最大位置差 `0.00008 mm`、朝向差 `0.000000°` |
-| 3 权重与闸门 | ✅ | 删除 `LeftShoulder` 后 `864` 顶点最大误差 `5.96e-08`；`4` 条硬闸门；朝向差 `≥15°` 拒绝导出 |
+| 3 权重与闸门 | ✅ | 删除 `LeftShoulder` 后 `864` 顶点最大误差 `5.96e-08`；拦下导出的判据 `7` 组（逐条 + 实现位置见批次 3 的表）；朝向差 `≥15°` 拒绝导出 |
 | 4 打包 | ✅ | zip `10.8 MiB`；bundle 对象 `11/11` 逐项一致；覆盖 Blender `4.2/4.5.3` |
 | 5 Runtime 收严 | ✅ | `hmsz-fuyuko-icu` 会话：`graft=2`、`droppedInfluences=0`、`fallbackVertices=0`；`driverRefused/RolledBack/Missing/nullReference/error=0`；`swingDynamicBones=[203,206,236,238]`；300 帧 `16/23` 根移动。**该 Mod 已不在 `mods/` 里**，要复跑这组数字得先装回去；2026-08-19 的 2a 会话用同一把尺子同样退出码 `0`（`swingDynamicBones=[203,206,236,318]`、`swingMoved=16`） |
 | 6 物理 | 🟡 2/3 | 驱动器作用域 `1/1`、置灰+闸门 `1/1`；`collisionMask` **定性实机 `0/1`** —— 注意真值不只"量过"：`swing_presets.json` 2026-08-18 02:50 就已按众数装上，B/D 两个包都是照它出的（见下方叉点 §B/§D），欠的是一次**有对照**的画面判定 |
@@ -70,18 +70,19 @@
     逐字节相同，随时可放回）。
 - `gakumas-mod/config.json`：当前 `logLevel=info`；启用 `batch7-sample1-fktn-miku`（buildId `86cca1693c476307`）和 `batch7-sample2a-hmsz-source-skirt`（buildId `a157b8da783ac081`）。
 - 当前窄裙 Bundle：SHA-256 `C5C0C7FFF2B273A9C63246EB273A66BC0FE6E82A14A17A358195A3E552CBE2DB`；日志最近会话 `error=0`，但有大量 info 诊断输出。
-- `gakumas-modding` 与 `gakumas-mod-runtime` 两个仓都还有工作区改动，**均未提交**。
+- 两仓工作区状态：2026-08-20 已全部提交（`gakumas-modding` 批次 1–7 + 四个修复；`gakumas-mod-runtime`
+  批次 5 收严 + 300 帧探针）。推送状态见各仓 `git status`。
 
 ### 全套回归
 
-当前全绿基线：pytest `112/112`、Blender 冒烟 `5/5`；runtime 构建包含 `3/3` 个原生检查。
+当前全绿基线：pytest `130/130`（2026-08-20 复跑）、Blender 冒烟 `5/5`；runtime 构建包含 `3/3` 个原生检查。
 
 > 2026-08-19：这条曾经是红的（`111/112`）。`--collision-mask vanilla --install` 装了众数，
 > 但 `tests/test_bundle_source_contract.py` 里还钉着 `collisionMask == -1`，实测出的是 `256`。
 > 现在改成「出的值等于基准表」+ 单独钉住基准表那四个众数，改预设不再让它无故变红。
 
 ```powershell
-python -m pytest tests/ -q                                      # 112 passed
+python -m pytest tests/ -q                                      # 130 passed
 $smokes = @('blender_ui_smoke.py','blender_smoke.py','blender_reference_rig_smoke.py','blender_weight_split_smoke.py','blender_bake_rest_offset_smoke.py')
 foreach ($name in $smokes) { blender --background --factory-startup --python-exit-code 1 --python "tests/$name" }  # 5 套；4.2 与 4.5.3
 Push-Location ..\gakumas-mod-runtime; .\tools\package.ps1 -Version dev; Pop-Location  # 构建 + 3 个原生检查 + 打包
@@ -316,6 +317,10 @@ Skirt_L/R_A*             → 蹭原版 LeftFrontSkirt2_S…   自建摇物骨
 **修法**（`core.directive_for` → `units_for`）：三档作用域分开 ——
 作者覆盖整组生效（显式意图）、源链整条一起 `integrate`（拆开等于劈断链）、
 **内置名字规则只对名字命中的骨生效**。修完在真模型上逐条对上旧 AB 的真值：
+
+> ⚠️ 「作者覆盖整组生效」是**这一步的中间态**。`cf12f94` 之后作用域改成**按链** —— 结构组在这个
+> 模型上一组装下 57 根骨，整组生效会把作者的 `follow_skirt` 吞掉。终态见 §G 的第三条修复，
+> 别照这一段实现。
 
 ```text
 Leg_pendant_L_* → LeftUpLeg（刚性）           旧 AB 同
@@ -690,6 +695,7 @@ Hips
    target-rig 下第 7 条就是它的等价物
 9. 来源辅助骨均有明确的 `helper` / `bake` / `reject` 状态
 10. 网格没有引用不存在的骨
+11. **没有空摇物链**（垂到胯下、没人驱动的衣物链；2026-08-19 新增，原版此类链 0.00%）
 
 > ⚠️ 原来这里写「只量节点静止姿势的角度不够，要查 `bindpose · 骨静止世界 ≈ I`」——那是
 > 自带骨架路线的教训，套到 target-rig 上会把原版自己判红（见第 8 条）。target-rig 下
@@ -790,11 +796,13 @@ mass、stiffness、damping、collider、collision mask、limit、solver owner。
 6. `collisionMask` 分档别落错：skirt 档原版取 `1`；落进 cloth 档变 `−1` 去撞半径 0.23m 的
    胯胶囊 → 发僵、穿插
 
-> ⚠️ **待定性（真值已量，2026-08-17）**：`gakumas_mi/swing_presets.json` 四档仍全写 `−1`(Everything)。
-> 48292 根原版摇物骨实测众数是 skirt **1** / cloth **64** / sleeve **0(None)** / ribbon **256**，
-> `-1` 在任何一档都只占 14~24% —— 规矩 6 坐实。默认值**按计划没动**：判据是画面，离线量不出来。
-> 实验已备好且只有一个参数：`tools/scan_vanilla_swing_bones.py --collision-mask vanilla --install`
-> （见批次 6）。
+> ⚠️ **值已装、实机未验（2026-08-20 复核）**：`gakumas_mi/swing_presets.json` 2026-08-18 02:50 起
+> 装的是**逐档众数，不再是统一 `−1`**；`-1` 在原版任何一档都只占 14~24%，规矩 6 坐实。
+>
+> **四个数字只写在 `gakumas_mi/swing_presets.json` 的 `_collisionMask` 注里，本文不复写。**
+> 这个事实此前存了四份（§0 / 本节 / 批次 6 / 预设），漂掉的就是本条。预设自己写着这是
+> 「实机实验档，不是已定案的默认值」——欠的不是改值，是一次**有对照的画面判定**，
+> 怎么做见 §0「下一步」第 3 条。
 
 ### 11.2 诊断顺序：先证明在被解算，再谈参数
 
@@ -957,20 +965,25 @@ P 编号是分层，不是时序。实际施工按批次：
 **864 个顶点，最差差 5.96e-08、平均 3.96e-09，权重和最差偏 8.20e-08**；删掉时闸门必须报、
 劈完必须不报。
 
-**闸门现状**（§8.1 十条，逐条交代，没做的说清为什么）：
+**闸门现状 —— 这张表是闸门的唯一权威清单**（契约 §6 只留指针）。加了「实现位置」一列：
+表和代码漂了的时候，`grep` 那个函数名就能发现，这是 2026-08-20 复查出「表写 🟡、代码已经是拦」
+之后加的防复发措施。
 
-| # | 内容 | 状态 |
-|---|---|---|
-| 1 | 21 个承重关节都有权重 | ✅ 已有；报错文案补上了**两条出路**（去表单指定 / 从相邻骨劈） |
-| 2 | 没有未映射的 deform bone | ✅ 已有；文案改成中文 + 三条出路 |
-| 3 | 没有未归一化或全零权重 | ✅ **已经由 `core._bundle_skin` 兜住**：写包时逐顶点归一化，全零直接报错。另加了截断量的告警（第 5 个影响骨起被丢掉，以前只在内部变量里） |
-| 4 | `bones[]` 数量/顺序与 bindpose 一致 | ✅ 已有（`core.py:1586` 骨数 vs `m_BindPose`、`_bundle_skin` 查骨下标越界、`m_Skin` 数量 vs 顶点数）。`verify_ab_package` 里**没有** bindpose 检查，别当第二道 |
-| 5 | 目标骨 bindpose 没被来源骨覆盖 | ❌ **不做**：lossless 路径下 mod 就是要带自己的 bindpose，这条在 target-rig 下没有能成立的判据。硬凑一个会变成"在原版上也报"的闸门（风险登记 V5） |
-| 6 | 头/手/脚/根骨没有明显静止姿势偏移 | 🟡 **只报不拦**：位置差被重定向吸收（"免的是位置"），拦它等于误伤 |
-| 7 | 全部 `direct` 映射骨的静止朝向差在阈值内 | ✅ **新增硬闸门**（≥15° 拒绝导出，`_rest_orientation_error`）。两个方向都验过 |
-| 8 | `bindpose · 骨静止世界 ≈ I` | ❌ **作废**，见上（原版自己会报） |
-| 9 | 来源辅助骨均有明确的 helper/bake/reject | 🟡 **只报不拦**：`auto` 是既有的、有测试背书的通路（跟源父骨/胸骨规则），把它变成硬失败会拦下现在能跑的包。权重报告里给"未决定"的占比 |
-| 10 | 网格没有引用不存在的骨 | ✅ 与第 2 条同一处 |
+| # | 内容 | 状态 | 实现位置 |
+|---|---|---|---|
+| 1 | 21 个承重关节都有权重 | ✅ 拦；报错文案给**两条出路**（去表单指定 / 从相邻骨劈） | `core.critical_coverage_error`（`core.py:2725`），调用 `operators.py:1586` |
+| 2 · 10 | 没有未映射的 deform bone / 网格没有引用不存在的骨 | ✅ 拦；文案中文 + 三条出路。两条是**同一处实现** | `operators.py:1516`（`unresolved and not fallback_bone`） |
+| 3 | 没有未归一化或全零权重 | ✅ 拦：写包时逐顶点归一化，全零报错。另有截断量告警（第 5 个影响骨起被丢） | `core._bundle_skin`（`core.py:1492`） |
+| 4 | `bones[]` 数量/顺序与 bindpose 一致 | ✅ 拦（骨数 vs `m_BindPose`、查骨下标越界、`m_Skin` 数量 vs 顶点数）。`verify_ab_package` 里**没有** bindpose 检查，别当第二道 | `core.py:1586` + `_bundle_skin` |
+| 5 | 目标骨 bindpose 没被来源骨覆盖 | ❌ **不做**：lossless 下 mod 就是要带自己的 bindpose，target-rig 下没有能成立的判据。硬凑一个会变成"在原版上也报"（风险登记 V5） | — |
+| 6 | 头/手/脚/根骨没有明显静止姿势偏移 | 🟡 **只报不拦**：位置差被重定向吸收（"免的是位置"），拦它等于误伤 | `core.rest_alignment`（位置最高只判黄） |
+| 7 | 全部 `direct` 映射骨的静止朝向差在阈值内 | ✅ 拦（≥15° 拒绝导出）。两个方向都验过 | `operators._rest_orientation_error`（`operators.py:2991`），调用 `:1634` |
+| 8 | `bindpose · 骨静止世界 ≈ I` | ❌ **作废**，见上（原版自己会报） | — |
+| 9 | 来源辅助骨均有明确的 helper/bake/reject | ✅ **拦**（`40819e4` 起）：`undecided` 默认拦下导出，显式放行必须留痕，`undecided {count, allowed}` 写进 sidecar 和权重报告。~~只报不拦~~ 是 2026-08-17 的状态 | `core.undecided_export_error` / `undecided_export_record`（`core.py:3145` / `:3169`），调用 `operators.py:1604`；`tests/test_undecided_gate.py` |
+| 9b | `reject` 的骨不许进导出；标了 `bake` 却没烘也不许 | ✅ 拦 | `operators.py:1590`（reject）、`operators.py:1615`（未烘），`tests/blender_bake_rest_offset_smoke.py` |
+| 11 | 空摇物链（垂到胯下、没人驱动的衣物链）不许出包 | ✅ **拦**（`2109371` 新增，§8.1 第 11 条） | `core.empty_swing_chain_error`（`core.py:3115`），调用 `operators.py:1610` |
+
+**拦下导出的判据共 7 组**（1、2·10、3、4、7、9+9b、11），其中 2 与 10 是同一处实现。
 
 **权重报告（§8.2）**：`core.weight_state_summary` 按五档给权重占比（直接保留 / 合并 / 辅助骨 /
 未决定），画在「对齐体检」框里；跨关节带对比在批次 1 已经进去了。
@@ -1042,7 +1055,7 @@ tools/package_blender_addon.py --with-unitypy "<Blender>/4.2/python/bin/python.e
 
 ### 批次 6 — 物理（P7）🟡 2026-08-17（两项做完，`collisionMask` 定性欠一次实机）
 
-**1. `collisionMask` —— 真值量出来了，默认值没动。** 48292 根原版摇物骨（`vanilla-swing-bones.json`）
+**1. `collisionMask` —— 真值量出来了，预设 2026-08-18 02:50 已装众数，欠画面判定。** 48292 根原版摇物骨（`vanilla-swing-bones.json`）
 逐档众数：
 
 ```text
@@ -1052,12 +1065,12 @@ sleeve  n= 5639   0:49%  -1:24%  128:12%   64:6%
 ribbon  n= 6705  256:22%  -1:19%   64:18%    0:11%   1:8%
 ```
 
-§11.1 规矩 6 那句「skirt 档原版取 1」**坐实**（47% 众数），而且更有意思的是：**插件现在统一用的
--1(Everything) 在原版任何一档都只占 14~24%**，各档众数分别是 skirt 1 / cloth 64 /
-sleeve 0(None) / ribbon 256。
+§11.1 规矩 6 那句「skirt 档原版取 1」**坐实**（47% 众数），而且更有意思的是：**当时插件统一用的
+-1(Everything) 在原版任何一档都只占 14~24%**。逐档众数的当前值以 `swing_presets.json` 的
+`_collisionMask` 注为准（本文不复写，见 §11.1）。
 
-按计划**没有凭这张表改默认值** —— 判据是画面（窄裙贴不贴腿、发僵穿插），离线量不出来。
-实验已经备好，就是一个参数：
+**这张表已经装进预设**（下面这条命令 2026-08-18 跑过了，`tests/test_bundle_source_contract.py`
+钉住基准表）。这一档仍然是 🟡，因为**判据是画面**（窄裙贴不贴腿、发僵穿插），离线量不出来：
 
 ```bash
 python tools/scan_vanilla_swing_bones.py --bundles <all_body> --output <out> \
@@ -1118,5 +1131,8 @@ ribbon）时，表单当场标 ERROR，导出**直接拦下并说清怎么改**�
   —— 事实与证据的唯一入口。本文引用的每一个数字都出自它
 - [`ab-source-proxy-summary-and-roadmap-tpose-locked-2026-08-16.md`](ab-source-proxy-summary-and-roadmap-tpose-locked-2026-08-16.md)
   —— 两副骨架桥与 whole-object 的实施记录，**对照组，勿再投入**
+- [`ab-target-rig-contract.md`](ab-target-rig-contract.md) —— 本文 §4 的落地面：导出器/闸门/sidecar 的硬约束
+- [`ab-target-rig-ingame-checklist.md`](ab-target-rig-ingame-checklist.md) —— 进游戏一次该看什么（判据全是命令和数字）
+- [`../tools/experiments/README.md`](../tools/experiments/README.md) —— 批次 7 那批实验的导出脚本存档（复现配方）
 - `gakumas-mod-runtime/docs/manifest-v2.md` —— sidecar 契约（改格式要同时 grep 这里）
 - `research/unity-humanoid-avatar-sdk/` —— Unity 实验工程，大量原版数字的原始出处

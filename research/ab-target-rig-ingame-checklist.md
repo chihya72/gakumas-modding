@@ -1,6 +1,6 @@
 # target-rig 实机验收清单（A 类）
 
-日期：2026-08-18
+日期：2026-08-18 · 2026-08-20 复核（去掉与路线文档重复的数值）
 
 性质：**离线做不了的那几件事，进游戏一次该看什么。** 判据全部写成"跑哪个命令 / 看哪个数字"，
 不要靠人眼滚日志。路线与顺序见
@@ -60,10 +60,9 @@ error 0（修掉两条假警报之后）
 
 ## 2. 批次 6：`collisionMask` 定性（只改这一项）
 
-```bash
-python tools/scan_vanilla_swing_bones.py --bundles <all_body> --output <out> \
-    --collision-mask vanilla --install     # skirt 1 / cloth 64 / sleeve 0 / ribbon 256
-```
+⚠️ **众数已经装进预设了**（2026-08-18 02:50，`tools/scan_vanilla_swing_bones.py … --collision-mask vanilla --install` 跑过）。
+四个数字看 `gakumas_mi/swing_presets.json` 的 `_collisionMask` 注，本文不复写。这一项欠的是**有对照的画面判定**：
+拿同一个窄裙样本各出一版 `-1` 与众数，同机位各录一张。
 
 重新导出**同一个**窄裙样本（别顺手改别的），进游戏对比：
 

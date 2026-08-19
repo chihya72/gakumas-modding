@@ -2,6 +2,10 @@
 
 更新：2026-08-12 · Blender 插件：**1.1.0**（正式版，`main`）
 
+> ⚠️ 时效：本文写的是**已发布的 1.1.0**，早于 target-rig 那一批（批次 1–7 在 `main` 上未发布，
+> 见 [`../CHANGELOG.md`](../CHANGELOG.md) 的「未发布」段和
+> [`ab-target-rig-route-2026-08-17.md`](ab-target-rig-route-2026-08-17.md) §0）。
+
 本文只记录当前事实和未完成事项。逐版本变化见 [`../CHANGELOG.md`](../CHANGELOG.md)，
 使用方法见 [`../gakumas_mi/README.md`](../gakumas_mi/README.md)。
 

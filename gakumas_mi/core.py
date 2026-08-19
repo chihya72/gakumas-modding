@@ -3089,7 +3089,8 @@ def structural_bone_groups(bones, parent_of, body_bones=()):
 
 # §4.2 的五档：每根骨最终只能处于其一，**不允许"未决定"进入导出**（硬闸门在批次 3）。
 # 这一版先把它显示出来 —— 现在 72 根静默塌 Hips 的骨和真映射在表单里长得一模一样，
-# 排错只能去 dump JSON。`bake` / `reject` 还没有对应算子，先立词汇不给假开关。
+# 排错只能去 dump JSON。`bake` / `reject` 现在都有算子和闸门（`gmi.bake_rest_offset`；
+# 未烘/拒绝在 operators.py 的导出前检查里拦）。
 ROW_STATE_LABELS = {
     "direct": "直接映射", "merge": "合并", "helper": "辅助骨",
     "bake": "烘焙", "reject": "拒绝", "undecided": "未决定",

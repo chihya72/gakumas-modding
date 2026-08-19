@@ -26,6 +26,72 @@
 > 英文 Humanoid 四张预设表。表里名字若拼错，表现是那几行不预填、要手动选（有闸门兜着不会
 > 静默出废品），但不能宣称"支持"。
 
+## 未发布 — target-rig 批次 2–7：参考资产、闸门、打包内置 UnityPy、物理作用域
+
+路线与逐条交代见 [`research/ab-target-rig-route-2026-08-17.md`](research/ab-target-rig-route-2026-08-17.md)
+（闸门清单在批次 3 的表，含实现位置）。批次 1 见下一节。
+
+**批次 2 — 参考资产（P1）**
+
+- **参考骨架的朝向照搬原版 + 无权重节点也建骨。** `_create_armature` 改成写 `EditBone.matrix`；
+  `Reference` / `Pelvis` / 链锚点 `*_A` `*_O` / 链根 `*_S` 共 18 根旧版整批丢掉，它们没有 bindPose，
+  位置从最近的带权重祖先按**完整 local 矩阵**合成（只累加 `localPosition` 会让带旋转的关节以下全错：
+  151 个节点里 57 个带非单位 `localRotation`）。验收 `tests/blender_reference_rig_smoke.py`：
+  逐骨位置 `0.00008 mm`、朝向 `0.000000°`。
+
+**批次 3 — 权重映射与闸门（P3 + P4）**
+
+- **新增「从相邻骨劈权重」（`gmi.split_weight_from_neighbours`）**：MMD/Biped 没有锁骨那一档的施工方案。
+  只在作者和原版都认的骨之间重分、总量守恒、剩下的按作者自己的比例分回捐赠骨。验收把**原版自己身体**
+  的 `LeftShoulder` 整组删掉再劈回来：864 个顶点最差差 `5.96e-08`；
+- **新增硬闸门：全部 `direct` 映射骨的静止朝向差 ≥15° 拒绝导出。** 这会拦下一些以前能导出的包
+  （A-pose 没烘的源，Claymore 那副 rip 肩差 172.5°）—— 不是回归，是这条路线的契约；
+- **`bake` / `reject` 补上算子和闸门**（批次 1 只立了词汇）：`gmi.bake_rest_offset`；标了 `bake` 却没烘、
+  或标了 `reject`，导出都会被拦；
+- 权重截断量（第 5 个影响骨起被丢）从内部变量提成告警。
+
+**批次 4 — 打包（P5）**
+
+- **插件自带 UnityPy 与 Pillow**（`tools/package_blender_addon.py --with-unitypy`），装上就能一键打包，
+  不用作者自己配外部 Python；老路一行没删，自带的 import 不了才回退。**版本钉死 `UnityPy==1.10.18`**
+  （1.25 会在 `TextAsset.text` 上直接炸）；
+- **修：`unity_route.py` / `topology_map.py` / `driver_presets.json` 没入库**，而打包只收 git 跟踪的文件 →
+  打出来的 zip 缺模块、**插件整个装不上**。已入库，并给打包脚本加了通用闸门：`__init__.py` 顶层
+  import 的每个模块都必须真进 zip；
+- 验收 `tests/blender_vendored_pack_smoke.py`：产物与已发布实机验证过的 `chisaki-swimsuit.bundle`
+  11 个对象逐项一致（容器字节不同是两边 lz4 版本不同，判据是比对象不是比 hash）。
+
+**批次 5 — Runtime 收严（P6）** 改在 `gakumas-mod-runtime` 仓（`AddComponent` 预检 fail-closed、
+失败即回滚、驱动器挂不上不静默替换成摇物），不属于本插件的更新日志。
+
+**批次 6 — 物理（P7）**
+
+- **`collisionMask` 预设改成逐档众数**（`tools/scan_vanilla_swing_bones.py --collision-mask vanilla --install`，
+  48292 根原版摇物骨扫出来）。值以 `gakumas_mi/swing_presets.json` 的 `_collisionMask` 注为准；
+  **这是实机实验档，画面判定还欠一次**；
+- **`native_driver` 作用域化**：导出器以前收的是**类别集合** —— 作者在一行上选了裙，全模型每一根
+  skirt 类别的新骨都跟着改走驱动器。现在收 `{骨名: 类别}`（`tests/test_driver_scope.py` 钉住重导逐字节一样）；
+- **置灰做对**：运行时只实现 Skirt / Frill / HumanoidSleeve 三类驱动器，选了「原版布料驱动器」而类别落在
+  ribbon 时表单当场标 ERROR、导出拦下并说清怎么改。以前这种组合导出后那几根骨**既没驱动器也没摇物**
+  = 不会动的哑骨，而日志全绿。
+
+**批次 7 实机（dress-2219 / hmsz-cstm-0059）打出来的四个修复**
+
+- **闸门 9：`undecided` 默认拦下导出**（`40819e4`），显式放行必须留痕，`undecided {count, allowed}`
+  写进 sidecar 和权重报告。以前"还没决定"的骨可以静默进包；
+- **内置名字规则不再泄漏到同组邻居**（`25c0457`）：`Leg_pendant_R` 与 `Lace_R` 恰好同锚点同链长被并成一组，
+  lace 的 `follow_skirt` 带着腿上的挂坠一起去蹭裙摆末端摇物骨 —— 左右不对称就是它的指纹
+  （`verify_ab_package` 那条 `Left=31 Right=34` 的 WARN 被当成"源模型本来就不对称"放过去过一次）；
+- **物理指令按链算，不按结构组**（`cf12f94`）：结构分组在这个模型上一组装下 **57** 根骨（整条下半身），
+  "整组一个指令"让整条裙子被误判成自建摇物，作者的 `follow_skirt` 一直被同组吞掉。
+  自建骨 `69 → 18` 根，左右分布 `31/34 → 9/9`；
+- **「链根自己摆」改成逐行开关 + 空摇物链硬拦**（`2109371` / `9bc92cb` / `c6fbcd2`）：链根是惰性锚，
+  几何全长在链根上的短链（靴口花边）装了摇物也不动；空摇物链（垂到胯下、没人驱动的衣物链，
+  原版此类 0.00%）现在直接拦下导出。
+
+样本 2a 已定版收口（buildId `1375a006a8fc685f`，作者确认画面可接受）。逐次实验的叉点、量测和
+失败尝试见路线文档 §A–§G；导出脚本存档在 [`tools/experiments/`](tools/experiments/README.md)。
+
 ## 未发布 — target-rig 批次 1：两把尺子 + 一行一组
 
 路线见 [`research/ab-target-rig-route-2026-08-17.md`](research/ab-target-rig-route-2026-08-17.md)，
