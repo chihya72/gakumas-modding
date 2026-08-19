@@ -3263,31 +3263,45 @@ def build_accessory_physics_remap(
         return tuple(sum(source[name][axis] for name in names) / len(names)
                      for axis in range(3))
 
-    def directive_for(names):
+    def units_for(names):
+        """一个结构组 → `[(骨名列表, 指令)]`。
+
+        分三档，作用域各不相同：
+
+        - **作者覆盖整组生效** —— 他点的就是这一组，显式意图；
+        - **源链整条一起 `integrate`** —— 拆开等于把一条链劈成两半；
+        - **内置的名字规则只对名字命中的骨生效**。
+
+        最后一条以前是整组跟着走，实测会串味：`Lace_R` 与 `Leg_pendant_R` 都挂 `RightLeg_1`、
+        都两节，被结构分组并成一组，于是 lace 的 `follow_skirt` 把腿上的挂坠也送去蹭裙摆末端
+        摇物骨（`RightBackSideSkirt4_S`），实机表现是挂坠满天飞。而左边挂坠三节、没跟 lace
+        并组，走的是刚性 —— 同一件东西左右两种结果，**左右不对称就是这条泄漏的指纹**。
+        """
         for name in names:  # author override wins outright
             directive = override_for(name)
             if directive:
-                return directive
-        semantics = [semantic_for(name) for name in names]
-        if "integrate" in semantics:  # preserve old any(is_source_chain) behaviour
-            return "integrate"
-        for directive in semantics:
-            if directive:
-                return directive
-        return None
+                return [(list(names), directive)]
+        semantics = {name: semantic_for(name) for name in names}
+        if "integrate" in semantics.values():  # preserve old any(is_source_chain) behaviour
+            return [(list(names), "integrate")]
+        buckets = {}
+        for name in names:
+            buckets.setdefault(semantics[name], []).append(name)
+        return [(members, directive) for directive, members in buckets.items()]
 
     groups = {}
     for name in accessory:
         groups.setdefault(group_key(name), []).append(name)
 
     mapping, strategies, rigid, new_bones = {}, {}, {}, []
-    for names in groups.values():
+    # 一个结构组可能拆成几个 unit（内置名字规则只对命中的骨生效，见 units_for）
+    for names, directive in [unit for members in groups.values()
+                             for unit in units_for(members)]:
         # 一组里有几条链（成员的父不在本组 = 一条链的根），就决定"逐骨蹭最近"还是"按质心蹭"。
         # 从前这里按 skirt/dress/cloth 词表判 —— 外语命名的裙摆全落进"按质心"，40 根骨一起
         # 蹭同一根摇物骨。链数是同一件事的结构信号，不读名字。
         kind = "segment" if sum(
             1 for name in names if parents.get(name) not in names) > 1 else "group"
-        directive = directive_for(names)
 
         if directive == "integrate":
             new_bones.extend(names)
