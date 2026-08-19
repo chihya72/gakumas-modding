@@ -27,22 +27,70 @@
         "右ひざ": "RightLeg",
         "右足首": "RightFoot",
         "右つま先": "RightToeBase",
-        "左腕捩": "LeftArm",
-        "右腕捩": "RightArm",
-        "左腕捩1": "LeftArm",
-        "左腕捩2": "LeftArm",
-        "左腕捩3": "LeftArm",
-        "右腕捩1": "RightArm",
-        "右腕捩2": "RightArm",
-        "右腕捩3": "RightArm",
-        "左手捩": "LeftForeArm",
-        "左手捩1": "LeftForeArm",
-        "左手捩2": "LeftForeArm",
-        "左手捩3": "LeftForeArm",
-        "右手捩": "RightForeArm",
-        "右手捩1": "RightForeArm",
-        "右手捩2": "RightForeArm",
-        "右手捩3": "RightForeArm",
+        "左腕捩": [
+          "LeftArm_Roll_H",
+          "LeftArm"
+        ],
+        "右腕捩": [
+          "RightArm_Roll_H",
+          "RightArm"
+        ],
+        "左腕捩1": [
+          "LeftArm_Roll_H",
+          "LeftArm"
+        ],
+        "左腕捩2": [
+          "LeftArm_Roll_H",
+          "LeftArm"
+        ],
+        "左腕捩3": [
+          "LeftArm_Roll_H",
+          "LeftArm"
+        ],
+        "右腕捩1": [
+          "RightArm_Roll_H",
+          "RightArm"
+        ],
+        "右腕捩2": [
+          "RightArm_Roll_H",
+          "RightArm"
+        ],
+        "右腕捩3": [
+          "RightArm_Roll_H",
+          "RightArm"
+        ],
+        "左手捩": [
+          "LeftForeArm_Roll_H",
+          "LeftForeArm"
+        ],
+        "左手捩1": [
+          "LeftForeArm_Roll_H",
+          "LeftForeArm"
+        ],
+        "左手捩2": [
+          "LeftForeArm_Roll_H",
+          "LeftForeArm"
+        ],
+        "左手捩3": [
+          "LeftForeArm_Roll_H",
+          "LeftForeArm"
+        ],
+        "右手捩": [
+          "RightForeArm_Roll_H",
+          "RightForeArm"
+        ],
+        "右手捩1": [
+          "RightForeArm_Roll_H",
+          "RightForeArm"
+        ],
+        "右手捩2": [
+          "RightForeArm_Roll_H",
+          "RightForeArm"
+        ],
+        "右手捩3": [
+          "RightForeArm_Roll_H",
+          "RightForeArm"
+        ],
         "左足D": "LeftUpLeg",
         "左ひざD": "LeftLeg",
         "左足首D": "LeftFoot",

@@ -1,5 +1,9 @@
+import json
+
 import bpy
 from bpy.types import Panel
+
+from . import core
 
 
 def _is_hair_package(scene):
@@ -187,20 +191,33 @@ def draw_export_step(layout, scene, context):
             export.label(text="未选发饰对象：只换发型，发饰保持原版", icon="INFO")
     if has_bundle_weights:
         export.prop(scene, "gmi_bundle_template")
-        export.prop(scene, "gmi_bundle_python")
+        # 插件自带打包器时不需要外部 Python：那一栏只在没自带时才有意义，画出来会误导
+        from . import operators
+        vendored = operators.vendored_unitypy()
+        if vendored:
+            export.label(text=f"已内置打包器（UnityPy {vendored}）：不需要装 Python",
+                         icon="CHECKMARK")
+        else:
+            export.prop(scene, "gmi_bundle_python")
         patch_row = export.row()
         patch_row.enabled = bool(scene.gmi_bundle_template)
-        op = patch_row.operator("gmi.export_bundle_source",
-                                text="导出并打包 bundle（一键，需外部 Python）", icon="PACKAGE")
+        op = patch_row.operator(
+            "gmi.export_bundle_source",
+            text="导出并打包 bundle（一键）" if vendored else "导出并打包 bundle（一键，需外部 Python）",
+            icon="PACKAGE")
         op.also_patch = True
         if not scene.gmi_bundle_template:
             export.label(text="一键打包需先选 R32 模板 bundle", icon="INFO")
 
+    draw_rig_report(layout, scene, context)
+
     header, bones = layout.panel("GMI_export_bonemap", default_closed=True)
-    header.label(text="骨骼映射表（源骨 → 游戏骨）", icon="GROUP_BONE")
+    header.label(text="骨骼映射表（一行 = 一组源骨 → 游戏骨）", icon="GROUP_BONE")
     if bones:
         bones.label(text="预设认识的骨架预填后无需改动；导出报「承重关节没拿到权重」时用这里",
                     icon="INFO")
+        bones.label(text="装饰骨按结构（挂在哪根身体骨上 / 一条链 / 链长）并成一行，"
+                         "一行上的决定落到整组；要逐根不同就按行尾的「拆开」")
         bones.label(text="左=目标游戏骨（身体骨填这个）；中=装饰物理策略（飘带/花边选这个）；"
                          "右=部件类型（选了「自建摇物链」才可点）")
         row = bones.row(align=True)
@@ -212,10 +229,13 @@ def draw_export_step(layout, scene, context):
         if scene.gmi_bone_map:
             bones.template_list("GMI_UL_bone_map", "", scene, "gmi_bone_map",
                                 scene, "gmi_bone_map_index", rows=8)
-            pending = [item.source for item in scene.gmi_bone_map if not item.target.strip()]
-            if pending:
-                bones.label(text=f"还有 {len(pending)} 个骨没指定目标（留空=交给自动判断）",
-                            icon="ERROR")
+            # 装饰骨没有目标骨是正常状态（原版的飘带裙摆也没有），所以报的不是"没指定目标"，
+            # 而是"这一组还没决定"——五档状态里的 undecided。
+            undecided = [item for item in scene.gmi_bone_map
+                         if _row_state(item) == "undecided"]
+            if undecided:
+                bones.label(text=f"还有 {len(undecided)} 组没决定怎么处理"
+                                 "（填目标骨 / 选装饰物理策略）", icon="ERROR")
             row = bones.row(align=True)
             row.operator("gmi.save_bone_map", text="存为 JSON", icon="FILE_TICK")
             row.operator("gmi.load_bone_map", text="从 JSON 读入", icon="IMPORT")
@@ -293,19 +313,117 @@ class GMI_PT_step_export(_GMIStepPanel):
 
 # 骨映射表右侧控件的固定宽度(UI 单位,1 单位 ≈ 20px @100% 缩放)。骨名列吃掉剩下的宽度——
 # 让四列等分的话骨名会被截成 "RightRi... 0."，而作者恰恰要靠骨名判断这根骨是什么部件。
-# 嫌窄嫌宽直接改这四个数。
+# 嫌窄嫌宽直接改这五个数。
 _MASS_WIDTH, _TARGET_WIDTH, _STRATEGY_WIDTH, _CATEGORY_WIDTH = 3.4, 9.0, 8.0, 8.0
+_STATE_WIDTH = 4.6
+
+_STATE_ICONS = {
+    "direct": "CHECKMARK", "merge": "AUTOMERGE_ON", "helper": "CONSTRAINT_BONE",
+    "bake": "RENDER_STILL", "reject": "CANCEL", "undecided": "ERROR",
+}
+
+
+def _row_bones(item):
+    members = [name for name in str(item.members or "").split("\n") if name]
+    return members or ([item.source] if item.source else [])
+
+
+def _row_state(item):
+    members = _row_bones(item)
+    # 一组多根骨指到同一根目标骨,那就是多对一=合并,不是 direct
+    return core.row_state(item.target, item.strategy, shared_target=len(members) > 1)
+
+
+def draw_rig_report(layout, scene, context=None):
+    """P2 的尺子：逐骨关节位置差 / 静止朝向差 + 跨关节权重带。作者自查不到朝向,所以必须逐骨报。"""
+    box = layout.box()
+    box.label(text="对齐体检（只读，不改模型）", icon="DRIVER_TRANSFORM")
+    box.operator("gmi.report_rig_alignment", icon="CHECKMARK")
+    # 缺骨补权重是**会改权重**的那一个，所以和只读尺子分开画，且写清它只动那几根骨。
+    fix = box.row()
+    fix.operator("gmi.split_weight_from_neighbours", icon="MOD_VERTEX_WEIGHT")
+    box.label(text="源模型没有锁骨/脖子/脚尖时用上面这个：按原版权重分布从相邻骨劈，"
+                   "只动那几根骨所在的一族", icon="INFO")
+    # 烘焙是**会改网格**的一步，所以按钮旁边永远摆着回退，且明说改了什么
+    obj = context.active_object if context else None
+    baked = bool(obj and obj.get("gmi_pre_bake"))
+    bake = box.row(align=True)
+    bake.operator("gmi.bake_rest_offset", icon="RENDER_STILL")
+    revert = bake.operator("gmi.bake_rest_offset", text="回退烘焙", icon="LOOP_BACK")
+    revert.revert = True
+    if baked:
+        box.label(text="这个网格已烘过静止形变（回退记录在对象上，随时能退回）", icon="CHECKMARK")
+    else:
+        box.label(text="标了「烘焙形变+并到父骨」的骨要先烘一次再导出；形变小于 0.05mm 时"
+                       "只声明、不动网格", icon="INFO")
+    raw = scene.gmi_rig_report
+    if not raw:
+        box.label(text="量关节位置差 + 静止朝向差（本骨→人形子骨的方向）：朝向差静止截图"
+                       "看不出来，转身之后手臂会转到身后、手指拉成面条", icon="INFO")
+        return
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return
+    icons = {"green": "CHECKMARK", "yellow": "ERROR", "red": "CANCEL"}
+    rows = data.get("alignment") or []
+    bad = [row for row in rows if row.get("grade") != "green"]
+    box.label(text=f"逐骨对齐：量了 {data.get('measured', 0)} 根，"
+                   f"{len(bad)} 根不合格（朝向 {core.ORIENTATION_WARN_DEG:.0f}° 黄 / "
+                   f"{core.ORIENTATION_FAIL_DEG:.0f}° 红；位置最高判黄）")
+    for row in (bad or rows)[:8]:
+        box.label(text=f"{row['bone']}   朝向 {core.format_degrees(row.get('deg'))}"
+                       f"（对 {row.get('child') or '-'}）   位置 {row['mm']:.1f}mm",
+                  icon=icons.get(row.get("grade"), "DOT"))
+    if len(bad) > 8:
+        box.label(text=f"…还有 {len(bad) - 8} 根，看操作日志", icon="INFO")
+    if not rows:
+        box.label(text="没有可量的 direct 映射骨：先在骨骼映射表里指定身体骨", icon="ERROR")
+    states = data.get("states") or {}
+    if states:
+        total = sum(states.values()) or 1.0
+        box.label(text="权重去处：" + "  ".join(
+            f"{core.ROW_STATE_LABELS.get(state, state)} {mass / total:.0%}"
+            for state, mass in sorted(states.items(), key=lambda item: -item[1])))
+        if states.get("undecided"):
+            box.label(text="「未决定」= 这些骨还没有目标骨也没选策略，导出会被拦下",
+                      icon="ERROR")
+    collapsed = data.get("collapsed") or []
+    if collapsed:
+        box.label(text=f"节数不同、被塌进同一根目标骨的链 {len(collapsed)} 处"
+                       "（塌是安全的，塌错是「有值但错」，闸门抓不到——请人眼核一下）",
+                  icon="ERROR")
+        for row in collapsed[:5]:
+            box.label(text=f"  {row['target']} ← {'、'.join(row['sources'][:4])}"
+                           f"（{row['mass']:.1f}% 权重）")
+    bands = data.get("bands") or []
+    if bands:
+        box.label(text=f"跨关节权重带（基线：{data.get('baseline', '')}）——"
+                       "唯一能预判「肩膀会不会崩」的数字")
+        for band in bands:
+            box.label(text=f"{band['joint']}   {band['share']:.1%}   "
+                           f"（原版 {band['vanilla']:.1%}）",
+                      icon=icons.get(band.get("grade"), "DOT"))
+        box.label(text="肩明显低于原版 = A→T 之后肩膀会崩；只能在 Blender 里补权重", icon="INFO")
 
 
 class GMI_UL_bone_map(bpy.types.UIList):
-    """一行 = 一根带权重的源骨。左边源骨名 + 权重占比，右边下拉搜索选游戏骨。"""
+    """一行 = 一组结构上同类的源骨（锚点 + 链 + 链长）。左边代表骨名 + 组内根数 + 权重占比。"""
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_prop, index):
         row = layout.row(align=True)
         filled = bool(item.target.strip())
-        row.label(text=item.source,
-                  icon="CHECKMARK" if filled else ("DOT" if item.strategy != "auto"
-                                                   else "ERROR"))
+        members = _row_bones(item)
+        state = _row_state(item)
+        label = item.source + (f"  +{len(members) - 1}" if len(members) > 1 else "")
+        row.label(text=label, icon=_STATE_ICONS.get(state, "DOT"))
+        if len(members) > 1:
+            split = row.operator("gmi.split_bone_group", text="", icon="MOD_EXPLODE")
+            split.index = index
+        state_column = row.row()
+        state_column.ui_units_x = _STATE_WIDTH
+        state_column.alignment = "RIGHT"
+        state_column.label(text=core.ROW_STATE_LABELS.get(state, state))
         mass = row.row()
         mass.ui_units_x = _MASS_WIDTH
         mass.alignment = "RIGHT"
@@ -321,15 +439,73 @@ class GMI_UL_bone_map(bpy.types.UIList):
         strategy.ui_units_x = _STRATEGY_WIDTH
         strategy.enabled = not filled
         strategy.prop(item, "strategy", text="")
-        # 部件类型只对「自建摇物链」有意义 —— 别的策略不新建骨,没有参数可选
+        # 部件类型只对**会新建骨**的两个策略有意义：自建摇物链取哪一档摆动参数，
+        # 原版布料驱动器取哪一种驱动器（裙→Skirt、披挂→Frill、袖→HumanoidSleeve）。
+        # 别的策略不新建骨，没有参数可选。
         category = row.row(align=True)
         category.ui_units_x = _CATEGORY_WIDTH
-        category.enabled = not filled and item.strategy == "integrate"
+        category.enabled = not filled and item.strategy in {"integrate", "native_driver"}
         category.prop(item, "swing_category", text="")
+        # 运行时只实现了三类驱动器（Skirt / Frill / HumanoidSleeve）。选了「原版布料驱动器」
+        # 又落在别的类别（ribbon，或"自动"猜成 ribbon）时，导出后这几根骨**既没有驱动器也
+        # 没有摇物** —— 一个不会动的哑骨，日志还全绿。所以当场标出来，不让它静默过去。
+        if not filled and item.strategy == "native_driver":
+            resolved = (item.swing_category if item.swing_category != "auto"
+                        else core.swing_category(item.source))
+            if resolved not in core.DRIVER_CATEGORIES:
+                row.label(text="", icon="ERROR")
+
+
+class GMI_PT_unity_route(bpy.types.Panel):
+    """两个按钮的那条路：作者只开 Blender，Unity 在后台跑。"""
+
+    bl_label = "Unity 路线（两下点击）"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "GakumasMI"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        import json
+        layout = self.layout
+        scene = context.scene
+        layout.prop(scene, "gmi_unity_kind")
+        layout.prop(scene, "gmi_unity_target")
+        layout.prop(scene, "gmi_unity_sdk_dir")
+        layout.prop(scene, "gmi_unity_editor")
+
+        column = layout.column(align=True)
+        column.scale_y = 1.4
+        column.operator("gmi.pose_t_pose", icon="ARMATURE_DATA")
+        column.operator("gmi.check_adapt", icon="CHECKMARK")
+        column.operator("gmi.export_unity_mod", icon="EXPORT")
+
+        from . import unity_route
+        if unity_route.PREVIEW_KEYS:
+            row = layout.row()
+            for key in unity_route.PREVIEW_KEYS:
+                row.template_icon(icon_value=unity_route.preview_icon(key), scale=8.0)
+
+        raw = scene.gmi_unity_report
+        if not raw:
+            return
+        try:
+            findings = json.loads(raw)
+        except Exception:
+            return
+        box = layout.box()
+        icons = {"ok": "CHECKMARK", "warn": "ERROR", "fail": "CANCEL"}
+        for item in findings:
+            row = box.row()
+            row.label(text=item.get("message", ""), icon=icons.get(item.get("level"), "DOT"))
+            action = item.get("action")
+            if action:
+                box.label(text=f"    → {action}")
 
 
 CLASSES = (
     GMI_UL_bone_map,
+    GMI_PT_unity_route,
     GMI_PT_main,
     GMI_PT_step_profile,
     GMI_PT_step_texture,

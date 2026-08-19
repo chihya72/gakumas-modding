@@ -11,7 +11,9 @@ SPEC.loader.exec_module(verify)
 
 
 def test_verify_ab_package_passes_minimal_contract(tmp_path):
-    critical = list(verify.CRITICAL_BONES)
+    # 19 根 Avatar 必备骨（HumanBodyBones 0–18，读自 IsValidHumanDescription）——
+    # 少一根 Avatar 就无效、动画一帧都不播，所以"最小合格包"必须包含它们。
+    critical = list(dict.fromkeys(list(verify.CRITICAL_BONES) + list(verify.REQUIRED_HUMANOID_BONES)))
     sidecar = {
         "runtimeProtocol": 1,
         "buildId": "test-build",
@@ -60,11 +62,19 @@ def test_verify_ab_package_passes_minimal_contract(tmp_path):
         }],
         "sourceRigRemap": {"bones": {name: name for name in critical}},
     }
+    # 一个**能进游戏**的最小包，不只是 schema 合法：矫正骨必须真的承重。
+    # 原版 49 套实测 `*_H` 承重 min 6.02% / 中位 11.28%，为 0 的一套都没有，
+    # 而四个已出货成品全是 0.00% —— 这正是 G1 要拦的东西，所以 fixture 也得给它权重，
+    # 否则这份"最小契约"描述的是一个肩肘会剪切的包。
+    roll_index = len(critical)          # LeftArm_Roll_H
     geo = {
-        "m_VertexCount": len(critical),
-        "m_Colors": [1.0, 1.0, 1.0, 1.0] * len(critical),
+        "m_VertexCount": len(critical) + 1,
+        # 纯白 = 网格没有顶点色时的默认值，进游戏就是"没有描边"（原版 22 套实测 0 个纯白顶点）。
+        # 这里用原版皮肤的实测值 (81,0,15,144)/255。
+        "m_Colors": [81 / 255, 0.0, 15 / 255, 144 / 255] * (len(critical) + 1),
         "m_Skin": [{"boneIndex": [index, 0, 0, 0], "weight": [1.0, 0, 0, 0]}
-                   for index in range(len(critical))],
+                   for index in range(len(critical))]
+                  + [{"boneIndex": [roll_index, 0, 0, 0], "weight": [1.0, 0, 0, 0]}],
     }
     (tmp_path / "mod.json").write_text(json.dumps({
         "runtimeProtocol": 1,
@@ -82,7 +92,8 @@ def test_verify_ab_package_passes_minimal_contract(tmp_path):
     report = verify.verify_package(tmp_path)
     assert report["ok"]
     assert report["t4"]["mbLevel"]
-    assert report["weights"]["activeBoneCount"] == len(critical)
+    assert report["weights"]["activeBoneCount"] == len(critical) + 1
+    assert report["geometries"][0]["helperRig"]["weightShare"] > 0.0
     assert report["swing"] == {
         "total": 2,
         "left": 1,

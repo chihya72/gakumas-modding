@@ -13,6 +13,7 @@ import datetime as _dt
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -73,7 +74,35 @@ def _iter_glob(root: Path):
             yield path
 
 
-def package(output: Path | None = None, include_body_lib: bool = False) -> Path:
+# 打包器随插件走：Blender 自带的就是标准 CPython（4.2 / 4.5 都是 3.11），所以 PyPI 上的
+# cp311 wheel 直接能用，不需要自己编。作者因此不用装 Python、不用配 PATH、不用 pip。
+#
+# 版本**钉死**：`patch_unity_bundle.py` 按 UnityPy 1.10.x 的 API 写（1.25 把 `TextAsset.text`
+# 换掉了）。让作者自己 pip install 就是版本轮盘赌，这也正是内置的理由之一。
+UNITYPY_PIN = "UnityPy==1.10.18"
+VENDOR_REQUIREMENTS = (UNITYPY_PIN, "Pillow")
+
+
+def vendor_unitypy(python_exe: str, vendor_dir: Path) -> None:
+    """用**目标 Blender 自带的 python** 把打包器依赖装进 addon 的 vendor/。
+
+    必须用那一个解释器：wheel 是按 ABI（cp311 / win_amd64）选的，用别的版本装出来的东西
+    在 Blender 里 import 不了。`--only-binary` 是故意的 —— 要源码编译就说明这台机器上
+    选不到合适的 wheel，那就该直接失败，而不是打出一个装上才炸的 zip。
+    """
+    if vendor_dir.exists():
+        shutil.rmtree(vendor_dir)
+    subprocess.run(
+        [python_exe, "-m", "pip", "install", "--target", str(vendor_dir),
+         "--only-binary", ":all:", "--no-warn-script-location", *VENDOR_REQUIREMENTS],
+        check=True,
+    )
+    if not (vendor_dir / "UnityPy").is_dir() or not (vendor_dir / "PIL").is_dir():
+        raise FileNotFoundError(f"vendor 目录里没装出 UnityPy / PIL：{vendor_dir}")
+
+
+def package(output: Path | None = None, include_body_lib: bool = False,
+            vendor_python: str | None = None) -> Path:
     if not ADDON_DIR.is_dir():
         raise FileNotFoundError(f"找不到插件目录：{ADDON_DIR}")
 
@@ -84,6 +113,10 @@ def package(output: Path | None = None, include_body_lib: bool = False) -> Path:
         raise FileNotFoundError(
             f"指定了 --with-body-lib，但找不到内置 Body JSON资源库：{body_lib}"
         )
+
+    vendor_dir = ADDON_DIR / "vendor"
+    if vendor_python:
+        vendor_unitypy(vendor_python, vendor_dir)
 
     version = _read_version()
     stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -113,7 +146,7 @@ def package(output: Path | None = None, include_body_lib: bool = False) -> Path:
         # 这些是运行时**无条件读取**的数据文件，缺一个就在作者点导出时炸
         # FileNotFoundError。以前只在"存在时"添加 —— 干净 checkout 或漏 git add 会打出一个
         # "成功"的 ZIP，装上才发现功能没了。缺就直接失败。
-        for name in ("bone_remap_presets.json", "swing_presets.json"):
+        for name in ("bone_remap_presets.json", "swing_presets.json", "driver_presets.json"):
             path = ADDON_DIR / name
             if not path.is_file():
                 raise FileNotFoundError(
@@ -121,6 +154,23 @@ def package(output: Path | None = None, include_body_lib: bool = False) -> Path:
                     "必须随插件一起打包，且必须入库")
             if path not in addon_files:
                 _add(path, Path("gakumas_mi") / name)
+        # `__init__.py` 顶层 import 的每个模块都必须真的进 zip。漏一个的表现是**插件整个
+        # 装不上**（`ImportError: cannot import name ... from partially initialized module`），
+        # 而 `_iter_files` 只收 git 跟踪的文件 —— 忘了 git add 就会打出一个"成功"的 zip。
+        # 实际发生过：unity_route.py / topology_map.py 未入库，打出的 zip 一装就报错。
+        packaged = {arc for arc in zf.namelist()}
+        missing_modules = [
+            name for name in re.findall(
+                r"^from \. import (.+)$", (ADDON_DIR / "__init__.py").read_text(encoding="utf-8"),
+                re.MULTILINE)
+            for name in (part.strip() for part in name.split(","))
+            if name and f"gakumas_mi/{name}.py" not in packaged
+        ]
+        if missing_modules:
+            raise FileNotFoundError(
+                "以下模块被 __init__.py 顶层 import，但没有进 zip："
+                + "、".join(f"{name}.py" for name in missing_modules)
+                + "。打出去插件会整个装不上。多半是忘了 `git add`（打包只收 git 跟踪的文件）")
         # vendor 模板补丁脚本进 addon：一键打包时插件 subprocess 调它（跑在作者的外部
         # Python 上，不是 Blender 自带 Python）。单一 git 源在 tools/，此处只做打包拷贝。
         patch_script = ROOT / "tools" / "patch_unity_bundle.py"
@@ -140,6 +190,13 @@ def package(output: Path | None = None, include_body_lib: bool = False) -> Path:
         if include_body_lib:
             for path in _iter_glob(body_lib):
                 _add(path, Path("gakumas_mi") / path.relative_to(ADDON_DIR))
+        # 自带打包器（vendor/）：只有这次显式要了才打进去。目录是 gitignored 的，
+        # 上一次 --with-unitypy 留在盘上的残留不能悄悄混进"纯代码版"的 zip。
+        if vendor_python:
+            for path in _iter_glob(vendor_dir):
+                _add(path, Path("gakumas_mi") / path.relative_to(ADDON_DIR))
+        elif vendor_dir.is_dir():
+            print(f"提示：{vendor_dir} 是上次 --with-unitypy 的残留，这次没打进 zip")
 
     print(f"已生成：{output}")
     print(f"文件数：{file_count}")
@@ -153,8 +210,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-o", "--output", type=Path, help="输出 zip 路径。默认写入 dist/")
     parser.add_argument("--with-body-lib", action="store_true",
                         help="把内置 Body JSON资源库一并打进 zip（体积很大；默认作为单独资源包发布）")
+    parser.add_argument(
+        "--with-unitypy", metavar="BLENDER_PYTHON",
+        help="把打包器（UnityPy+Pillow 的 wheel）装进 zip，作者就不用装 Python 了。"
+             "参数是**目标 Blender 自带的** python.exe，"
+             r"例如 C:\Program Files\Blender Foundation\Blender 4.2\4.2\python\bin\python.exe"
+             "（wheel 按 ABI 选，用别的解释器装出来的在 Blender 里 import 不了）")
     args = parser.parse_args(argv)
-    package(args.output, include_body_lib=args.with_body_lib)
+    package(args.output, include_body_lib=args.with_body_lib,
+            vendor_python=args.with_unitypy)
     return 0
 
 

@@ -29,3 +29,9 @@ __pycache__/
 
 # 本机 Claude Code 会话配置。此前只靠全局 gitignore 挡着，换台机器就会被提交。
 .claude/settings.local.json
+
+# 自带打包器：UnityPy/Pillow 的 wheel，由 tools/package_blender_addon.py --with-unitypy 现装
+gakumas_mi/vendor/
+
+# Blender 无头跑留下的日志
+Logs/

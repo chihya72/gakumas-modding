@@ -74,3 +74,5 @@ jobs:
           "$BLENDER" --background --factory-startup --python-exit-code 1 --python tests/blender_ui_smoke.py
           "$BLENDER" --background --factory-startup --python-exit-code 1 --python tests/material_bake_blender_smoke.py
           "$BLENDER" --background --factory-startup --python-exit-code 1 --python tests/blender_smoke.py
+          "$BLENDER" --background --factory-startup --python-exit-code 1 --python tests/blender_reference_rig_smoke.py
+          "$BLENDER" --background --factory-startup --python-exit-code 1 --python tests/blender_weight_split_smoke.py

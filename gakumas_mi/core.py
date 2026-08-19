@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import shutil
 import struct
@@ -1614,7 +1615,7 @@ def _bundle_geojson(data, source_mesh, skeleton, material_slot_count):
     return geo, bones
 
 
-def merge_material_groups(co_slots, target_submesh_count, materials):
+def merge_material_groups(co_slots, target_submesh_count, materials, transparent_slots=()):
     """把作者网格的每-面/每-顶点材质槽索引，归并到目标 body 的材质方案。
 
     目标 body 只有 1 段(bdy)或 2 段(bdy+bdyco)。归并规则：不透明槽 → 组 0(bdy)，
@@ -1628,18 +1629,39 @@ def merge_material_groups(co_slots, target_submesh_count, materials):
     未共用图集的多材质 mod 应由作者自己收拢到 bdy(+bdyco)。
     """
     co_slots = {int(slot) for slot in co_slots}
+    # 自建半透明段落在目标段数之后：原版 renderer 没有这些槽，runtime 会按 mod.json 的
+    # transparentMaterials 把 sharedMaterials 数组扩容并塞进新建的 Gmi/Transparent 材质。
+    # 所以它们不受"目标只有 N 段"这条限制 —— 但每个源材质槽仍然各占一段（各自一张 t0）。
+    extra = {int(slot): index for index, slot in enumerate(sorted(
+        {int(slot) for slot in transparent_slots} - co_slots))}
     target = max(1, int(target_submesh_count or 1))
-    group_of = lambda slot: 1 if int(slot) in co_slots else 0
+
+    def group_of(slot):
+        slot = int(slot)
+        if slot in extra:
+            return target + extra[slot]
+        return 1 if slot in co_slots else 0
+
     used = {group_of(slot) for slot in materials} if materials else {0}
-    if target == 1 and 1 in used:
+    transparent_groups = {target + index for index in extra.values()}
+    used_native = used - transparent_groups
+    if target == 1 and 1 in used_native:
         raise ValueError(
             "目标 body 只有 bdy 一段，但你的网格含 co(NATIVE_CO)材质；"
             "请去掉 co 材质，或选一个带 bdyco 的目标服装")
-    if max(used) >= target:
+    if used_native and max(used_native) >= target:
         raise ValueError(
-            f"网格材质分组 {sorted(used)} 超出目标 body 的 {target} 段；"
+            f"网格材质分组 {sorted(used_native)} 超出目标 body 的 {target} 段；"
             "请把材质合并到 bdy" + ("(和 bdyco)" if target > 1 else ""))
     return [group_of(slot) for slot in materials]
+
+
+def transparent_group_map(co_slots, target_submesh_count, transparent_slots):
+    """{源材质槽: 归并后的段号}，只含自建半透明槽。与 merge_material_groups 同一套算法。"""
+    co_slots = {int(slot) for slot in co_slots}
+    target = max(1, int(target_submesh_count or 1))
+    ordered = sorted({int(slot) for slot in transparent_slots} - co_slots)
+    return {slot: target + index for index, slot in enumerate(ordered)}
 
 
 def _bundle_root_bone(skeleton, bone_names):
@@ -1741,7 +1763,7 @@ def _bundle_component(bundle_dir, package_id, source, component_id, data,
 def write_bundle_source(
     output_root, package_id, source, component_id, name, author, data,
     mesh_json, skeleton_json, textures, material_slot_count=1, version="0.1.0",
-    extra_components=(),
+    extra_components=(), transparent_materials=(),
 ):
     """Write the Unity-independent source files consumed by the Phase 2 build.
 
@@ -1833,6 +1855,25 @@ def write_bundle_source(
             "textures": texture_entries,
         }],
     }
+    # 自建半透明段：runtime 拿它去扩 sharedMaterials 并新建 Gmi/Transparent 材质。
+    # 缺 shader 包或缺贴图时 runtime 整体拒绝（不静默回落成不透明）。
+    transparent_entries = [{
+        "rendererName": item.get("rendererName", renderer_name),
+        "materialSlot": int(item["materialSlot"]),
+        "asset": f"{asset_root}/{Path(item['filename']).name}",
+        "defMap": f"{asset_root}/{Path(item['defMap']).name}" if item.get("defMap") else "",
+        "shadeMap": f"{asset_root}/{Path(item['shadeMap']).name}" if item.get("shadeMap") else "",
+        "type": "Texture2D",
+        "alpha": float(item.get("alpha", 0.5)),
+        "toonStrength": float(item.get("toonStrength", 1.0)),
+        "shadeDarken": float(item.get("shadeDarken", 0.45)),
+        "cull": float(item.get("cull", 0.0)),
+        "zwrite": float(item.get("zwrite", 0.0)),
+        "renderQueue": int(item.get("renderQueue", 3000)),
+        "props": {str(k): float(v) for k, v in (item.get("props") or {}).items()},
+    } for item in transparent_materials]
+    if transparent_entries:
+        mod["replacements"][0]["transparentMaterials"] = transparent_entries
     _write_json(bundle_dir / "mod.json", mod)
     return bundle_dir
 
@@ -2524,6 +2565,23 @@ def _preset_target(name, preset_bones):
     return preset_bones.get(folded) if folded else None
 
 
+def _resolve_preset_value(value, target):
+    """预设表的值可以是一个骨名，也可以是**按优先级排的候选列表**。
+
+    捩骨要的就是这个：源模型的 `左腕捩` 该落到 `LeftArm_Roll_H`（原版 528/530 套都有，
+    而且姿势驱动器就装在它上面），但万一目标骨架没有这根，退回 `LeftArm` 也比整根骨
+    掉进 unmapped、权重直接消失要好。返回第一个真正存在于目标骨架里的候选。
+    """
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        for candidate in value:
+            if candidate in target:
+                return candidate
+        return None
+    return value if value in target else None
+
+
 def _preset_lookup(name, preset_bones):
     """查预设表：原名查不到时，剥掉 `_1` 后缀再查一次。
 
@@ -2547,7 +2605,8 @@ def _best_preset(source, target, presets, preferred=None):
     def hits(key):
         bones = presets.get(key, {}).get("bones", {})
         # 与 mapped_name 同一套匹配（含 _1 剥离），否则整套骨名都带 _1 的源会让每张表都得 0 分
-        return sum(1 for name in source if _preset_lookup(name, bones) in target)
+        return sum(1 for name in source
+                   if _resolve_preset_value(_preset_lookup(name, bones), target) is not None)
 
     ranked = sorted(presets, key=lambda key: (-hits(key), key != preferred, key))
     if ranked and hits(ranked[0]):
@@ -2599,8 +2658,8 @@ def build_bone_remap(source_bones, target_bones, parent_by_name=None,
         stripped = re.sub(r"(?:_1)+$", "", name)
         if stripped in target:
             return stripped, "strip_suffix"
-        candidate = _preset_lookup(name, preset_bones)
-        if candidate in target:
+        candidate = _resolve_preset_value(_preset_lookup(name, preset_bones), target)
+        if candidate:
             return candidate, "preset"
         return None, None
 
@@ -2655,6 +2714,14 @@ CRITICAL_TARGET_BONES = (
 )
 
 
+def missing_critical_bones(source_names, remap, target_bones):
+    """承重关节里没拿到任何权重的那些（与目标骨架取交集，局部骨架不会误报）。"""
+    target = set(target_bones)
+    hit = {remap.get(name) for name in source_names}
+    return [name for name in CRITICAL_TARGET_BONES
+            if name in target and name not in hit]
+
+
 def critical_coverage_error(source_names, remap, target_bones):
     """承重关节零权重 → 返回报错文案，正常返回 None。
 
@@ -2662,15 +2729,387 @@ def critical_coverage_error(source_names, remap, target_bones):
     与目标骨架取交集，骨很少的测试/局部骨架不会误报。位置匹配永远能返回一个骨名，
     不拦就是静默出废品——这是唯一便宜且可靠的拦法。
     """
-    target = set(target_bones)
-    hit = {remap.get(name) for name in source_names}
-    missing = [name for name in CRITICAL_TARGET_BONES
-               if name in target and name not in hit]
+    missing = missing_critical_bones(source_names, remap, target_bones)
     if not missing:
         return None
+    # 两条出路必须都给：**骨存在但没认出来**去表单指定；**骨压根不存在**（MMD/Biped 没有
+    # 锁骨、Head 直接挂 Spine2）在表单里永远找不到，那种只能从相邻骨劈权重。
+    # 只写前一条的话，作者按提示去找一个不存在的东西，卡死。
     return ("以下承重关节没有拿到任何权重：" + "、".join(missing)
-            + f"（共 {len(missing)} 个）。源模型的骨名没有被识别，这样导出进游戏会让"
-              "这些部位跟着别的骨乱跑。请在导出面板「骨骼映射表」里扫描并指定对应关系。")
+            + f"（共 {len(missing)} 个）。这样导出进游戏，那块几何会跟着别的骨乱跑"
+              "（实测：整只手 100% 钉在 Spine1）。两种情形两条出路：\n"
+              "  · 源模型**有**这根骨、只是名字没认出来 → 导出面板「骨骼映射表」里指定；\n"
+              "  · 源模型**根本没有**这根骨（MMD/Biped 常见）→ 点「从相邻骨劈权重」，"
+              "按原版身体的权重分布从旁边那圈骨里劈出来。")
+
+
+def redistribute_family_weight(author, vanilla, missing):
+    """一个顶点上：按原版的比例，从相邻骨劈出 `missing` 那根骨的权重。
+
+    `author`  {目标骨: 权重} 这个顶点现有的权重（按目标骨合并过）
+    `vanilla` {目标骨: 权重} 原版身体在最近那一点的权重
+    `missing` 缺的那根骨
+
+    返回 {目标骨: 新权重}，只含这一族；空 dict = 这个顶点不该动。规矩：
+
+    · **只在作者和原版都认的骨之间重分**。作者有权重、原版在这点上没有的骨不进族，
+      原样不动 —— 那是作者自己的画法（§7.3 档 2：两种画法各自自洽）。
+    · **总量守恒**：这一族的权重总和不变，不做全身重绘，也不会把顶点的总权重改掉。
+    · 原版只决定"分给缺骨多少"；剩下的按**作者自己的比例**分回捐赠骨（要求 2：保留源权重）。
+    """
+    donors = {name: max(0.0, float(weight)) for name, weight in author.items()
+              if name != missing and float(vanilla.get(name) or 0.0) > 0.0}
+    share = max(0.0, float(vanilla.get(missing) or 0.0))
+    family_total = sum(donors.values()) + max(0.0, float(author.get(missing) or 0.0))
+    if share <= 0.0 or family_total <= 0.0:
+        return {}
+    vanilla_family = share + sum(float(vanilla[name]) for name in donors)
+    ratio = share / vanilla_family
+    result = {missing: family_total * ratio}
+    donor_total = sum(donors.values())
+    for name, weight in donors.items():
+        result[name] = (family_total * (1.0 - ratio) * weight / donor_total
+                        if donor_total > 0.0 else 0.0)
+    return result
+
+
+def collapsed_chains(remap, parent_of, mass_by_name=None):
+    """节数不同 → 一串**父子相连**的源骨塌进同一根目标骨（§7.3 档 3）。
+
+    返回 [{target, sources, mass}]，按权重降序。手指 4 节 vs 游戏 3 节、脊椎 2 节 vs 3 节都长这样。
+    **塌是安全的，塌错是"有值但错"——闸门永远抓不到**（每根骨都有目标、权重也归一），
+    所以只能标出来给人看。左右两根骨并到一根不算这一类（它们不是父子），那是普通合并。
+    """
+    grouped = {}
+    for name, target in (remap or {}).items():
+        if target:
+            grouped.setdefault(target, []).append(str(name))
+    mass = mass_by_name or {}
+    rows = []
+    for target, names in grouped.items():
+        if len(names) < 2:
+            continue
+        pool = set(names)
+        # 只留"父也在同一组里"的那些：那才是把一条链压短了
+        chained = [name for name in names if (parent_of or {}).get(name) in pool]
+        if not chained:
+            continue
+        rows.append({
+            "target": target,
+            "sources": sorted(names),
+            "mass": sum(float(mass.get(name) or 0.0) for name in names),
+        })
+    rows.sort(key=lambda row: (-row["mass"], row["target"]))
+    return rows
+
+
+def weight_state_summary(mass_by_name, remap, new_bones=(), unmapped=()):
+    """{五档: 权重占比} —— 让"尽可能保留源权重"可量化，而不是凭画面猜（§8.2）。
+
+    `mass_by_name` {源骨: 权重占比}（百分比或任意单位，原样加总）。判档只看数据本身：
+    独占一根目标骨 = `direct`，几根源骨挤一根目标骨 = `merge`，新建辅助骨 = `helper`，
+    连目标都没有 = `undecided`。
+    """
+    helpers, unresolved = set(new_bones), set(unmapped)
+    users = {}
+    for name in mass_by_name:
+        target = remap.get(name)
+        if target and name not in helpers and name not in unresolved:
+            users[target] = users.get(target, 0) + 1
+    summary = {}
+    for name, mass in mass_by_name.items():
+        if name in unresolved or not remap.get(name):
+            state = "undecided"
+        elif name in helpers:
+            state = "helper"
+        else:
+            state = "direct" if users.get(remap[name], 0) <= 1 else "merge"
+        summary[state] = summary.get(state, 0.0) + float(mass)
+    return summary
+
+
+def weight_sum_errors(sums, tolerance=1e-3):
+    """逐顶点权重和不为 1（或为 0）的那些：[(顶点号, 权重和)]，最偏的排前面。
+
+    全零 = 那个顶点在游戏里塌到原点；不归一 = 顶点整体缩向骨骼（Unity 不给你补）。
+    """
+    bad = [(index, float(value)) for index, value in enumerate(sums)
+           if abs(float(value) - 1.0) > tolerance]
+    bad.sort(key=lambda item: -abs(item[1] - 1.0))
+    return bad
+
+
+# ------------------------------------------------------------------ 尺子（P2 / P4）
+# 作者唯一自查不到的东西是**骨的静止朝向**：肩差 172° 的包在静止截图里完全正常，转身之后
+# 手臂整个转到身后、手指拉成面条（实机三次坐实），而且它不在头/手/脚/根骨这几个容易抽查的
+# 位置上，它在肩和手指。所以逐骨把位置和朝向两个数都报出来。
+#
+# **朝向的定义是「本骨 → 人形子骨」的位移方向**，两边同一个定义，在 Unity 空间里比。
+# 这是事实文档 §6.2 那六个坑换来的定义，别改成别的：
+#   · 不能用 Blender 骨的 head→tail —— Biped 的 tail 约定给反向（Spine1 报 172.9°）；
+#   · 不能把全部子骨平均 —— 脊椎下挂的衣物骨会把方向拽反（报 154°），只取人形子骨；
+#   · 不能量骨自身坐标系的整体转角（含绕骨轴的 roll）—— 2026-08-17 拿**原版自己的身体**标定：
+#     插件重建参考骨架时 roll 就没保留（`_create_armature` 只按 head→tail + 默认 roll 建骨），
+#     104 根里 69 根整体转角正好 180°、而骨轴向差 0.00°。按整体转角判，原版自己全红。
+#     lossless 路径下 `M_game × B_source` 本身就是重定向，roll 不要求逐根对齐。
+#
+# 阈值有实测背书：烘对了的包 39 根人形骨残差全 0.0°；坏样本 52°~172°，而"腿/躯干看着正常"
+# 那一档是 7°。
+ORIENTATION_WARN_DEG, ORIENTATION_FAIL_DEG = 5.0, 15.0
+# 位置按**骨节长度的比例**判：手指骨节 20~25mm、四肢 150~300mm，同一个绝对毫米数两头都判错。
+# 位置**最高只判黄**：lossless 蒙皮把静止位置差当重定向吸收（"免的是位置"），对齐更好但差了
+# 不等于会炸。会炸的是朝向。
+POSITION_WARN_RATIO, POSITION_FAIL_RATIO = 0.10, 0.25
+POSITION_FLOOR_MM = 2.0                     # 比这个还小一律绿：短骨的比例会被浮点噪声放大
+POSITION_WARN_MM, POSITION_FAIL_MM = 5.0, 20.0   # 拿不到骨长时的兜底（四肢量级）
+_GRADE_ORDER = {"red": 0, "yellow": 1, "green": 2}
+
+
+def _worse(*grades):
+    return min(grades, key=lambda grade: _GRADE_ORDER[grade])
+
+
+def _angle_between(a, b):
+    """两个向量的夹角（度），零向量返回 None。恒在 [0,180]。"""
+    length_a = math.sqrt(sum(value * value for value in a))
+    length_b = math.sqrt(sum(value * value for value in b))
+    if length_a < 1e-9 or length_b < 1e-9:
+        return None
+    cosine = sum(a[i] * b[i] for i in range(3)) / (length_a * length_b)
+    return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
+
+
+def _position_grade(millimetres, length_mm=0.0):
+    """位置差的判级——上限是黄，见上面阈值那段。"""
+    if millimetres <= POSITION_FLOOR_MM:
+        return "green"
+    warn = length_mm * POSITION_WARN_RATIO if length_mm > 0 else POSITION_WARN_MM
+    return "yellow" if millimetres >= warn else "green"
+
+
+def _orientation_grade(degrees):
+    if degrees is None:
+        return "green"                       # 末节骨没有人形子骨，量不了朝向，不冤枉它
+    return ("red" if degrees >= ORIENTATION_FAIL_DEG
+            else "yellow" if degrees >= ORIENTATION_WARN_DEG else "green")
+
+
+def format_degrees(degrees):
+    """朝向差的显示：末节骨没有人形子骨，量不了 —— 说"量不了"，别显示成 0°。"""
+    return "量不了" if degrees is None else f"{degrees:.1f}°"
+
+
+def rest_alignment(source_positions, target_positions, children=None, lengths=None):
+    """逐骨的关节位置差(mm) / 静止朝向差(°) / 判级，最差的排前面。
+
+    三个入参都以**目标骨名**为键、都在 Unity 空间（游戏骨位置用 `bindPose` 求逆得到，
+    别按层级累加 `localPosition`）：
+
+    `source_positions` {目标骨名: 对应源骨的静止位置}
+    `target_positions` {目标骨名: 游戏骨的静止位置}
+    `children`         {目标骨名: [人形子骨名]} —— 朝向取「本骨 → 子骨」，多个子骨取最差那个
+    `lengths`          {目标骨名: 骨节长度（米）}，只用于把位置差判成比例
+
+    纯函数：源就是目标自己时应得 0.0mm / 0.0° / 全绿。
+    """
+    rows = []
+    for name, source in source_positions.items():
+        target = target_positions.get(name)
+        if target is None:
+            continue
+        millimetres = math.sqrt(sum((source[i] - target[i]) ** 2
+                                    for i in range(3))) * 1000.0
+        worst_angle, worst_child = None, None
+        for child in (children or {}).get(name, ()):
+            child_source, child_target = source_positions.get(child), target_positions.get(child)
+            if child_source is None or child_target is None:
+                continue
+            angle = _angle_between([child_source[i] - source[i] for i in range(3)],
+                                   [child_target[i] - target[i] for i in range(3)])
+            if angle is not None and (worst_angle is None or angle > worst_angle):
+                worst_angle, worst_child = angle, child
+        length_mm = float((lengths or {}).get(name) or 0.0) * 1000.0
+        rows.append({
+            "bone": name, "mm": millimetres, "deg": worst_angle, "child": worst_child,
+            "grade": _worse(_position_grade(millimetres, length_mm),
+                            _orientation_grade(worst_angle)),
+        })
+    rows.sort(key=lambda row: (_GRADE_ORDER[row["grade"]], -(row["deg"] or 0.0), -row["mm"]))
+    return rows
+
+
+# 跨关节权重混合带：关节两侧都沾到权重的顶点占比。唯一能**预判**"肩膀会不会崩"的数字 ——
+# 作者那句"A→T 之后肩膀变小崩坏"，量出来就是源自己跨肩带只有 4.9%（原版 13.3%）。
+# 关节表与 tools/audit_ab_rig.py:27 JOINTS 同源；那边按 bundle 的骨下标算、这边按骨名算，
+# 共用不了同一个实现，改一边记得改另一边。
+CROSS_JOINT_BANDS = (
+    ("肩", "LeftShoulder", "LeftArm"), ("肩", "RightShoulder", "RightArm"),
+    ("肘", "LeftArm", "LeftForeArm"), ("肘", "RightArm", "RightForeArm"),
+    ("腕", "LeftForeArm", "LeftHand"), ("腕", "RightForeArm", "RightHand"),
+    ("膝", "LeftUpLeg", "LeftLeg"), ("膝", "RightUpLeg", "RightLeg"),
+)
+# 原版真值（tools/audit_ab_rig.py 逐件量出来的）。场景里有带权重参考体时用参考体现算，
+# 拿不到才用这张表 —— 数字是同一套量法的结果。
+VANILLA_CROSS_JOINT_SHARE = {"肩": 0.133, "肘": 0.039, "腕": 0.062, "膝": 0.095}
+BAND_FLOOR = 0.02      # 原版自己都低于这个数的关节不做判断（那里本来不靠权重过渡）
+BAND_FAIL_RATIO = 0.4  # 掉到原版同关节的四成以下 = 会崩
+
+
+def joint_band_sides(parent_of):
+    """{关节: {骨名: 1 近侧 | 2 远侧}}。近侧 = 近端骨子树减去远侧子树。"""
+    def ancestry(name):
+        result, current, seen = [name], parent_of.get(name), {name}
+        while current and current not in seen:
+            result.append(current)
+            seen.add(current)
+            current = parent_of.get(current)
+        return result
+
+    chains = {name: ancestry(name) for name in parent_of}
+    sides = {}
+    for label, near, far in CROSS_JOINT_BANDS:
+        table = sides.setdefault(label, {})
+        for name, up in chains.items():
+            if far in up:
+                table[name] = 2
+            elif near in up:
+                table[name] = 1
+    return sides
+
+
+def cross_joint_bands(influences, sides, threshold=0.01):
+    """每个关节：两侧都沾到权重的顶点占比。`influences` = 逐顶点的 {骨名: 权重}。
+
+    纯函数（原版数据喂进来也能跑，INV-8）。
+    """
+    counters = {label: [0, 0] for label in sides}
+    for vertex in influences:
+        pairs = vertex.items() if isinstance(vertex, dict) else vertex
+        bones = [name for name, weight in pairs if float(weight) > threshold]
+        for label, table in sides.items():
+            seen = {table[name] for name in bones if name in table}
+            if seen == {1, 2}:
+                counters[label][0] += 1
+            elif seen:
+                counters[label][1] += 1
+    return {label: {"cross": cross, "total": cross + same,
+                    "share": (cross / (cross + same) if cross + same else 0.0)}
+            for label, (cross, same) in counters.items()}
+
+
+def cross_joint_band_findings(mod_bands, vanilla_bands=None):
+    """把两组带宽拼成「肩 4.9%（原版 13.3%）」+ 判级；没有基线的关节判 green 不冤枉人。"""
+    baseline = dict(VANILLA_CROSS_JOINT_SHARE)
+    baseline.update({label: values["share"]
+                     for label, values in (vanilla_bands or {}).items()
+                     if values.get("total")})
+    rows = []
+    for label in dict.fromkeys(item[0] for item in CROSS_JOINT_BANDS):
+        band = mod_bands.get(label)
+        if band is None or not band.get("total"):
+            continue
+        base = float(baseline.get(label) or 0.0)
+        share = float(band["share"])
+        grade = "green"
+        if base >= BAND_FLOOR and share < base:
+            grade = "red" if share < base * BAND_FAIL_RATIO else "yellow"
+        rows.append({"joint": label, "share": share, "vanilla": base, "grade": grade})
+    return rows
+
+
+# ---------------------------------------------------------- 结构分组（一行一组）
+# 痛点：表单一行一根骨 —— chisaki 那条 MMD 裙子作者手点了几十次。分组信号**一个骨名都不读**
+# （原来的正则剥 left/right 在日语/中文/乱码骨名下全废）：
+#   锚点  沿父链向上第一根身体骨 —— 天然分开"挂 Pelvis 的裙"和"挂 ForeArm 的袖"
+#   链    连通分支，分叉即断（与"不建分叉链"的规矩对齐）
+#   归组  同锚点 + 链长相同 ±1
+# 父链上没权重的中间骨不算断链：按"最近的在册祖先"接，否则一个空骨就把裙摆劈成两组。
+# ponytail: §4.3 的第三个信号"影响顶点在网格上连片"没做 —— 锚点+链长已经把 12 片裙摆并成
+# 一行；同锚点同链长的尾巴混进裙摆那一行时，作者拆开逐根覆盖即可。真需要再加顶点连通性。
+def structural_bone_groups(bones, parent_of, body_bones=()):
+    """把装饰骨按结构并成组，返回 [{key, anchor, chains, depth, members}]（成员保持输入顺序）。"""
+    order = [str(name) for name in bones if str(name)]
+    body = {str(name) for name in body_bones}
+    garment = [name for name in order if name not in body]
+    pool = set(garment)
+
+    def ancestor_in(name, wanted):
+        seen, current = {name}, parent_of.get(name)
+        while current and current not in seen:
+            if current in wanted:
+                return current
+            seen.add(current)
+            current = parent_of.get(current)
+        return None
+
+    parent = {name: ancestor_in(name, pool) for name in garment}
+    anchor = {name: ancestor_in(name, body) or "" for name in garment}
+    children = {}
+    for name, up in parent.items():
+        if up:
+            children[up] = children.get(up, 0) + 1
+
+    def root_of(name):
+        seen = set()
+        while name not in seen:
+            seen.add(name)
+            up = parent.get(name)
+            if not up or children.get(up, 0) > 1:   # 分叉即断
+                return name
+            name = up
+        return name
+
+    chains = {}
+    for name in garment:
+        chains.setdefault(root_of(name), []).append(name)
+
+    by_anchor = {}
+    for root, members in chains.items():
+        by_anchor.setdefault(anchor.get(root, ""), []).append((len(members), root))
+
+    groups = []
+    for anchor_name, items in sorted(by_anchor.items()):
+        buckets = []
+        for length, root in sorted(items):
+            if buckets and length - buckets[-1][-1][0] <= 1:   # 链长 ±1 归一组
+                buckets[-1].append((length, root))
+            else:
+                buckets.append([(length, root)])
+        for bucket in buckets:
+            members = {name for _length, root in bucket for name in chains[root]}
+            groups.append({
+                "key": f"{anchor_name or 'root'}|L{bucket[0][0]}",
+                "anchor": anchor_name,
+                "chains": len(bucket),
+                "depth": max(length for length, _root in bucket),
+                "members": [name for name in order if name in members],
+            })
+    return groups
+
+
+# §4.2 的五档：每根骨最终只能处于其一，**不允许"未决定"进入导出**（硬闸门在批次 3）。
+# 这一版先把它显示出来 —— 现在 72 根静默塌 Hips 的骨和真映射在表单里长得一模一样，
+# 排错只能去 dump JSON。`bake` / `reject` 还没有对应算子，先立词汇不给假开关。
+ROW_STATE_LABELS = {
+    "direct": "直接映射", "merge": "合并", "helper": "辅助骨",
+    "bake": "烘焙", "reject": "拒绝", "undecided": "未决定",
+}
+
+
+def row_state(target, strategy="auto", shared_target=False):
+    """一行（= 一组）的五档状态。`shared_target` = 别的行也用这根目标骨（多对一）。"""
+    strategy = str(strategy or "auto")
+    # bake / reject 是**决定**，比"填了目标骨"更强：bake 是"先把静止形变烘进网格再并到父骨"，
+    # reject 是"这根骨处理不了，禁止导出"。所以它们排在 target 之前判。
+    if strategy in ("bake", "reject"):
+        return strategy
+    if str(target or "").strip():
+        return "merge" if shared_target else "direct"
+    if strategy in ("integrate", "native_driver"):
+        return "helper"
+    if strategy in ("rigid", "follow_skirt", "follow_nearest") or strategy.startswith("follow:"):
+        return "merge"
+    return "undecided"
 
 
 def merge_accessory_bone_remap(body_remap, *accessory_maps):
@@ -2762,8 +3201,8 @@ def build_accessory_physics_remap(
     def group_key(name):
         if name in explicit_groups:
             return str(explicit_groups[name])
-        # ponytail: name-only grouping is a heuristic; provide group_by_name for
-        # assets whose left/right pieces are not named symmetrically.
+        # 兜底：调用方没给结构分组时才走名字（`structural_bone_groups()` 是生产路径）。
+        # 正则剥 left/right 对日语/中文/乱码骨名全废，所以它只是兜底，不是判据。
         return re.sub(r"(?:left|right|_l|_r)(?=_|$)", "", name.lower())
 
     def override_for(name):
@@ -2791,6 +3230,10 @@ def build_accessory_physics_remap(
         candidates = [name for name in swing_names if "bust" in name.lower()]
         return nearest(position, candidates)[0] if candidates else None
 
+    def centroid(names):
+        return tuple(sum(source[name][axis] for name in names) / len(names)
+                     for axis in range(3))
+
     def directive_for(names):
         for name in names:  # author override wins outright
             directive = override_for(name)
@@ -2806,13 +3249,15 @@ def build_accessory_physics_remap(
 
     groups = {}
     for name in accessory:
-        lower = name.lower()
-        kind = "segment" if any(token in lower for token in ("skirt", "dress", "cloth")) else "group"
-        key = name if kind == "segment" else group_key(name)
-        groups.setdefault((kind, key), []).append(name)
+        groups.setdefault(group_key(name), []).append(name)
 
     mapping, strategies, rigid, new_bones = {}, {}, {}, []
-    for (kind, _key), names in groups.items():
+    for names in groups.values():
+        # 一组里有几条链（成员的父不在本组 = 一条链的根），就决定"逐骨蹭最近"还是"按质心蹭"。
+        # 从前这里按 skirt/dress/cloth 词表判 —— 外语命名的裙摆全落进"按质心"，40 根骨一起
+        # 蹭同一根摇物骨。链数是同一件事的结构信号，不读名字。
+        kind = "segment" if sum(
+            1 for name in names if parents.get(name) not in names) > 1 else "group"
         directive = directive_for(names)
 
         if directive == "integrate":
@@ -2828,11 +3273,7 @@ def build_accessory_physics_remap(
             continue
 
         if directive == "follow_nearest":
-            position = tuple(
-                sum(source[name][axis] for name in names) / len(names)
-                for axis in range(3)
-            )
-            candidate, distance_sq = nearest(position)
+            candidate, distance_sq = nearest(centroid(names))
             if candidate is not None and distance_sq <= max_distance_sq:
                 for name in names:
                     mapping[name] = candidate
@@ -2849,11 +3290,7 @@ def build_accessory_physics_remap(
         if directive is None and any(
                 any(token in name.lower() for token in ("胸", "bust", "chest"))
                 for name in names):
-            position = tuple(
-                sum(source[name][axis] for name in names) / len(names)
-                for axis in range(3)
-            )
-            candidate = bust_target(position)
+            candidate = bust_target(centroid(names))
             if candidate is not None:
                 for name in names:
                     mapping[name] = candidate
@@ -2867,29 +3304,31 @@ def build_accessory_physics_remap(
             continue
 
         follow_skirt = directive == "follow_skirt"
-        position = tuple(
-            sum(source[name][axis] for name in names) / len(names)
-            for axis in range(3)
-        )
-        candidate, distance_sq = nearest(
-            position, skirt_swing_names if follow_skirt else None
-        )
-        if candidate is None:
-            new_bones.extend(names)
-            for name in names:
-                strategies[name] = "new_bone"
-            continue
-        # follow_skirt (lace) rides the skirt even past max_distance — its bones sit at the
-        # hem, farther from the skirt bones' anchors than the cutoff. Position-default falls
-        # back to a rigid body parent when the nearest swing bone is too far.
-        if distance_sq > max_distance_sq and not follow_skirt:
-            for name in names:
-                rigid[name] = rigid_parent(name)
-                strategies[name] = "rigid_parent"
-            continue
-        for name in names:
-            mapping[name] = candidate
-            strategies[name] = "segment_nearest" if kind == "segment" else "group_centroid"
+        pool = skirt_swing_names if follow_skirt else None
+        # 一组多条链（一圈裙摆、一圈花边）就逐骨蹭自己那边最近的摇物骨；整组只有一条链才按
+        # 质心蹭。拿质心去蹭一整圈，等于把 40 根骨全绑到同一根摇物骨上。
+        parcels = ([(name, source[name]) for name in names] if kind == "segment"
+                   else [(None, centroid(names))])
+        for owner, position in parcels:
+            batch = [owner] if owner else list(names)
+            candidate, distance_sq = nearest(position, pool)
+            if candidate is None:
+                new_bones.extend(batch)
+                for name in batch:
+                    strategies[name] = "new_bone"
+                continue
+            # follow_skirt (lace) rides the skirt even past max_distance — its bones sit at the
+            # hem, farther from the skirt bones' anchors than the cutoff. Position-default falls
+            # back to a rigid body parent when the nearest swing bone is too far.
+            if distance_sq > max_distance_sq and not follow_skirt:
+                for name in batch:
+                    rigid[name] = rigid_parent(name)
+                    strategies[name] = "rigid_parent"
+                continue
+            for name in batch:
+                mapping[name] = candidate
+                strategies[name] = ("segment_nearest" if kind == "segment"
+                                    else "group_centroid")
 
     return {
         "targetSwingBones": swing_names,
@@ -2926,6 +3365,105 @@ _SWING_CATEGORY_RULES = (
 )
 
 
+# 按几何判部件类型，不读名字。
+#
+# 按名字判有个硬伤：**只对恰好用本作命名习惯的源有效**。原神 rip 把裙摆叫 `Bone_HemA01_L`，
+# MMD 叫 `スカート` —— 词表两个都不认，于是整条链拿不到物理。而且按名字猜已经翻过车：
+# `lace` 可能长在靴口上，原神的 `Hair` 图集里有整条腿。
+#
+# 三个信号，按可信度排（判据与 SDK 侧 ChainClassifier 同源，那边在 381 套原版上量过）：
+#   1. 挂在哪根身体骨上 —— 每条衣物链最终都会 parent 进一根 humanoid 骨，那根骨就说明了大半。
+#      原版 1537 条链的锚点分布：Pelvis 758、Spine2 86、Spine 82、UpLeg_H 80、Shoulder 50。
+#   2. 同一个锚点上有几条 —— 裙摆是一圈，原版一个锚点挂 4–8 片；胯上只挂一两条的是
+#      围裙/尾巴/腰带，属 cloth 不属 skirt。
+#   3. 往哪个方向垂 —— 只用来拆胸口那一族：向下垂是披挂，朝前是胸，朝后/朝外是翅膀/披肩。
+#
+# 名字仍然保留为**兜底**：几何信息拿不全时（比如没有锚点）退回词表，总比什么都不判强。
+# 匹配方式不是随手定的：手臂/腿那两行用**子串**（LeftForeArm、RightUpLeg_H 都要命中），
+# 头颈和胯部那两行用**精确相等** —— `Spine2` 必须**落不进** `Spine`，因为胸口一族
+# （披风 / 翅膀 / 胸）要靠垂向再分一次，混进胯部一族就全被判成裙摆了。
+_ANCHOR_CATEGORY = (
+    (("Hand", "ForeArm", "Arm", "Shoulder"), "sleeve", "contains"),
+    (("Head", "Neck"), "ribbon", "exact"),            # 头饰按最软的一档处理
+    (("Leg", "Foot", "Toe"), "skirt", "contains"),    # 靴口、腿环 —— 和裙摆同一套限位
+    (("Hips", "Pelvis", "Spine"), "skirt", "exact"),
+)
+
+# 一圈裙摆至少几片。少于这个数的按 cloth（围裙/尾巴/腰带）。
+SKIRT_RING_MIN = 4
+
+
+def swing_category_by_geometry(anchor, direction=None, siblings=None, fallback_name=None):
+    """锚点 + 垂向 + 同锚点条数 → 部件类型；判不出来时退回按名字。
+
+    `direction` 是链的整体走向（单位向量，y 向下为负、z 向前为正），可以不给。
+    `siblings`  同一个锚点上有几条链，可以不给（不给就不做"一圈"判定）。
+    """
+    anchor = str(anchor or "")
+    category = None
+    for tokens, resolved, mode in _ANCHOR_CATEGORY:
+        hit = (anchor in tokens) if mode == "exact" else any(t in anchor for t in tokens)
+        if hit:
+            category = resolved
+            break
+    if category == "skirt" and siblings is not None and siblings < SKIRT_RING_MIN:
+        # 裙摆是一圈；胯上只挂一两条的是围裙/尾巴/腰带。
+        category = "cloth"
+    if category is None and direction is not None and len(direction) >= 3:
+        x, y, z = (float(v) for v in direction[:3])
+        if y < -0.6:
+            category = "cloth"             # 向下垂的整片：披风/大衣
+        else:
+            category = "ribbon"            # 朝前=胸口一带，朝后/朝外=翅膀/披挂，都按软饰品
+    if category is None:
+        category = swing_category(fallback_name if fallback_name is not None else anchor)
+    return category
+
+
+def geometric_swing_categories(bones, parent_of, positions, body_remap=None):
+    """{骨名: 部件类型} —— 按**几何**给每条衣物链定档，一个骨名都不读（除了兜底）。
+
+    `positions` = {骨名: Unity 空间位置}（用 `bone.head_local` 换算，别按 localPosition 累加）。
+    三个信号见 `swing_category_by_geometry`：锚点（沿父链第一根身体骨，映射成游戏骨名）、
+    同锚点上有几条链、链的整体垂向。判不出来才退回按名字。
+
+    这一层的意义：按名字判**只对恰好用本作命名习惯的源有效** —— 原神 rip 的裙摆叫
+    `Bone_HemA01_L`、MMD 叫 `スカート`，词表两个都不认，于是整条链拿到最保守的一档
+    （飘带：不建链），裙摆该有的环形碰撞和限位全丢。
+    """
+    body = body_remap or {}
+    groups = structural_bone_groups(bones, parent_of, body)
+    result = {}
+    for group in groups:
+        members = group["members"]
+        pool = set(members)
+        roots = [name for name in members if (parent_of or {}).get(name) not in pool]
+        tips = [name for name in members
+                if not any((parent_of or {}).get(child) == name for child in pool)]
+
+        def centre(names):
+            picked = [positions[name] for name in names if name in (positions or {})]
+            if not picked:
+                return None
+            return [sum(item[axis] for item in picked) / len(picked) for axis in range(3)]
+
+        start, end = centre(roots), centre(tips)
+        direction = None
+        if start and end:
+            delta = [end[axis] - start[axis] for axis in range(3)]
+            length = math.sqrt(sum(value * value for value in delta))
+            if length > 1e-6:
+                direction = [value / length for value in delta]
+        # 锚点要换成**游戏骨名**：`_ANCHOR_CATEGORY` 那张表按游戏骨名匹配（Hips / Spine2 / …）
+        anchor = body.get(group["anchor"], group["anchor"])
+        category = swing_category_by_geometry(
+            anchor, direction=direction, siblings=group["chains"],
+            fallback_name=members[0] if members else "")
+        for name in members:
+            result[name] = category
+    return result
+
+
 def swing_category(name):
     lower = str(name).lower()
     for category, tokens in _SWING_CATEGORY_RULES:
@@ -2934,9 +3472,88 @@ def swing_category(name):
     return "ribbon"
 
 
+# P3：链类别 → 学马自己的布料驱动器。
+#
+# **只收参考骨是通用身体骨的三种。**530 套原版实测，各驱动器的 setting 引用指向：
+#   Skirt.referenceBone           → Left/RightUpLeg      通用 ✅
+#   Frill.referenceBone           → Left/RightArm        通用 ✅
+#   HumanoidSleeve.referenceBone  → Left/RightHand       通用 ✅
+#   Waist    → LeftWaist_O / LeftThigh_O                 每套服装自己的偏移骨 ❌
+#   Furisode → LeftFurisodeA_O …                         同上 ❌
+#   Poncho   → RightBackPoncho_move_in_O … 六个引用全是 *_O   同上 ❌
+# 后三种装到别的服装上只会得到一串空引用，表现是"这块布不动"，日志还全绿 —— 那正是这一版
+# 要消灭的静默洞，所以宁可不支持。ribbon 也不给驱动器：原版的蝴蝶结/飘带就是裸的
+# ActorSwingDynamicBone，本来就该走摇物。
+_DRIVER_BY_CATEGORY = {
+    "skirt": ("Skirt", "{side}UpLeg"),
+    "cloth": ("Frill", "{side}Arm"),
+    "sleeve": ("HumanoidSleeve", "{side}Hand"),
+}
+# 有原版驱动器可用的部件类型。UI 拿它置灰、导出器拿它过滤 —— 两边读同一份，
+# 免得表单让作者选一个"选了什么也不会发生"的组合（ribbon 就是这种）。
+DRIVER_CATEGORIES = tuple(_DRIVER_BY_CATEGORY)
+
+
+def load_driver_presets(path=None):
+    """原版驱动器 setting 基准表（tools/scan_vanilla_drivers.py --install 产出）。"""
+    target = Path(path) if path else Path(__file__).with_name("driver_presets.json")
+    try:
+        with open(target, "r", encoding="utf-8") as stream:
+            return (json.load(stream) or {}).get("drivers") or {}
+    except (OSError, ValueError):
+        return {}
+
+
+def build_driver_block(category, side, presets=None):
+    """一根衣物骨的 `driver` 块；类别没有对应驱动器就返回 None。
+
+    `side` 是 "Left"/"Right"；判不出边就不给驱动器 —— 参考骨是分左右的，猜错等于把裙子
+    绑到另一条腿上。
+    """
+    entry = _DRIVER_BY_CATEGORY.get(str(category))
+    if not entry or side not in ("Left", "Right"):
+        return None
+    kind, reference_template = entry
+    presets = presets if presets is not None else load_driver_presets()
+    setting = presets.get(kind)
+    if not setting:
+        return None
+    bones = {name: reference_template.format(side=side) for name in (setting.get("bones") or {})}
+    return {
+        "type": kind,
+        "ints": dict(setting.get("ints") or {}),
+        "floats": dict(setting.get("floats") or {}),
+        "vectors": {k: list(v) for k, v in (setting.get("vectors") or {}).items()},
+        "bones": bones,
+    }
+
+
+_SIDE_SUFFIX = re.compile(r"[._](l|r)(?=$|[._\d])", re.IGNORECASE)
+
+
+def bone_side(name):
+    """骨名判左右。判不出返回 None —— 驱动器的参考骨分左右，猜错等于绑到另一条腿上。
+
+    单字母缩写必须**卡边界**：`Cloth_Ribbon` 里有个 `_r`，按子串匹配会被判成右侧，
+    然后裙子/袖子就绑到另一边去，而且离线完全看不出来。
+    """
+    text = str(name)
+    lower = text.lower()
+    if "左" in text:
+        return "Left"
+    if "右" in text:
+        return "Right"
+    if "left" in lower:
+        return "Left"
+    if "right" in lower:
+        return "Right"
+    match = _SIDE_SUFFIX.search(text)
+    return None if not match else ("Left" if match.group(1).lower() == "l" else "Right")
+
+
 def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
                              body_remap=None, default_swing=None, categories=None,
-                             presets=None):
+                             presets=None, driver_bones=None):
     """Build runtime-created source bones plus a synthetic tip per leaf.
 
     每根骨的摆动参数按 **部件类别 × 链上角色** 从原版基准表取（`swing_presets.json`，
@@ -3042,6 +3659,10 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
         preset["useWindGlobalForce"] = bool(preset["useWindGlobalForce"])
         return preset
 
+    # P3 预设只在作者点名了骨时才载入 —— 不点名就完全不碰这条路径。
+    driver_bones = {str(k): (str(v) if v else "") for k, v in (driver_bones or {}).items()}
+    driver_presets = load_driver_presets() if driver_bones else {}
+
     is_leaf = {
         name: not any(parents.get(child) == name for child in wanted)
         for name in wanted
@@ -3069,6 +3690,16 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
                 "swingRole": role_of[name],
                 "swing": swing_for(name, role_of[name], category),
             })
+            # P3：**作者点名的那几根骨**才改走姿势驱动器。以前这里收的是"类别集合"，
+            # 于是一行选了 skirt，全模型所有 skirt 类别的新骨都跟着走 —— 作者点的是一条链，
+            # 拿到的是整件衣服。默认空 dict：不点名就和以前逐字节一样，现有成品重导无差异。
+            # 驱动器和摇物二选一（运行时也这么执行），所以挂上驱动器就把 swing 去掉。
+            if name in driver_bones:
+                block = build_driver_block(driver_bones[name] or category,
+                                           bone_side(name), driver_presets)
+                if block:
+                    result[-1]["driver"] = block
+                    result[-1].pop("swing", None)
             if item.get("bindPose") is not None:
                 result[-1]["bindPose"] = item["bindPose"]
             pending.remove(name)

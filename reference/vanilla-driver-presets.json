@@ -1,0 +1,637 @@
+{
+  "scanned": 530,
+  "failed": 0,
+  "drivers": {
+    "Frill": {
+      "costumes": 78,
+      "instances": 288,
+      "hosts": {
+        "RightArmCloth_Front_H": 76,
+        "RightArmCloth_Back_H": 76,
+        "LeftArmCloth_Front_H": 68,
+        "LeftArmCloth_Back_H": 68
+      },
+      "setting": {
+        "ints": {
+          "composeType": 0,
+          "connectionAxis": 0,
+          "decomposeType": 2,
+          "rotationOrder": 0
+        },
+        "floats": {},
+        "vectors": {
+          "innerCoefficient": [
+            -1.0,
+            0.1,
+            -0.2
+          ],
+          "outerMinusCoefficient": [
+            0.0,
+            -0.1,
+            0.0
+          ],
+          "outerPlusCoefficient": [
+            0.0,
+            -0.05,
+            0.2
+          ],
+          "switchMinus": [
+            -180.0,
+            -30.0,
+            -125.0
+          ],
+          "switchPlus": [
+            180.0,
+            20.0,
+            20.0
+          ]
+        },
+        "bones": {
+          "referenceBone": [
+            {
+              "name": "RightArm",
+              "n": 152
+            },
+            {
+              "name": "LeftArm",
+              "n": 136
+            }
+          ]
+        }
+      }
+    },
+    "Furisode": {
+      "costumes": 25,
+      "instances": 70,
+      "hosts": {
+        "LeftFurisodeB_A": 23,
+        "LeftFurisodeA_A": 23,
+        "RightFurisodeA_A": 12,
+        "RightFurisodeB_A": 12
+      },
+      "setting": {
+        "ints": {},
+        "floats": {
+          "apexAngle": 90.0,
+          "coefficient": 0.8,
+          "max": 150.0,
+          "min": -150.0
+        },
+        "vectors": {
+          "backWay": [
+            0.1,
+            0.0,
+            -1.0
+          ]
+        },
+        "bones": {
+          "referenceForearmBone": [
+            {
+              "name": "LeftForeArm",
+              "n": 46
+            },
+            {
+              "name": "RightForeArm",
+              "n": 24
+            }
+          ],
+          "referenceFurisodeOffsetBone": [
+            {
+              "name": "LeftFurisodeB_O",
+              "n": 23
+            },
+            {
+              "name": "LeftFurisodeA_O",
+              "n": 23
+            },
+            {
+              "name": "RightFurisodeA_O",
+              "n": 12
+            },
+            {
+              "name": "RightFurisodeB_O",
+              "n": 12
+            }
+          ],
+          "referenceHandBone": [
+            {
+              "name": "LeftHand",
+              "n": 46
+            },
+            {
+              "name": "RightHand",
+              "n": 24
+            }
+          ],
+          "referenceSpineBone": [
+            {
+              "name": "Spine",
+              "n": 70
+            }
+          ]
+        }
+      }
+    },
+    "HumanoidArm": {
+      "costumes": 528,
+      "instances": 2112,
+      "hosts": {
+        "LeftArm_H": 528,
+        "RightArm_H": 528,
+        "RightArm_Roll_H": 528,
+        "LeftArm_Roll_H": 528
+      },
+      "setting": {
+        "ints": {
+          "humanPartDof": 4
+        },
+        "floats": {
+          "coefficient": -0.8
+        },
+        "vectors": {},
+        "bones": {}
+      }
+    },
+    "HumanoidHand": {
+      "costumes": 528,
+      "instances": 2112,
+      "hosts": {
+        "RightForeArm_Roll_H": 528,
+        "LeftForeArm_Roll_H": 528,
+        "LeftHand_H": 528,
+        "RightHand_H": 528
+      },
+      "setting": {
+        "ints": {
+          "humanPartDof": 5
+        },
+        "floats": {
+          "coefficient": 0.5
+        },
+        "vectors": {},
+        "bones": {}
+      }
+    },
+    "HumanoidSleeve": {
+      "costumes": 9,
+      "instances": 36,
+      "hosts": {
+        "LeftSleeve_Up_H": 9,
+        "RightSleeve_Down_H": 9,
+        "LeftSleeve_Down_H": 9,
+        "RightSleeve_Up_H": 9
+      },
+      "setting": {
+        "ints": {
+          "composeType": 1,
+          "decomposeType": 0,
+          "humanPartDof": 4
+        },
+        "floats": {},
+        "vectors": {
+          "innerCoefficient": [
+            0.8,
+            0.4,
+            0.1
+          ],
+          "outerMinusCoefficient": [
+            0.0,
+            0.3,
+            0.6
+          ],
+          "outerPlusCoefficient": [
+            0.0,
+            0.5,
+            0.6
+          ],
+          "switchMinus": [
+            -180.0,
+            -7.0,
+            -1.0
+          ],
+          "switchPlus": [
+            180.0,
+            40.0,
+            30.0
+          ]
+        },
+        "bones": {
+          "referenceBone": [
+            {
+              "name": "LeftHand",
+              "n": 18
+            },
+            {
+              "name": "RightHand",
+              "n": 18
+            }
+          ]
+        }
+      }
+    },
+    "HumanoidSleeveSimple": {
+      "costumes": 26,
+      "instances": 74,
+      "hosts": {
+        "LeftSleeve_Up_H": 26,
+        "LeftSleeve_Down_H": 26,
+        "RightSleeve_Up_H": 11,
+        "RightSleeve_Down_H": 11
+      },
+      "setting": {
+        "ints": {
+          "composeType": 1,
+          "decomposeType": 0,
+          "humanPartDof": 0
+        },
+        "floats": {},
+        "vectors": {
+          "innerCoefficient": [
+            0.8,
+            0.4,
+            0.1
+          ],
+          "outerMinusCoefficient": [
+            0.0,
+            0.5,
+            0.6
+          ],
+          "outerPlusCoefficient": [
+            0.0,
+            0.5,
+            0.6
+          ],
+          "switchMinus": [
+            -180.0,
+            -7.0,
+            -10.5
+          ],
+          "switchPlus": [
+            180.0,
+            20.0,
+            35.0
+          ]
+        },
+        "bones": {
+          "referenceBone": [
+            {
+              "name": "LeftHand",
+              "n": 52
+            },
+            {
+              "name": "RightHand",
+              "n": 22
+            }
+          ]
+        }
+      }
+    },
+    "HumanoidUpLeg": {
+      "costumes": 528,
+      "instances": 2112,
+      "hosts": {
+        "RightUpLeg_H": 528,
+        "RightUpLeg_Roll_H": 528,
+        "LeftUpLeg_Roll_H": 528,
+        "LeftUpLeg_H": 528
+      },
+      "setting": {
+        "ints": {
+          "humanPartDof": 3
+        },
+        "floats": {
+          "coefficient": -1.0
+        },
+        "vectors": {},
+        "bones": {}
+      }
+    },
+    "LateRotationSimple": {
+      "costumes": 33,
+      "instances": 102,
+      "hosts": {
+        "LeftFoot_H": 33,
+        "RightFoot_H": 33,
+        "LeftToeBase_H": 18,
+        "RightToeBase_H": 18
+      },
+      "setting": {
+        "ints": {
+          "composeType": 0,
+          "connectionAxis": 0,
+          "decomposeType": 0,
+          "rotationOrder": 4
+        },
+        "floats": {},
+        "vectors": {
+          "coefficient": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "limitMax": [
+            180.0,
+            180.0,
+            180.0
+          ],
+          "limitMin": [
+            -180.0,
+            -180.0,
+            -180.0
+          ]
+        },
+        "bones": {
+          "referenceBone": [
+            {
+              "name": "LeftFoot",
+              "n": 33
+            },
+            {
+              "name": "RightFoot",
+              "n": 33
+            },
+            {
+              "name": "LeftToeBase",
+              "n": 18
+            },
+            {
+              "name": "RightToeBase",
+              "n": 18
+            }
+          ]
+        }
+      }
+    },
+    "Poncho": {
+      "costumes": 39,
+      "instances": 132,
+      "hosts": {
+        "RightBackPoncho_H": 35,
+        "LeftBackPoncho_H": 33,
+        "RightFrontPoncho_H": 33,
+        "LeftFrontPoncho_H": 31
+      },
+      "setting": {
+        "ints": {},
+        "floats": {
+          "innerLimit": 90.0,
+          "lerpCoefficient": 0.5,
+          "outerLimit": -45.0
+        },
+        "vectors": {
+          "axisWay": [
+            1.0,
+            -0.0,
+            -0.0
+          ]
+        },
+        "bones": {
+          "referenceArmBone": [
+            {
+              "name": "RightArm",
+              "n": 68
+            },
+            {
+              "name": "LeftArm",
+              "n": 64
+            }
+          ],
+          "referenceArmOffsetBone": [
+            {
+              "name": "RightArmPoncho_O",
+              "n": 68
+            },
+            {
+              "name": "LeftArmPoncho_O",
+              "n": 64
+            }
+          ],
+          "referenceBodyOffsetBone": [
+            {
+              "name": "RightBodyBackPoncho_O",
+              "n": 35
+            },
+            {
+              "name": "LeftBodyBackPoncho_O",
+              "n": 33
+            },
+            {
+              "name": "RightBodyFrontPoncho_O",
+              "n": 33
+            },
+            {
+              "name": "LeftBodyFrontPoncho_O",
+              "n": 31
+            }
+          ],
+          "referenceInnerOffsetBone": [
+            {
+              "name": "RightBackPoncho_move_in_O",
+              "n": 35
+            },
+            {
+              "name": "LeftBackPoncho_move_in_O",
+              "n": 33
+            },
+            {
+              "name": "RightFrontPoncho_move_in_O",
+              "n": 33
+            },
+            {
+              "name": "LeftFrontPoncho_move_in_O",
+              "n": 31
+            }
+          ],
+          "referenceOuterOffsetBone": [
+            {
+              "name": "RightBackPoncho_move_out_O",
+              "n": 35
+            },
+            {
+              "name": "LeftBackPoncho_move_out_O",
+              "n": 33
+            },
+            {
+              "name": "RightFrontPoncho_move_out_O",
+              "n": 33
+            },
+            {
+              "name": "LeftFrontPoncho_move_out_O",
+              "n": 31
+            }
+          ],
+          "referencePonchoOffsetBone": [
+            {
+              "name": "RightBackPoncho_O",
+              "n": 35
+            },
+            {
+              "name": "LeftBackPoncho_O",
+              "n": 33
+            },
+            {
+              "name": "RightFrontPoncho_O",
+              "n": 33
+            },
+            {
+              "name": "LeftFrontPoncho_O",
+              "n": 31
+            }
+          ]
+        }
+      }
+    },
+    "Rotation": {
+      "costumes": 528,
+      "instances": 2229,
+      "hosts": {
+        "LeftForeArm_H": 528,
+        "RightForeArm_H": 528,
+        "RightLeg_H": 528,
+        "LeftLeg_H": 528,
+        "LeftForeArm_Receive_A": 53,
+        "RightForeArm_Receive_A": 36,
+        "LeftForeArm_Recieve_A": 13,
+        "RightForeArm_Recieve_A": 13
+      },
+      "setting": {
+        "ints": {
+          "composeType": 3,
+          "connectionAxis": 0,
+          "decomposeType": 0,
+          "rotationOrder": 1
+        },
+        "floats": {},
+        "vectors": {
+          "coefficient": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "limitMax": [
+            180.0,
+            180.0,
+            180.0
+          ],
+          "limitMin": [
+            -180.0,
+            -180.0,
+            -180.0
+          ]
+        },
+        "bones": {
+          "referenceBone": [
+            {
+              "name": "LeftForeArm",
+              "n": 594
+            },
+            {
+              "name": "RightForeArm",
+              "n": 577
+            },
+            {
+              "name": "RightLeg",
+              "n": 528
+            },
+            {
+              "name": "LeftLeg",
+              "n": 528
+            }
+          ]
+        }
+      }
+    },
+    "Skirt": {
+      "costumes": 379,
+      "instances": 3061,
+      "hosts": {
+        "RightFrontSideSkirt_A": 367,
+        "RightFrontSkirt_A": 367,
+        "LeftFrontSkirt_A": 363,
+        "LeftFrontSideSkirt_A": 361,
+        "RightBackSkirt_A": 359,
+        "RightBackSideSkirt_A": 357,
+        "LeftBackSideSkirt_A": 351,
+        "LeftBackSkirt_A": 350
+      },
+      "setting": {
+        "ints": {
+          "connectionAxis": 0,
+          "rotationOrder": 0
+        },
+        "floats": {},
+        "vectors": {
+          "innerCoefficient": [
+            0.0,
+            0.1,
+            0.1
+          ],
+          "limitMax": [
+            180.0,
+            30.0,
+            70.0
+          ],
+          "limitMin": [
+            -180.0,
+            -180.0,
+            -78.0
+          ],
+          "outerCoefficient": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "bones": {
+          "referenceBone": [
+            {
+              "name": "RightUpLeg",
+              "n": 1536
+            },
+            {
+              "name": "LeftUpLeg",
+              "n": 1525
+            }
+          ]
+        }
+      }
+    },
+    "Waist": {
+      "costumes": 230,
+      "instances": 456,
+      "hosts": {
+        "LeftWaist_H": 230,
+        "RightWaist_H": 226
+      },
+      "setting": {
+        "ints": {},
+        "floats": {
+          "weight": 0.5
+        },
+        "vectors": {},
+        "bones": {
+          "referenceThighOffsetBone": [
+            {
+              "name": "LeftThigh_O",
+              "n": 230
+            },
+            {
+              "name": "RightThigh_O",
+              "n": 226
+            }
+          ],
+          "referenceWaistOffsetBone": [
+            {
+              "name": "LeftWaist_O",
+              "n": 230
+            },
+            {
+              "name": "RightWaist_O",
+              "n": 226
+            }
+          ]
+        }
+      }
+    }
+  }
+}

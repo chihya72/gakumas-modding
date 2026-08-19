@@ -1,6 +1,7 @@
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -81,11 +82,46 @@ def _bind_sanity_report(obj, remap):
     return failed, unmeasured, report
 
 
+def vendored_unitypy():
+    """插件自带的 UnityPy（随 zip 一起装的 wheel）能 import 就返回它的版本，否则 None。
+
+    Blender 自带的就是标准 CPython（4.2 / 4.5 都是 3.11），所以 PyPI 上的 cp311 wheel 直接能用，
+    不需要自己编。装在插件目录的 `vendor/` 下，作者不用装 Python、不用配 PATH、不用 pip。
+    版本是**钉死**的：`patch_unity_bundle.py` 按 1.10.x 的 API 写，1.25 把 `TextAsset.text`
+    改成别的了，装什么版本靠作者自己撞运气不行。
+    """
+    vendor = Path(__file__).resolve().parent / "vendor"
+    if not vendor.is_dir():
+        return None
+    if str(vendor) not in sys.path:
+        sys.path.insert(0, str(vendor))
+    try:
+        import UnityPy                                    # noqa: PLC0415
+        from PIL import Image                             # noqa: PLC0415,F401
+    except Exception:
+        return None
+    return getattr(UnityPy, "__version__", "unknown")
+
+
+def _run_bundle_patch_in_process(template, mod_root, output_bundle):
+    """在 Blender 自带 Python 里直接跑模板补丁（零子进程、零 PATH）。"""
+    import importlib.util
+    script = _resolve_patch_script()
+    spec = importlib.util.spec_from_file_location("gmi_patch_unity_bundle", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.main(["--template", str(template), "--mod-root", str(mod_root),
+                 "--output", str(output_bundle)])
+    return output_bundle
+
+
 def _run_bundle_patch(scene, mod_root, output_bundle):
-    """用外部 Python（装了 UnityPy）跑模板补丁，把 bundle 源灌进 R32 模板。"""
+    """把 bundle 源灌进 R32 模板：优先用插件自带的 UnityPy，没有才起外部 Python。"""
     template = bpy.path.abspath(scene.gmi_bundle_template)
     if not template or not Path(template).is_file():
         raise ValueError("请先选择有效的 R32 模板 bundle")
+    if vendored_unitypy():
+        return _run_bundle_patch_in_process(template, mod_root, output_bundle)
     python_exe = (scene.gmi_bundle_python or "python").strip()
     script = _resolve_patch_script()
     cmd = [python_exe, "-X", "utf8", str(script),
@@ -697,26 +733,81 @@ def _retarget_new_bone_roots(new_bones, records, skeleton):
     return retargeted
 
 
+def row_bones(item):
+    """一行覆盖的源骨。一行 = 一组（`members` 换行分隔），单根骨的行退化成 [source]。"""
+    members = [name for name in str(item.members or "").split("\n") if name]
+    return members or ([item.source] if item.source else [])
+
+
 def _form_bone_map(scene):
     """骨骼映射表单里作者填过的行。空目标=不干预,交给自动判断。"""
-    return {item.source: item.target.strip()
+    return {name: item.target.strip()
             for item in getattr(scene, "gmi_bone_map", ())
-            if item.source and item.target.strip()}
+            if item.target.strip()
+            for name in row_bones(item)}
 
 
 def _form_physics_overrides(scene):
-    """表单里选过装饰物理策略的行(填了目标骨的行不算,那已经是确定映射)。"""
-    return {item.source: item.strategy
+    """表单里选过装饰物理策略的行(填了目标骨的行不算,那已经是确定映射)。
+
+    `bake` / `reject` 不是物理策略，是五档决定 —— 对下游一律按 `rigid`（并到父骨、无物理）解析。
+    不翻译的话它们会掉进"按位置蹭最近摇物骨"那条兜底路径，静态装饰骨反而被绑上物理。
+    """
+    physical = {"bake": "rigid", "reject": "rigid"}
+    return {name: physical.get(item.strategy, item.strategy)
             for item in getattr(scene, "gmi_bone_map", ())
-            if item.source and item.strategy != "auto" and not item.target.strip()}
+            if item.strategy != "auto" and not item.target.strip()
+            for name in row_bones(item)}
 
 
 def _form_swing_categories(scene):
     """表单里点名过部件类型的行。只对自建摇物链有意义,别的策略不新建骨。"""
-    return {item.source: item.swing_category
+    return {name: item.swing_category
             for item in getattr(scene, "gmi_bone_map", ())
-            if item.source and item.swing_category != "auto"
-            and item.strategy == "integrate" and not item.target.strip()}
+            if item.swing_category != "auto"
+            and item.strategy == "integrate" and not item.target.strip()
+            for name in row_bones(item)}
+
+
+def _form_driver_bones(scene):
+    """{骨名: 部件类型} —— 点名走「原版布料驱动器」的**那几根骨**。
+
+    空 dict = 完全不走这条路径，导出结果与以前逐字节一样。以前这里收的是"类别集合"，
+    core 再按类别去套 —— 作者在一行上选了 skirt，全模型每一根 skirt 类别的新骨都跟着改，
+    点一条链等于改整件衣服。现在按骨名限定作用域（一行=一组=一条链，正好是作者的本意）。
+
+    只收运行时真的实现了的三类（Skirt / Frill / HumanoidSleeve）。ribbon 没有对应驱动器，
+    收进来只会得到"既没驱动器也没摇物"的哑骨 —— 那种静默洞正是这一版要消灭的。
+    """
+    bones = {}
+    for item in getattr(scene, "gmi_bone_map", ()):
+        if item.strategy != "native_driver" or item.target.strip():
+            continue
+        for name in row_bones(item):
+            category = (item.swing_category if item.swing_category != "auto"
+                        else core.swing_category(name))
+            if category in core.DRIVER_CATEGORIES:
+                bones[name] = category
+    return bones
+
+
+def _form_driver_gaps(scene):
+    """选了「原版布料驱动器」却落在没有驱动器的类别上的行 → [(骨名, 类别)]。
+
+    运行时只实现三类（Skirt / Frill / HumanoidSleeve）；ribbon 没有对应驱动器。这种组合
+    导出后那几根骨**既没驱动器也没摇物** = 不会动的哑骨，而日志全绿。宁可导出前拦下，
+    也不要静默把它换成摇物 —— 偷偷换求解器等于给作者一个"能动但不是他配的"结果。
+    """
+    gaps = []
+    for item in getattr(scene, "gmi_bone_map", ()):
+        if item.strategy != "native_driver" or item.target.strip():
+            continue
+        for name in row_bones(item):
+            category = (item.swing_category if item.swing_category != "auto"
+                        else core.swing_category(name))
+            if category not in core.DRIVER_CATEGORIES:
+                gaps.append((name, category))
+    return gaps
 
 
 def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
@@ -745,6 +836,10 @@ def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
             physics_overrides = dict(override_data.get("physics", override_data))
         # 同上:面板表单比外部 JSON 更"手边",冲突时以表单为准
         physics_overrides.update(_form_physics_overrides(scene))
+        # 分组按结构（锚点+链+链长），不读骨名——外语/乱码骨名下正则剥 left/right 全废。
+        parents = _source_bone_parents(obj)
+        groups = core.structural_bone_groups(
+            report["accessoryBones"], parents, report["bodyBones"])
         physics_report = core.build_accessory_physics_remap(
             [{"name": name, "position": position}
              for name, position in _source_bone_positions(obj).items()],
@@ -752,21 +847,30 @@ def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
              for name, position in _target_bone_positions(skeleton).items()
              if name in bone_map],
             report["accessoryBones"],
-            parent_by_name=_source_bone_parents(obj),
+            parent_by_name=parents,
             body_remap=remap,
+            group_by_name={name: group["key"]
+                           for group in groups for name in group["members"]},
             overrides=physics_overrides,
         )
         remap = core.merge_accessory_bone_remap(
             remap, physics_report["bones"], physics_report["rigidParent"]
         )
         # 部件类型决定摆动参数取原版哪一档、要不要建链；同样表单优先于外部 JSON
-        swing_categories = dict(override_data.get("swingCategories") or {})
+        # 部件类型：**先按几何判**（锚点 / 同锚点链数 / 垂向，一个骨名不读），再让外部 JSON
+        # 和表单依次覆盖。按名字判只对恰好用本作命名习惯的源有效 —— 原神 rip 的 `Bone_HemA01_L`、
+        # MMD 的 `スカート` 词表都不认，整条裙摆会拿到最保守的飘带档（不建链），
+        # 环形碰撞和限位全丢。作者显式点过的行永远优先。
+        swing_categories = core.geometric_swing_categories(
+            physics_report["newBones"], parents, _source_bone_positions(obj), body_remap=remap)
+        swing_categories.update(override_data.get("swingCategories") or {})
         swing_categories.update(_form_swing_categories(scene))
         records = _source_bone_sidecar_records(obj)
         report["newBones"] = core.build_source_extra_bones(
             records, physics_report["newBones"],
             parent_by_name=_source_bone_parents(obj), body_remap=remap,
             categories=swing_categories,
+            driver_bones=_form_driver_bones(scene),
         )
         # 新骨链的根挂在游戏骨下，local 必须按游戏骨架的静止姿势重算
         _retarget_new_bone_roots(report["newBones"]["newBones"], records, skeleton)
@@ -872,10 +976,13 @@ def _material_slot_alpha_modes(obj):
         if material is None:
             continue
         mode = getattr(material, "gmi_alpha_mode", "OPAQUE")
-        # 唯一的透明路径:原生co(NATIVE_CO)走游戏原生第二材质段(m_bdyco)。
-        # 旧的镂空/半透明自建 pass 已移除,旧工程里的这些值统一回退到不透明。
+        # 两条透明路径：原生co(NATIVE_CO)走游戏原生第二材质段(m_bdyco)，只有镂空；
+        # GMI_TRANSPARENT 走插件自带的 Gmi/Transparent，是真半透明，由 runtime 新建材质段。
+        # 更早的自建镂空/半透明 pass 已移除，旧工程里的那些值统一回退到不透明。
         if mode in {"NATIVE_CO", "NATIVE_SECTION", "CO"}:
             result[index] = "NATIVE_CO"
+        elif mode in {"GMI_TRANSPARENT", "ALPHA_BLEND_GMI"}:
+            result[index] = "GMI_TRANSPARENT"
     return result
 
 
@@ -1363,8 +1470,16 @@ def _inverse_skin_export_data(
             tangent_groups.setdefault(key, []).append(expanded_index)
         faces.append(tuple(face))
     if unresolved and not fallback_bone:
-        sample = ", ".join(sorted(unresolved)[:12])
-        raise ValueError(f"Unmapped weighted bones ({len(unresolved)}): {sample}")
+        # P4 闸门 2/10：带权重的源骨没有对应的游戏骨。两条出路都要给（见
+        # core.critical_coverage_error 里的同一段理由）。
+        sample = "、".join(sorted(unresolved)[:12])
+        raise ValueError(
+            f"{len(unresolved)} 根带权重的源骨没有对应的游戏骨：{sample}"
+            + ("…" if len(unresolved) > 12 else "")
+            + "。这些骨上的权重进不了包。三条出路：\n"
+              "  · 骨名没认出来 → 「骨骼映射表」里指定目标骨；\n"
+              "  · 是装饰/物理骨 → 在表里给它选装饰物理策略（刚性/自建摇物链/跟裙摆）；\n"
+              "  · 承重关节源模型压根没有 → 点「从相邻骨劈权重」")
     # 学马仕描边 VS(e0ceaa85)沿 TANGENT.xyz 挤出描边(NORMAL 通道不参与描边),
     # 且原版 TANGENT 并非 UV 切线,而是逐顶点"平滑法线"(同坐标顶点法线平均,cos≈0.6)。
     # 自定义网格若把 UV 切线写进 TANGENT,描边会沿表面方向挤出 → 整圈不可见。
@@ -1428,6 +1543,40 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
         [name for name, _mass in _weighted_group_mass(obj)], remap, bone_map)
     if coverage_error:
         raise ValueError(coverage_error)
+    # 闸门 9（五档）：`reject` = 作者说这根骨处理不了 → 禁止导出；`bake` 没烘就导出等于
+    # 把"会跳位"的几何原样出包，所以也拦。两条都点名具体的骨，不给"哪里错了自己找"。
+    rejected = [name for item in getattr(scene, "gmi_bone_map", ())
+                if item.strategy == "reject" for name in row_bones(item)]
+    if rejected:
+        raise ValueError(
+            f"{len(rejected)} 根骨被标成「拒绝导出」：" + "、".join(rejected[:12])
+            + ("…" if len(rejected) > 12 else "")
+            + "。这是显式决定，不是漏配：想导出就把它们改成别的处理（映射到目标骨 / 刚性跟父骨 /"
+              "自建摇物链 / 烘焙），或者先从网格里删掉这些骨的权重")
+    pending_bake = [name for item in getattr(scene, "gmi_bone_map", ())
+                    if item.strategy == "bake" for name in row_bones(item)]
+    if pending_bake and not obj.get("gmi_baked_rest_offset"):
+        raise ValueError(
+            f"{len(pending_bake)} 根骨标了「烘焙形变+并到父骨」，但还没烘："
+            + "、".join(pending_bake[:12]) + ("…" if len(pending_bake) > 12 else "")
+            + "。点「烘焙静止形变」跑一次（它会先量形变有多大，小于阈值就不动网格），再导出")
+    # 闸门：作者点了原版布料驱动器，但那个类别没有驱动器可用 —— 拦下，别出哑骨。
+    driver_gaps = _form_driver_gaps(scene)
+    if driver_gaps:
+        sample = "、".join(f"{name}（{category}）" for name, category in driver_gaps[:8])
+        raise ValueError(
+            f"{len(driver_gaps)} 根骨选了「原版布料驱动器」，但它们的部件类型没有对应的驱动器："
+            + sample + ("…" if len(driver_gaps) > 8 else "")
+            + f"。运行时只实现了 {'/'.join(core.DRIVER_CATEGORIES)} 三类"
+              "（裙→Skirt、披挂→Frill、袖→HumanoidSleeve）。"
+              "把「部件类型」改成这三类之一，或把策略换成「自建摇物链」——"
+              "照现在这样导出，这几根骨既没有驱动器也没有摇物，在游戏里根本不会动")
+    # 闸门 7：静止朝向。会 1:1 显示在游戏里，而位置差被重定向吸收，所以只拦朝向。
+    # body 之外没有人形骨，量不了也没意义。
+    if component_id == "body":
+        orientation_error = _rest_orientation_error(obj, skeleton, remap, remap_report)
+        if orientation_error:
+            raise ValueError(orientation_error)
     extra_nodes, extra_bind_poses = _extend_bundle_skeleton(
         skeleton, bone_map, source_bind, remap_report.get("newBones") or {}
     )
@@ -1572,40 +1721,80 @@ def _export_bundle_png(source, destination):
         raise IOError(f"PNG 导出失败：{destination}")
 
 
+# 参考骨的显示长度。Unity 没有"骨长"这个概念，所以这个数纯粹是为了在视图里看得见，
+# 不参与任何判据（`tests/blender_reference_rig_smoke.py` 只查位置、朝向、层级）。
+REFERENCE_BONE_LENGTH = 0.05
+
+
+def reference_rest_world(nodes):
+    """{节点下标: 静止世界矩阵（Blender 空间）}。
+
+    带权重的骨用 `bindPose` 求逆 —— 精确，且不碰四元数手性。没权重的节点（`Reference`、
+    `Pelvis`、动态链锚点 `*_A`/`*_O`、摇物链根 `*_S`）没有 bindPose，只能从最近的带权重
+    祖先按**完整 local 矩阵**往下合成；只累加 `localPosition` 会让任何带旋转的关节以下全错
+    （151 个节点里 57 个带非单位 localRotation）。
+    """
+    cache = {}
+
+    def world(index):
+        if index in cache:
+            return cache[index]
+        node = nodes[index]
+        bind = node.get("bindPose")
+        if bind:
+            matrix = (C_UNITY.inverted() @ _bind_pose_matrix(bind).inverted() @ C_UNITY)
+        else:
+            x, y, z, w = node.get("localRotation") or [0.0, 0.0, 0.0, 1.0]
+            local = Matrix.LocRotScale(
+                Vector(node.get("localPosition") or (0.0, 0.0, 0.0)),
+                Quaternion((w, x, y, z)),
+                Vector(node.get("localScale") or (1.0, 1.0, 1.0)))
+            matrix = C_UNITY.inverted() @ local @ C_UNITY
+            parent = int(node.get("parent", -1))
+            if parent >= 0:
+                matrix = world(parent) @ matrix
+        cache[index] = matrix
+        return matrix
+
+    return {index: world(index) for index in range(len(nodes))}
+
+
 def _create_armature(context, mesh_obj, data):
     skeleton = data["skeleton"]
     nodes = skeleton["nodes"]
     weighted = {node["weightedIndex"]: node for node in nodes if node["weightedIndex"] is not None}
-    conversion = Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))
+    world_by_index = reference_rest_world(nodes)
     armature = bpy.data.armatures.new(f"{data['name']}_Armature")
     armature_obj = bpy.data.objects.new(armature.name, armature)
     context.collection.objects.link(armature_obj)
     context.view_layer.objects.active = armature_obj
     armature_obj.select_set(True)
     bpy.ops.object.mode_set(mode="EDIT")
+    # 没权重的节点也要建骨：动态链锚点与链根决定"自建链的根该落哪"，作者在 Blender 里
+    # 对齐时看得到它们才有参考。唯一跳过的是没有父节点又没有 bindPose 的那个——
+    # 它是模型根对象，不是骨。
     edit_by_index = {}
-    world_by_index = {}
-    for weighted_index in sorted(weighted):
-        node = weighted[weighted_index]
-        world = conversion @ _bind_pose_matrix(node["bindPose"]).inverted() @ conversion.inverted()
-        world_by_index[weighted_index] = world
+    for index, node in enumerate(nodes):
+        if int(node.get("parent", -1)) < 0 and not node.get("bindPose"):
+            continue
+        world = world_by_index[index]
         bone = armature.edit_bones.new(node["name"])
-        bone.head = world.translation
-        axis = world.to_3x3() @ Vector((0.0, 0.05, 0.0))
-        if axis.length < 1e-5:
-            axis = Vector((0.0, 0.05, 0.0))
-        bone.tail = bone.head + axis.normalized() * 0.05
-        edit_by_index[weighted_index] = bone
-    node_by_list_index = {i: node for i, node in enumerate(nodes)}
-    for weighted_index, node in weighted.items():
-        parent_node_index = node["parent"]
-        while parent_node_index >= 0:
-            parent_node = node_by_list_index[parent_node_index]
-            parent_weighted = parent_node["weightedIndex"]
-            if parent_weighted is not None:
-                edit_by_index[weighted_index].parent = edit_by_index[parent_weighted]
+        bone.head = (0.0, 0.0, 0.0)
+        bone.tail = (0.0, REFERENCE_BONE_LENGTH, 0.0)
+        # 朝向必须照搬游戏骨的静止坐标系。旧版只按 head→tail 摆、roll 留默认值，实测
+        # 104 根里 69 根（镜像那一侧）与原版差整整 180° —— 作者拿这副骨架对齐时看到的
+        # 轴向是错的。写 EditBone.matrix 一次把 head / 方向 / roll 都定下来；缩放归一，
+        # 别把节点上的非单位 localScale 带进骨架。
+        bone.matrix = Matrix.LocRotScale(
+            world.translation, world.to_quaternion(), Vector((1.0, 1.0, 1.0)))
+        edit_by_index[index] = bone
+    for index, bone in edit_by_index.items():
+        parent = int(nodes[index].get("parent", -1))
+        while parent >= 0:
+            if parent in edit_by_index:
+                bone.parent = edit_by_index[parent]
                 break
-            parent_node_index = parent_node["parent"]
+            parent = int(nodes[parent].get("parent", -1))
     bpy.ops.object.mode_set(mode="OBJECT")
     for weighted_index in sorted(weighted):
         mesh_obj.vertex_groups.new(name=weighted[weighted_index]["name"])
@@ -1976,16 +2165,59 @@ class GMI_OT_export_bundle_source(Operator):
             # 多槽切分，不归并就会带着 3 个 submesh 撞进模板补丁，报一句看不懂的
             # “submesh count changed”。co 只对 body 有意义。
             target_n = _resolve_target_scheme(resolved)
-            co_slots = set(_material_slot_alpha_modes(obj)) if component_id == "body" else set()
+            slot_modes = _material_slot_alpha_modes(obj) if component_id == "body" else {}
+            co_slots = {slot for slot, mode in slot_modes.items() if mode == "NATIVE_CO"}
+            transparent_slots = {slot for slot, mode in slot_modes.items()
+                                 if mode == "GMI_TRANSPARENT"}
             data["materials"] = core.merge_material_groups(
-                co_slots, target_n, data.get("materials") or []
+                co_slots, target_n, data.get("materials") or [], transparent_slots
             )
+            # 自建半透明段：原版 renderer 没有这些槽，runtime 按 mod.json 的
+            # transparentMaterials 扩容 sharedMaterials 并新建 Gmi/Transparent 材质。
+            transparent_groups = core.transparent_group_map(co_slots, target_n, transparent_slots)
+            used_material_groups = set(data["materials"])
+            transparent_materials = []
+            for slot, group in sorted(transparent_groups.items(), key=lambda item: item[1]):
+                if group not in used_material_groups:
+                    continue  # 标了半透明但没有面用到这个槽
+                material = obj.material_slots[slot].material
+                # 贴图不另出一张：半透明段的 UV 就落在已有的 body/co 图集里，直接引用
+                # 那两张已经导出的 t0。（模板里没有多余的 Texture2D 对象，UnityPy 现造
+                # 对象是已知的 Unity6 加载崩溃源，别碰。）
+                co_atlas = bool(getattr(material, "gmi_transparent_co_atlas", False))
+                atlas = 1 if co_atlas else 0
+                is_proxy = bool(getattr(material, "gmi_transparent_proxy", False))
+                # 代理段进不透明区间末尾（原生角色 MRT 那一趟只收 <=2500），颜色段留在透明队列；
+                # 两段共用同一个 shader，靠开关分工。
+                transparent_materials.append({
+                    "rendererName": core.RENDERER_NAMES[component_id],
+                    "materialSlot": group,
+                    "filename": f"{component_id}_slot{atlas}_t0.png",
+                    # toon 用同一套图集的 t1/t4（r=阴影阈值、a=AO；rgb=暗面色、a=分支）
+                    "defMap": f"{component_id}_slot{atlas}_t1.png",
+                    "shadeMap": f"{component_id}_slot{atlas}_t4.png",
+                    "alpha": float(getattr(material, "gmi_transparent_alpha", 0.5)),
+                    "toonStrength": float(getattr(material, "gmi_transparent_toon", 1.0)),
+                    "cull": 0.0,
+                    "zwrite": 1.0 if is_proxy else 0.0,
+                    "renderQueue": 2500 if is_proxy else 3000,
+                    "props": {
+                        "_ProxyEnable": 1.0 if is_proxy else 0.0,
+                        "_ForwardEnable": 0.0 if is_proxy else 1.0,
+                        "_MaterialId": 256.0,
+                        # 代理段跨两个图集，别按贴图 alpha 裁：几何在哪就认领到哪
+                        "_AlphaFromTexture": 0.0 if is_proxy else 1.0,
+                    },
+                })
             # 贴图只出【作者网格真的用到的段】。目标资源的段数可能多于用到的段——
             # cstm-0119 全系列原版就是 3 段(主体 + 腰上一圈 128 顶点 + 胸前 179 顶点的
             # 小件)。空段照样会被 _bundle_submeshes 造出来，但 0 面片、不可见，贴图给
             # 什么都无所谓;不出条目就保留原版材质。按 range(target_n) 出的话，没做 co
             # 部件的工程会被段 1 拽去要「原生 co 基础色」，空着就报“缺少 t0”。
-            used_groups = sorted(set(data["materials"]) or {0})
+            # 半透明段不进贴图导出：它复用 body/co 已有的那两张 t0（同一套 UV），
+            # 模板里也没有多余的 Texture2D 对象可以承载新图。
+            transparent_group_ids = {item["materialSlot"] for item in transparent_materials}
+            used_groups = sorted((set(data["materials"]) - transparent_group_ids) or {0})
             group_alpha = {group: ("NATIVE_CO" if (component_id == "body" and group == 1) else None)
                            for group in used_groups}
             material_slot_count = target_n
@@ -2029,10 +2261,20 @@ class GMI_OT_export_bundle_source(Operator):
                 resolved["meshJson"], resolved["skeletonJson"], textures,
                 material_slot_count=material_slot_count,
                 extra_components=extra_components,
+                transparent_materials=transparent_materials,
             )
             if component_id == "hair" and not extra_components:
                 self.report({"WARNING"}, "只导出了发型：没指定发饰对象，游戏里发饰还是原版。"
                                          "在「发饰对象」里选上发饰再导一次")
+            # Unity 每顶点只能带 4 个影响，第 5 个起被丢掉再归一化 —— 丢多少以前只在
+            # 内部变量里，作者看不到。这是 §8.2 「哪些顶点影响变化较大」的可量化那一半。
+            truncated = float(data.get("truncated_weight") or 0.0)
+            if truncated > 0.01 * max(1, len(data.get("skin") or [])):
+                self.report({"WARNING"},
+                            f"有顶点的影响骨超过 4 个，被截掉的权重合计 {truncated:.1f}"
+                            f"（顶点 {len(data['skin'])} 个，截掉后会重新归一化）："
+                            "那些顶点的形变与你在 Blender 里看到的不完全一致，"
+                            "介意就回去把这些顶点的影响骨减到 4 个以内")
             # 坏绑定导出侧补不了，所以只能大声警告并让作者回上游重做 prep。
             sanity = data.get("bind_sanity") or {}
             if sanity.get("failed"):
@@ -2447,6 +2689,9 @@ class GMI_bone_name(bpy.types.PropertyGroup):
 
 class GMI_bone_map_item(bpy.types.PropertyGroup):
     source: bpy.props.StringProperty(name="源骨")
+    # 一行 = 一组（结构分组的成员，换行分隔）。留空 = 这行只管 source 那一根骨。
+    # 作者在一行上做的决定落到这一组的每一根骨；要逐根不同就按「拆开这一组」。
+    members: bpy.props.StringProperty(options={"HIDDEN"})
     target: bpy.props.StringProperty(
         name="目标骨",
         description="填了就以此为准（优先级最高）；留空=交给自动判断（预设/装饰骨物理）",
@@ -2467,6 +2712,20 @@ class GMI_bone_map_item(bpy.types.PropertyGroup):
             ("follow_skirt", "跟裙摆", "蹭最近的裙摆摇物骨（裙边花边），无视距离"),
             ("follow_nearest", "跟随最近骨骼",
              "跟随最近的目标摇物骨；超过安全距离时改为刚性跟父骨"),
+            ("native_driver", "原版布料驱动器",
+             "新建骨 + 挂学马自己的布料驱动器（裙→Skirt、披挂→Frill、袖→HumanoidSleeve），"
+             "不用摇物物理。参数取自 530 套原版；只支持这三类——Waist/Furisode/Poncho 的参考骨"
+             "是每套服装自己的 *_O 偏移骨，装到别的服装上只会得到空引用"),
+            # bake / reject 只能**追加在末尾**：EnumProperty 不写数字时按顺序编号，
+            # 已存盘的 .blend 里存的是那个整数，插在中间会把老文件的策略整排错位
+            # （blender_ui_smoke 里那条 legacy 断言就是为这个立的）。
+            ("bake", "烘焙形变+并到父骨",
+             "静态装饰骨用这个：先把它造成的**静止形变**烘进网格，再像刚性一样并到父骨。"
+             "破坏性操作，要点「烘焙静止形变」按钮才真的改网格；改前自动存一份 "
+             "GMI_PRE_BAKE 形态键，随时能退回去。没烘就导出会被拦下"),
+            ("reject", "拒绝导出",
+             "这根骨处理不了，**禁止导出**：点导出会被拦下并点名它。"
+             "用在「还没想清楚怎么办、但绝不能静默出包」的骨上"),
         ],
         default="auto",
     )
@@ -2529,29 +2788,486 @@ class GMI_OT_build_bone_map(Operator):
         scene.gmi_bone_targets.clear()
         for name in sorted(bone_map):
             scene.gmi_bone_targets.add().name = name
+
+        # 装饰骨按结构并成组（一行一组）；身体骨仍然一行一根 —— 它们本来就被预设填好了，
+        # 而且承重关节要能逐根点。分组信号一个骨名都不读，见 core.structural_bone_groups。
+        mass_by_name = dict(_weighted_group_mass(obj))
+        weighted = [name for name, _mass in _weighted_group_mass(obj)]
+        body = set(preset["bodyBones"]) | set(kept)
+        groups = core.structural_bone_groups(weighted, _source_bone_parents(obj), body)
+        rows = [[name] for name in weighted if name in body]
+        rows += [group["members"] for group in groups]
+        rows.sort(key=lambda members: -max(mass_by_name.get(name, 0.0) for name in members)
+                  if members else 0.0)
+
         scene.gmi_bone_map.clear()
-        rows = 0
-        for name, mass in _weighted_group_mass(obj):
-            auto = preset["bones"].get(name)
-            if (self.only_unmapped and auto
-                    and name not in kept and name not in kept_strategy):
+        listed = 0
+        for members in rows:
+            autos = {preset["bones"].get(name) for name in members}
+            auto = autos.pop() if len(autos) == 1 else None
+            touched = any(name in kept or name in kept_strategy for name in members)
+            if self.only_unmapped and auto and not touched:
                 continue                            # 预设已认出且作者没改过 → 不占屏
             item = scene.gmi_bone_map.add()
-            item.source = name
-            item.target = kept.get(name, auto or "")
+            item.source = max(members, key=lambda name: mass_by_name.get(name, 0.0))
+            item.members = "\n".join(members)
+            item.target = next((kept[name] for name in members if name in kept), auto or "")
             item.origin = "preset" if auto else ""
-            item.mass = mass
-            if name in kept_strategy:
-                item.strategy = kept_strategy[name]
-            if name in kept_category:
-                item.swing_category = kept_category[name]
-            rows += 1
+            item.mass = sum(mass_by_name.get(name, 0.0) for name in members)
+            strategy = next((kept_strategy[name] for name in members
+                             if name in kept_strategy), None)
+            if strategy:
+                item.strategy = strategy
+            category = next((kept_category[name] for name in members
+                             if name in kept_category), None)
+            if category:
+                item.swing_category = category
+            listed += 1
         scene.gmi_bone_map_index = 0
-        empty = sum(1 for item in scene.gmi_bone_map if not item.target.strip())
+        undecided = sum(1 for item in scene.gmi_bone_map
+                        if core.row_state(item.target, item.strategy) == "undecided")
         scope = "未被预设识别的" if self.only_unmapped else "全部"
-        self.report({"INFO"}, f"已列出 {rows} 个{scope}骨（预设识别 "
-                              f"{len(preset['bones'])}/{len(_weighted_group_mass(obj))}，"
-                              f"待指定 {empty}）")
+        self.report({"INFO"}, f"已列出 {listed} 行{scope}骨（{len(weighted)} 根骨并成 "
+                              f"{len(rows)} 行；预设识别 {len(preset['bones'])} 根，"
+                              f"待决定 {undecided} 行）")
+        return {"FINISHED"}
+
+
+class GMI_OT_split_bone_group(Operator):
+    bl_idname = "gmi.split_bone_group"
+    bl_label = "拆开这一组"
+    bl_description = "把这一行（一组骨）拆成一行一根骨，逐根单独指定；组里的决定原样带过去"
+
+    index: bpy.props.IntProperty(default=-1, options={"HIDDEN"})
+
+    def execute(self, context):
+        scene = context.scene
+        index = self.index if self.index >= 0 else scene.gmi_bone_map_index
+        if not 0 <= index < len(scene.gmi_bone_map):
+            self.report({"ERROR"}, "没有选中的行")
+            return {"CANCELLED"}
+        item = scene.gmi_bone_map[index]
+        members = row_bones(item)
+        if len(members) < 2:
+            self.report({"INFO"}, "这行只有一根骨，不用拆")
+            return {"CANCELLED"}
+        kept = (item.target, item.strategy, item.swing_category, item.origin)
+        # remove() 之后 item 是野指针，用到的值必须先取出来
+        fallback_mass = item.mass / len(members)
+        obj = context.active_object
+        mass_by_name = (dict(_weighted_group_mass(obj))
+                        if obj and obj.type == "MESH" and obj.vertex_groups else {})
+        scene.gmi_bone_map.remove(index)
+        for offset, name in enumerate(members):
+            new = scene.gmi_bone_map.add()
+            new.source = name
+            new.members = name
+            new.target, new.strategy, new.swing_category, new.origin = kept
+            new.mass = mass_by_name.get(name, fallback_mass)
+            scene.gmi_bone_map.move(len(scene.gmi_bone_map) - 1, index + offset)
+        scene.gmi_bone_map_index = index
+        self.report({"INFO"}, f"已拆成 {len(members)} 行")
+        return {"FINISHED"}
+
+
+def _vertex_influences(obj, remap=None):
+    """逐顶点 {目标骨名: 权重}。`remap` 给了就按映射折算，不给就当顶点组名已是目标骨名。"""
+    names = {group.index: group.name for group in obj.vertex_groups}
+    for vertex in obj.data.vertices:
+        row = {}
+        for item in vertex.groups:
+            name = names.get(item.group)
+            if item.weight <= 0.0 or not _is_bone_group(name):
+                continue
+            target = (remap or {}).get(name, name)
+            row[target] = row.get(target, 0.0) + item.weight
+        yield row
+
+
+def _target_parent_names(skeleton):
+    nodes = skeleton.get("nodes") or []
+    return {str(node.get("name")): (str(nodes[int(node.get("parent", -1))].get("name"))
+                                    if 0 <= int(node.get("parent", -1)) < len(nodes) else None)
+            for node in nodes if node.get("name")}
+
+
+def _collect_rest_alignment(obj, armature, skeleton, remap, body_bones):
+    """(source_positions, target_positions, children, lengths) —— 尺子和导出闸门共用同一份。
+
+    全部换算到**目标骨名 + Unity 空间**；游戏骨位置用 `bindPose` 求逆，不按层级累加。
+    朝向的子骨关系取**游戏骨架**的，且只取同样被 direct 映射到的骨 —— 把衣物骨算进去会
+    把方向拽反（事实文档 §6.2 坑 4）。
+    """
+    target_positions = _target_bone_positions(skeleton)
+    source_positions, lengths = {}, {}
+    for name in body_bones:
+        target = remap.get(name)
+        bone = armature.data.bones.get(name) if armature else None
+        if bone is None or target not in target_positions:
+            continue
+        source_positions[target] = core._to_unity(armature.matrix_world @ bone.head_local)
+        lengths[target] = bone.length
+    children = {}
+    for name, parent in _target_parent_names(skeleton).items():
+        if name in source_positions and parent in source_positions:
+            children.setdefault(parent, []).append(name)
+    return source_positions, target_positions, children, lengths
+
+
+def _rest_orientation_error(obj, skeleton, remap, report):
+    """P4 闸门 7：任何 direct 映射骨的静止朝向差到红档 → 返回报错文案，否则 None。
+
+    位置差**不拦**（lossless 把它当重定向吸收，"免的是位置"）；朝向差会 1:1 显示在游戏里：
+    肩差 172° 的包静止截图完全正常，转身之后手臂转到身后、手指拉成面条。
+    """
+    armature = next((modifier.object for modifier in obj.modifiers
+                     if modifier.type == "ARMATURE" and modifier.object), None)
+    if armature is None:
+        return None
+    rows = core.rest_alignment(*_collect_rest_alignment(
+        obj, armature, skeleton, remap, report.get("bodyBones") or []))
+    bad = [row for row in rows
+           if row["deg"] is not None and row["deg"] >= core.ORIENTATION_FAIL_DEG]
+    if not bad:
+        return None
+    detail = "、".join(f"{row['bone']} {row['deg']:.0f}°(对 {row['child']})" for row in bad[:6])
+    return (f"{len(bad)} 根身体骨的静止朝向和游戏骨差得太多（阈值 "
+            f"{core.ORIENTATION_FAIL_DEG:.0f}°）：{detail}"
+            + ("…" if len(bad) > 6 else "")
+            + "。这个角度会 1:1 显示在游戏里：静止截图看着正常，转身之后那块几何整个转过去"
+              "（实机三次坐实，肩差 172° → 手臂到身后、手指拉成面条）。请在 Blender 里把这些骨"
+              "摆到游戏骨的朝向上（点「量对齐 / 跨关节带」逐骨看差多少），再导出。")
+
+
+class GMI_OT_split_weight_from_neighbours(Operator):
+    bl_idname = "gmi.split_weight_from_neighbours"
+    bl_label = "从相邻骨劈权重"
+    bl_description = ("给源模型没有的承重关节（锁骨/脖子/脚尖等）劈出权重：按原版身体在同一位置"
+                      "的权重分布，从旁边那圈骨里分。只动这几根骨，不重绘全身权重；"
+                      "要求先把模型对齐到参考骨架")
+
+    # 只在原版有这根骨权重的地方动手，所以搜索半径按"作者顶点离原版表面多远"算。
+    # 超过这个距离就不是同一块肉，宁可不动（对齐没做好时整批跳过，日志说清楚）。
+    search_radius: bpy.props.FloatProperty(
+        name="搜索半径(m)", default=0.03, min=0.001, max=0.2, options={"HIDDEN"})
+
+    def execute(self, context):
+        scene = context.scene
+        obj = context.active_object
+        try:
+            _obj, bone_map, _preset = _bone_map_context(context)
+            reference = _profile_weight_reference(context, "body")
+            remap, report = _resolve_source_bone_remap(obj, bone_map, scene)
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        weighted = [name for name, _mass in _weighted_group_mass(obj)]
+        missing = core.missing_critical_bones(weighted, remap, bone_map)
+        if not missing:
+            self.report({"INFO"}, "21 根承重关节都已经有权重，不需要劈")
+            return {"CANCELLED"}
+
+        from mathutils import kdtree
+        vanilla_world = reference.matrix_world
+        vanilla = [
+            {group_name: item.weight
+             for item in vertex.groups
+             for group_name in (reference.vertex_groups[item.group].name,)
+             if item.weight > 0.0}
+            for vertex in reference.data.vertices
+        ]
+        tree = kdtree.KDTree(len(reference.data.vertices))
+        for index, vertex in enumerate(reference.data.vertices):
+            tree.insert(vanilla_world @ vertex.co, index)
+        tree.balance()
+
+        # 作者顶点 → 目标骨权重（按 remap 合并），以及"这个目标骨的权重是从哪些源组来的"
+        source_of = {}
+        for group in obj.vertex_groups:
+            target = remap.get(group.name)
+            if target:
+                source_of.setdefault(target, []).append(group)
+        world = obj.matrix_world
+        distances, moved, touched = [], {}, 0
+        for vertex in obj.data.vertices:
+            _co, nearest, distance = tree.find(world @ vertex.co)
+            distances.append(distance)
+            if nearest is None or distance > self.search_radius:
+                continue
+            reference_weights = vanilla[nearest]
+            # 顶点上现有的源组权重取一次就够：`VertexGroup.weight()` 对不在组里的顶点会
+            # 抛异常并往日志里刷 "Vertex not in group"，逐顶点查等于刷屏。
+            current = {item.group: float(item.weight) for item in vertex.groups}
+            author = {}
+            for group_index, weight in current.items():
+                target = remap.get(obj.vertex_groups[group_index].name)
+                if target and weight > 0.0:
+                    author[target] = author.get(target, 0.0) + weight
+            for bone in missing:
+                if bone not in reference_weights:
+                    continue
+                updated = core.redistribute_family_weight(author, reference_weights, bone)
+                if not updated:
+                    continue
+                touched += 1
+                for target, value in updated.items():
+                    author[target] = value                      # 同顶点多根缺骨时逐次生效
+                    if target == bone:
+                        moved[bone] = moved.get(bone, 0.0) + value
+                    _write_target_weight(obj, vertex.index, target, value,
+                                         source_of, current)
+        distances.sort()
+        median_mm = distances[len(distances) // 2] * 1000.0 if distances else 0.0
+        if not moved:
+            self.report({"ERROR"},
+                        f"一个顶点都没动：作者网格离参考体中位 {median_mm:.0f}mm，"
+                        f"超过搜索半径 {self.search_radius * 1000:.0f}mm 就不是同一块肉了。"
+                        "先把模型对齐到参考骨架（步骤①导入的那副），再劈权重")
+            return {"CANCELLED"}
+        detail = "、".join(f"{bone} {mass:.1f}" for bone, mass in sorted(moved.items()))
+        self.report({"INFO"},
+                    f"已从相邻骨劈出 {len(moved)} 根骨的权重（{touched} 个顶点被改；"
+                    f"劈到的权重总量 {detail}；作者网格离参考体中位 {median_mm:.1f}mm）。"
+                    "只动了这几根骨所在的那一族，别的权重原样")
+        return {"FINISHED"}
+
+
+def _write_target_weight(obj, vertex_index, target, value, source_of, current):
+    """把"目标骨的新权重"写回作者网格的源顶点组：按源组现有比例分摊；缺骨就新建同名组。
+
+    `current` = 这个顶点上 {顶点组下标: 权重}（调用方已经取好，别再逐组去查）。
+    """
+    groups = source_of.get(target)
+    if not groups:
+        group = obj.vertex_groups.get(target) or obj.vertex_groups.new(name=target)
+        source_of[target] = [group]
+        groups = [group]
+    if len(groups) == 1:
+        groups[0].add([vertex_index], value, "REPLACE")
+        return
+    weights = [current.get(group.index, 0.0) for group in groups]
+    total = sum(weights)
+    for group, weight in zip(groups, weights):
+        share = (weight / total) if total > 0.0 else (1.0 / len(groups))
+        group.add([vertex_index], value * share, "REPLACE")
+
+
+# 回退用的原坐标存在对象自定义属性里，**不用形态键**：加了形态键之后网格的显示/求值走的是
+# 形态键而不是 `mesh.vertices`，改完 co 反而"看不见变化"，导出读的又是另一份 —— 那是个陷阱。
+BAKE_SNAPSHOT_KEY = "gmi_pre_bake"
+# 烘焙前后位移小于这个数就当"本来就没形变"，不写网格（对齐好的模型多数属于这一档）。
+BAKE_FLOOR_MM = 0.05
+
+
+def _bake_rest_offsets(obj, armature, bake_bones, remap, target_rest):
+    """算 bake 骨造成的静止形变，返回逐顶点修正量 {顶点号: 世界空间向量}。空 = 不需要烘。
+
+    两项相加，都是**实测有意义**的：
+
+    1. **当前姿势**（`pose_matrix · rest⁻¹`）。导出器读的是 `mesh.vertices`（静止），作者在
+       视图里看到的是摆过姿势之后的样子 —— 摆了姿势直接导出，出包的是没摆的那个形状，
+       画面上完全看不出哪一步丢了。这才是这条路线里真实存在的"静止形变"；
+    2. **父目标骨自己的错位**（`G_P · S_P⁻¹`）。bake 骨没有自己的目标骨，权重并到父目标骨 P 之后
+       那些顶点按 P 的骨摆出去。**P 对齐好时这一项恒等于零**（2026-08-17 用原版身体量过：
+       给装饰骨加 5cm 偏移，这一项仍是 0.000mm —— 装饰骨自己的变换根本不进这条公式）。
+       所以它只在 P 本身没对齐时才有值，量级与「对齐体检」里 P 那一行的位置差一致。
+    """
+    world = obj.matrix_world
+    groups = {group.index: group.name for group in obj.vertex_groups}
+    offsets = {}
+    for name in bake_bones:
+        bone = armature.data.bones.get(name)
+        group = obj.vertex_groups.get(name)
+        if bone is None or group is None:
+            continue
+        # 父目标骨：沿源父链找第一根映射到游戏骨的
+        parent, target = bone.parent, None
+        while parent is not None:
+            candidate = remap.get(parent.name)
+            if candidate in target_rest:
+                target = candidate
+                break
+            parent = parent.parent
+        if target is None:
+            continue
+        # 两边都在 Blender 世界空间：`reference_rest_world` 已经换算过，别再 conjugate 一次
+        source_rest = armature.matrix_world @ armature.data.bones[parent.name].matrix_local
+        skinning = target_rest[target] @ source_rest.inverted()
+        # 当前姿势：作者看到的形状 vs 导出读到的静止形状
+        pose_bone = armature.pose.bones.get(name)
+        pose = Matrix.Identity(4)
+        if pose_bone is not None:
+            rest = armature.matrix_world @ bone.matrix_local
+            pose = (armature.matrix_world @ pose_bone.matrix) @ rest.inverted()
+        for vertex in obj.data.vertices:
+            weight = next((item.weight for item in vertex.groups
+                           if groups.get(item.group) == name), 0.0)
+            if weight <= 0.0:
+                continue
+            position = world @ vertex.co
+            delta = (pose @ position - position) + (position - skinning @ position)
+            if delta.length > 0.0:
+                offsets[vertex.index] = offsets.get(vertex.index, Vector()) + delta * weight
+    return offsets
+
+
+class GMI_OT_bake_rest_offset(Operator):
+    bl_idname = "gmi.bake_rest_offset"
+    bl_label = "烘焙静止形变"
+    bl_description = ("把标了「烘焙形变+并到父骨」的骨造成的静止形变烘进网格，之后那些骨的权重"
+                      "并到父骨也不会让几何跳位。破坏性操作：改网格前会存一份 GMI_PRE_BAKE "
+                      "形态键，随时能退回去")
+
+    revert: bpy.props.BoolProperty(default=False, options={"HIDDEN"})
+
+    def execute(self, context):
+        scene = context.scene
+        obj = context.active_object
+        if not obj or obj.type != "MESH":
+            self.report({"ERROR"}, "请先激活作者网格")
+            return {"CANCELLED"}
+        snapshot = obj.get(BAKE_SNAPSHOT_KEY)
+        if self.revert:
+            if not snapshot:
+                self.report({"ERROR"}, "这个网格没有烘焙记录，没有可回退的东西")
+                return {"CANCELLED"}
+            restored = json.loads(snapshot)
+            for index, x, y, z in restored:
+                obj.data.vertices[int(index)].co = Vector((x, y, z))
+            obj.data.update()
+            del obj[BAKE_SNAPSHOT_KEY]
+            obj["gmi_baked_rest_offset"] = 0
+            self.report({"INFO"}, f"已回退 {len(restored)} 个顶点到烘焙前的位置")
+            return {"FINISHED"}
+        if snapshot:
+            self.report({"ERROR"},
+                        "这个网格已经烘过一次（回退记录还在）。要重烘先点「回退烘焙」——"
+                        "连着烘两次等于把形变叠两遍")
+            return {"CANCELLED"}
+
+        bake_bones = [name for item in scene.gmi_bone_map if item.strategy == "bake"
+                      for name in row_bones(item)]
+        if not bake_bones:
+            self.report({"ERROR"}, "没有标成「烘焙形变+并到父骨」的骨；先在骨骼映射表里标")
+            return {"CANCELLED"}
+        try:
+            _obj, bone_map, _preset = _bone_map_context(context)
+            resolved = _resolve_body_json_library(scene, _object_component_id(obj, scene))
+            skeleton = core.load_json(Path(resolved["skeletonJson"]))
+            remap, _report = _resolve_source_bone_remap(obj, bone_map, scene)
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        armature = next((modifier.object for modifier in obj.modifiers
+                         if modifier.type == "ARMATURE" and modifier.object), None)
+        if armature is None:
+            self.report({"ERROR"}, "作者网格没有骨架修改器，算不了静止形变")
+            return {"CANCELLED"}
+
+        target_rest = {name: matrix for name, matrix
+                       in reference_rest_world_by_name(skeleton).items()}
+        offsets = _bake_rest_offsets(obj, armature, bake_bones, remap, target_rest)
+        moved = [offset.length * 1000.0 for offset in offsets.values()]
+        worst = max(moved) if moved else 0.0
+        if worst <= BAKE_FLOOR_MM:
+            obj["gmi_baked_rest_offset"] = 1                 # 声明过了：形变本来就没有
+            self.report({"INFO"},
+                        f"{len(bake_bones)} 根 bake 骨造成的静止形变最大只有 {worst:.3f}mm"
+                        f"（阈值 {BAKE_FLOOR_MM}mm），网格没有改动 —— 直接并到父骨就行")
+            return {"FINISHED"}
+
+        # 破坏性一步（INV-7 可见 / 可关 / 可量化 / 可撤销）：先把要动的顶点原坐标存下来，再改网格
+        obj[BAKE_SNAPSHOT_KEY] = json.dumps(
+            [[index, *obj.data.vertices[index].co] for index in sorted(offsets)],
+            separators=(",", ":"))
+        inverse = obj.matrix_world.inverted()
+        for index, offset in offsets.items():
+            vertex = obj.data.vertices[index]
+            vertex.co = inverse @ ((obj.matrix_world @ vertex.co) + offset)
+        obj.data.update()
+        obj["gmi_baked_rest_offset"] = 1
+        average = sum(moved) / len(moved)
+        self.report({"INFO"},
+                    f"已烘焙 {len(offsets)} 个顶点（{len(bake_bones)} 根 bake 骨）："
+                    f"位移最大 {worst:.2f}mm、平均 {average:.2f}mm。"
+                    "回退记录已存在对象上，点「回退烘焙」可原样退回")
+        return {"FINISHED"}
+
+
+def reference_rest_world_by_name(skeleton):
+    """{骨名: 静止世界矩阵（Blender 空间）} —— `reference_rest_world` 的按名字版。"""
+    nodes = skeleton.get("nodes") or []
+    world = reference_rest_world(nodes)
+    return {str(node.get("name")): world[index]
+            for index, node in enumerate(nodes) if node.get("name")}
+
+
+class GMI_OT_report_rig_alignment(Operator):
+    bl_idname = "gmi.report_rig_alignment"
+    bl_label = "量对齐 / 跨关节带"
+    bl_description = ("只读尺子：逐骨报关节位置差与**静止朝向差**，并把跨关节权重带和原版"
+                      "逐关节对比。朝向差是作者唯一自查不到的东西——静止截图完全正常，"
+                      "转身之后手臂炸开、手指变面条")
+
+    def execute(self, context):
+        scene = context.scene
+        obj = context.active_object
+        try:
+            _obj, bone_map, _preset = _bone_map_context(context)
+            resolved = _resolve_body_json_library(scene, _object_component_id(obj, scene))
+            skeleton = core.load_json(Path(resolved["skeletonJson"]))
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        armature = next((modifier.object for modifier in obj.modifiers
+                         if modifier.type == "ARMATURE" and modifier.object), None)
+        if armature is None:
+            self.report({"ERROR"}, "作者网格没有骨架修改器，量不了对齐")
+            return {"CANCELLED"}
+        # 传 skeleton：解析要和导出**同一份**——没解析的源骨（扭转骨、装饰骨）会经装饰物理/
+        # 父骨兜底落到某根身体骨上，那些权重照样进跨关节带。只按身体骨映射去量，Claymore 那副
+        # rip 的跨肩带会报 0.0%（实际 4.9%）——扭转骨的权重全被漏掉。
+        remap, report = _resolve_source_bone_remap(obj, bone_map, scene, skeleton)
+
+        # 对齐尺：只量 direct 映射的身体骨（装饰骨蹭的是摇物骨，位置差按设计就很大）
+        collected = _collect_rest_alignment(
+            obj, armature, skeleton, remap, report["bodyBones"])
+        alignment = core.rest_alignment(*collected)
+
+        # 跨关节带：有参考体就现算原版基线，没有就用扫出来的真值表。
+        sides = core.joint_band_sides(_target_parent_names(skeleton))
+        bands = core.cross_joint_bands(_vertex_influences(obj, remap), sides)
+        try:
+            reference = _profile_weight_reference(context)
+        except ValueError:
+            reference = None
+        vanilla = (core.cross_joint_bands(_vertex_influences(reference), sides)
+                   if reference is not None else None)
+        findings = core.cross_joint_band_findings(bands, vanilla)
+
+        # 权重报告（§8.2）：多少权重是原样保留的、多少并进了别的骨、多少走了新建辅助骨
+        states = core.weight_state_summary(
+            dict(_weighted_group_mass(obj)), remap,
+            new_bones=[item.get("name") for item
+                       in (report.get("newBones") or {}).get("newBones") or []],
+            unmapped=report.get("unmapped") or [])
+        # 档 3：节数不同被塌短的链 —— 每根骨都有目标、权重也归一，闸门永远抓不到，只能标出来
+        collapsed = core.collapsed_chains(remap, _source_bone_parents(obj),
+                                          dict(_weighted_group_mass(obj)))
+        scene.gmi_rig_report = json.dumps({
+            "alignment": alignment, "bands": findings, "states": states,
+            "collapsed": collapsed,
+            "measured": len(alignment), "skipped": len(report["bodyBones"]) - len(alignment),
+            "baseline": "参考体" if vanilla else "原版真值表",
+        }, ensure_ascii=False, separators=(",", ":"))
+        worst = alignment[0] if alignment else None
+        self.report({"INFO"}, (
+            f"已量 {len(alignment)} 根 direct 映射骨"
+            + (f"；最差 {worst['bone']} 朝向 {core.format_degrees(worst['deg'])} "
+               f"/ 位置 {worst['mm']:.1f}mm" if worst else "")
+            + f"；跨关节带 " + "  ".join(
+                f"{row['joint']} {row['share']:.1%}(原版 {row['vanilla']:.1%})"
+                for row in findings)))
         return {"FINISHED"}
 
 
@@ -2656,24 +3372,32 @@ class GMI_OT_load_bone_map(Operator):
         valid, valid_categories = enum_ids("strategy"), enum_ids("swing_category")
         hit = 0
         for item in scene.gmi_bone_map:
+            # 一行 = 一组：组里任一成员命中就算这一行命中（组内决定本来就是同一个）
+            pick = lambda table: next((table[name] for name in row_bones(item)
+                                       if name in table), None)
             # 部件类型是策略的附属，两者可以同时命中同一行 —— 别用 elif 把它挤掉
-            if categories.get(item.source) in valid_categories:
-                item.swing_category = categories[item.source]
-            if item.source in bones:
-                item.target = str(bones[item.source])
+            if pick(categories) in valid_categories:
+                item.swing_category = pick(categories)
+            if pick(bones) is not None:
+                item.target = str(pick(bones))
                 hit += 1
-            elif physics.get(item.source) in valid:
-                item.strategy = physics[item.source]
+            elif pick(physics) in valid:
+                item.strategy = pick(physics)
                 hit += 1
         self.report({"INFO"}, f"读入 {len(bones)} 条骨映射 + {len(physics)} 条装饰物理 + "
                               f"{len(categories)} 条部件类型，命中表内 {hit} 行")
         return {"FINISHED"}
 
 
+
 CLASSES = (
     GMI_bone_name,
     GMI_bone_map_item,
     GMI_OT_build_bone_map,
+    GMI_OT_split_bone_group,
+    GMI_OT_report_rig_alignment,
+    GMI_OT_split_weight_from_neighbours,
+    GMI_OT_bake_rest_offset,
     GMI_OT_show_bone_weights,
     GMI_OT_clear_bone_map,
     GMI_OT_save_bone_map,

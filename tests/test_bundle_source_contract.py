@@ -552,11 +552,20 @@ def test_new_bones_use_vanilla_swing_presets():
         # local -Z），照搬等于锁死真·摆动轴 —— 默认必须关。
         assert bone["swing"]["useLimit"] == 0, bone
 
-    # 碰撞体三项必须显式写出，不能靠运行时缺省 —— 缺省值不进 sidecar 就查不出来用的是什么
+    # 碰撞体三项必须显式写出，不能靠运行时缺省 —— 缺省值不进 sidecar 就查不出来用的是什么。
+    # `collisionMask` 从 2026-08-18 起按类别取原版众数（48292 根原版骨：skirt 1 /
+    # cloth 64 / sleeve 0 / ribbon 256），不再统一写 -1(Everything)：-1 会让窄裙去撞
+    # 半径 0.23m 的胯胶囊，表现是贴腿发僵、穿插。这里钉的是「出的值等于基准表」，
+    # 不是钉某个具体数字，改预设不该让这条测试变红。
+    presets = core.load_swing_presets()
+    # 基准表本身也钉一道：这四个数是 48292 根原版骨的逐档众数，改动它等于改实机行为
+    assert {name: roles["roles"]["mid"]["collisionMask"] for name, roles in presets.items()} == {
+        "skirt": 1, "cloth": 64, "sleeve": 0, "ribbon": 256}
     for bone in every:
         for field in ("colliderRadius", "colliderType", "collisionMask"):
             assert field in bone["swing"], (field, bone)
-        assert bone["swing"]["collisionMask"] == -1, bone
+        expected = presets[bone["swingCategory"]]["roles"][bone["swingRole"]]["collisionMask"]
+        assert bone["swing"]["collisionMask"] == expected, bone
 
     # 源显式给了 useLimit 就照它的来（IP 源同用 ActorAnimation 中间件，轴向一致）
     kept = core.build_source_extra_bones(
@@ -862,3 +871,39 @@ def test_unknown_swing_category_is_rejected():
         records, ["SkirtA"], parent_by_name={"SkirtA": "Hips"},
         body_remap={"Hips": "Hips"}, categories={"SkirtA": "skirt"})
     assert report["newBones"][0]["swingCategory"] == "skirt"
+
+
+def test_mmd_twist_bones_land_on_the_corrective_rig():
+    """源模型自带的捩骨要落到 `*_Roll_H`，不是折叠进 humanoid 骨。
+
+    折叠进 `LeftArm` 的后果是 16 根 `*_H` 一份权重都拿不到（4 个已出货成品实测 0.00%，
+    原版中位 11.28%），扭转分配整个丢掉 —— 姿势驱动器就装在这些骨上。
+    这不是权重重分配，只是换个落点，作者的权重数值一个都没动。
+    """
+    target = {
+        "LeftArm", "LeftForeArm", "LeftHand", "RightArm", "RightForeArm",
+        "LeftArm_Roll_H", "LeftForeArm_Roll_H", "RightArm_Roll_H", "RightForeArm_Roll_H",
+    }
+    report = core.build_bone_remap(
+        ["左腕", "左ひじ", "左手首", "左腕捩", "左腕捩2", "左手捩", "右腕捩", "右手捩3"],
+        target, preset_name="mmd-standard",
+    )
+    assert report["bones"]["左腕捩"] == "LeftArm_Roll_H"
+    assert report["bones"]["左腕捩2"] == "LeftArm_Roll_H"
+    assert report["bones"]["左手捩"] == "LeftForeArm_Roll_H"
+    assert report["bones"]["右腕捩"] == "RightArm_Roll_H"
+    assert report["bones"]["右手捩3"] == "RightForeArm_Roll_H"
+    # humanoid 骨本身不受影响
+    assert report["bones"]["左腕"] == "LeftArm"
+
+
+def test_twist_bones_fall_back_when_the_target_has_no_corrective_rig():
+    """目标骨架没有 `*_Roll_H` 时退回 humanoid 骨——绝不能整根掉进 unmapped 把权重丢掉。"""
+    target = {"LeftArm", "LeftForeArm", "LeftHand", "RightArm", "RightForeArm"}
+    report = core.build_bone_remap(
+        ["左腕", "左腕捩", "左手捩", "右腕捩"], target, preset_name="mmd-standard",
+    )
+    assert report["bones"]["左腕捩"] == "LeftArm"
+    assert report["bones"]["左手捩"] == "LeftForeArm"
+    assert report["bones"]["右腕捩"] == "RightArm"
+    assert not [name for name in report["unmapped"] if "捩" in name]

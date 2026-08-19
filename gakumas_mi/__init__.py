@@ -12,10 +12,10 @@ import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 from pathlib import Path
 
-from . import core, operators, ui
+from . import core, operators, ui, unity_route
 
 
-CLASSES = operators.CLASSES + ui.CLASSES
+CLASSES = operators.CLASSES + unity_route.CLASSES + ui.CLASSES
 
 
 def _material_class_items():
@@ -50,6 +50,21 @@ def _default_body_json_dir():
 def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
+    # Unity 路线：作者只在 Blender 里点两下，Unity 无头跑完学马那一侧的规矩。
+    bpy.types.Scene.gmi_unity_sdk_dir = StringProperty(
+        name="Unity SDK 工程", description="GakumasAvatarSdk 工程目录", subtype="DIR_PATH", default="")
+    bpy.types.Scene.gmi_unity_editor = StringProperty(
+        name="Unity.exe", description="留空则自动在 Unity Hub 里找", subtype="FILE_PATH", default="")
+    bpy.types.Scene.gmi_unity_kind = EnumProperty(
+        name="类型", items=[("body", "服装", ""), ("hair", "发型", "")], default="body")
+    bpy.types.Scene.gmi_unity_target = StringProperty(
+        name="替换目标", default="mdl_chr_hmsz-cstm-0059_body")
+    bpy.types.Scene.gmi_unity_report = StringProperty(name="上次检查结果", default="")
+    bpy.types.Scene.gmi_rig_report = StringProperty(
+        name="上次对齐体检结果", default="",
+        description="「量对齐 / 跨关节带」的结果（JSON）：逐骨关节位置差与静止朝向差、"
+                    "跨关节权重带与原版的对比。只读尺子，不改模型",
+    )
     bpy.types.Scene.gmi_profile_dir = StringProperty(
         name="配置档目录", subtype="DIR_PATH", default=_default_profile_dir(),
         description="配置档（profile）记录被替换目标的注入信息、参考网格与逆蒙皮算子，"
@@ -312,8 +327,31 @@ def register():
             ("OPAQUE", "不透明", "普通身体路径；投影/遮挡/描边最稳定，默认选这个"),
             ("NATIVE_CO", "原生co", "borrow 游戏原生 m_bdyco 的 shader/state 画镂空半透明。"
              "判断标准：该材质贴图的实际 UV 足迹里透明像素多才需要；需要配置档含第二材质段"),
+            ("GMI_TRANSPARENT", "自建半透明", "用插件自带的 Gmi/Transparent（URP 透明队列）画真半透明。"
+             "游戏自己没有半透明服装材质，这一档是新增的独立材质段，由 runtime 在替换时创建；"
+             "代价：没有描边、不参与 SSAO、透明件之间按包围盒排序"),
         ],
         default="OPAQUE",
+    )
+    bpy.types.Material.gmi_transparent_alpha = FloatProperty(
+        name="半透明度", default=0.5, min=0.0, max=1.0,
+        description="只在「自建半透明」档生效：整体不透明度，与 t0 的 alpha 相乘。"
+                    "0=全透明 1=完全按贴图 alpha",
+    )
+    bpy.types.Material.gmi_transparent_toon = FloatProperty(
+        name="半透明 toon 强度", default=1.0, min=0.0, max=1.0,
+        description="只在「自建半透明」档生效：1=按 t1/t4 做卡通明暗，0=纯平涂（不打光）",
+    )
+    bpy.types.Material.gmi_transparent_proxy = BoolProperty(
+        name="G-buffer 深度代理段", default=False,
+        description="只在「自建半透明」档生效：这一段不画颜色，只把深度和角色材质 ID 写进"
+                    "原生 G-buffer，让景深/合成把半透明部件当成角色处理（否则压在背景上会被虚化）。"
+                    "几何应当是颜色段的副本",
+    )
+    bpy.types.Material.gmi_transparent_co_atlas = BoolProperty(
+        name="半透明段用 co 图集", default=False,
+        description="只在「自建半透明」档生效：勾上表示这个材质槽的 UV 落在 co 图集里"
+                    "（导出时给它 co 的 t0），不勾则用不透明 body 的 t0",
     )
     bpy.types.Material.gmi_material_toon = FloatProperty(
         name="明暗(阴影范围)", default=-1.0, min=-1.0, max=1.0,
@@ -335,13 +373,14 @@ def register():
 
 
 def unregister():
+    unity_route.unregister_previews()
     for name in (
         "gmi_profile_dir", "gmi_capture_dir", "gmi_extract_output_dir",
         "gmi_body_json_library_dir", "gmi_body_resource",
         "gmi_extract_draw", "gmi_output_dir", "gmi_bundle_template", "gmi_bundle_python", "gmi_component_id",
         "gmi_source_mesh_json", "gmi_skeleton_json", "gmi_bone_remap_file",
         "gmi_source_rig", "gmi_bone_map", "gmi_bone_map_index", "gmi_bone_targets",
-        "gmi_unmapped_bone_fallback",
+        "gmi_unmapped_bone_fallback", "gmi_rig_report",
         "gmi_package_id",
         "gmi_base_color_file", "gmi_hair_use_base_alpha", "gmi_packed_mask_file", "gmi_shade_color_file",
         "gmi_hairprop_object",

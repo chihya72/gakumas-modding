@@ -225,25 +225,50 @@ def chain_usage(records):
 
 # 插件生产文件里的人工决策，集中在这里，别再散落到临时脚本里
 PLUGIN_CATEGORIES = ("ribbon", "cloth", "sleeve", "skirt")
-# 原版 collisionMask 是逐服装的碰撞分组归属（Skirt0 26% / Everything 19% / None 17% …），
-# 对 mod 新骨没有对应语义。统一 -1(Everything)：碰撞组我们判断不了，宁可什么都撞。
+# collisionMask：**当前出包仍统一 -1(Everything)**，因为"碰撞组归属"对 mod 新骨没有现成语义。
+#
+# 但 2026-08-17 把原版逐档的真值量出来了（48292 根摇物骨，`vanilla-swing-bones.json`）：
+#
+#   skirt   n=24183   1:47%   2:15%   -1:14%   64:10%   256:8%
+#   cloth   n= 5020  64:22%  -1:16%  128:14%    1:12%   256:11%
+#   sleeve  n= 5639   0:49%  -1:24%  128:12%   64:6%
+#   ribbon  n= 6705  256:22%  -1:19%   64:18%    0:11%    1:8%
+#
+# 也就是说：**-1 在原版任何一档都只占 14~24%**，各档的众数分别是 skirt 1 / cloth 64 /
+# sleeve 0(None) / ribbon 256。路线文档 §11.1 规矩 6 说的"skirt 档原版取 1"由此坐实。
+# 换不换要一次**只改这一项**的实机（窄裙样本看贴不贴腿），别凭这张表直接改默认值 ——
+# 改完得同时验"不再发僵穿插"和"该撞的还撞"，那是画面判据，离线量不出来。
 PLUGIN_COLLISION_MASK = -1
+# 实机实验用：`--collision-mask vanilla` 时每档写自己的众数，其余一律沿用上面的统一值。
+# 一档一个数写在这里，实验就是改一个参数，不是改代码。
+VANILLA_COLLISION_MASK_MODE = {"skirt": 1, "cloth": 64, "sleeve": 0, "ribbon": 256}
 # 运行时只读这几个标量；axisAddXToY/axisAddXToZ/seatDynamicCorrection 原版中位数都是 0
 # 且运行时不消费，写进每份 sidecar 只是噪音。
 PLUGIN_SCALARS = ("damping", "stiffness", "spring", "pendulum", "pendulumRange",
                   "mass", "wind", "rootWeight")
 
 
-def build_plugin_presets(summary):
-    """把扫描结果转成插件读的形状（`gakumas_mi/swing_presets.json`）。"""
+def build_plugin_presets(summary, collision_mask="uniform"):
+    """把扫描结果转成插件读的形状（`gakumas_mi/swing_presets.json`）。
+
+    `collision_mask="vanilla"` 时每档写原版众数（实机实验用，见 VANILLA_COLLISION_MASK_MODE），
+    默认 `"uniform"` 沿用统一的 -1 —— 默认值不许在没有实机结论的情况下变。
+    """
     presets, usage = summary["presets"], summary["chainUsage"]
     out = {
         "_source": "tools/scan_vanilla_swing_bones.py --install 生成，别手改",
         "_amplitude": ("range 里的分位数只作参考/闸门，代码不用它调幅度。2026-08-11 试过做"
                        "弱/标准/强三档，实测五个参数从分布一端拉到另一端摆幅只动 ±35% 且方向"
                        "与预期相反，档位已撤销，只保留标准档（中位数）。"),
-        "_collisionMask": ("原版逐服装的碰撞分组归属，对 mod 新骨无对应语义；"
-                           f"统一取 {PLUGIN_COLLISION_MASK}(Everything)。"),
+        "_collisionMask": (
+            "原版逐服装的碰撞分组归属，对 mod 新骨无对应语义；"
+            f"统一取 {PLUGIN_COLLISION_MASK}(Everything)。"
+            "原版真值（48292 根实测众数）：skirt 1 / cloth 64 / sleeve 0(None) / ribbon 256，"
+            "-1 在任何一档都只占 14~24%。换成逐档众数要一次只改这一项的实机定性"
+            "（窄裙看贴不贴腿），别凭这行注释直接改。"
+            if collision_mask == "uniform" else
+            "逐档取原版众数（**实机实验档**，不是已定案的默认值）："
+            + "、".join(f"{k} {v}" for k, v in VANILLA_COLLISION_MASK_MODE.items())),
         "categories": {},
     }
     for category in PLUGIN_CATEGORIES:
@@ -264,7 +289,9 @@ def build_plugin_presets(summary):
             entry["colliderType"] = int(stats["colliderType"]["mode"])
             entry["colliderRadius"] = stats["colliderRadius"]["median"]
             entry["colliderRadiusSub"] = stats["colliderRadiusSub"]["median"]
-            entry["collisionMask"] = PLUGIN_COLLISION_MASK
+            entry["collisionMask"] = (VANILLA_COLLISION_MASK_MODE.get(
+                category, PLUGIN_COLLISION_MASK) if collision_mask == "vanilla"
+                else PLUGIN_COLLISION_MASK)
             entry["dynamicType"] = int(stats["dynamicType"]["mode"])
             entry["range"] = {
                 key: {quantile: stats[key][quantile]
@@ -289,6 +316,10 @@ def main():
     parser.add_argument("--limit", type=int, default=0, help="只扫前 N 个（调试用）")
     parser.add_argument("--install", action="store_true",
                         help="同时写入 gakumas_mi/swing_presets.json（插件生产文件）")
+    parser.add_argument("--collision-mask", choices=("uniform", "vanilla"), default="uniform",
+                        help="uniform=统一 -1(Everything，当前默认)；"
+                             "vanilla=逐档取原版众数（skirt 1 / cloth 64 / sleeve 0 / ribbon 256），"
+                             "**实机实验用**，一次只改这一项")
     args = parser.parse_args()
 
     UnityPy.config.FALLBACK_UNITY_VERSION = UNITY_VERSION
@@ -324,7 +355,7 @@ def main():
         json.dumps(presets, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     # 插件读的是**另一种形状**（扁平字段 + roles + useChain），此前只有一段临时脚本做转换，
     # 生产文件因此无法一键重建。这里直接产出它。
-    plugin_presets = build_plugin_presets(presets)
+    plugin_presets = build_plugin_presets(presets, collision_mask=args.collision_mask)
     (args.output / "swing_presets.json").write_text(
         json.dumps(plugin_presets, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     if args.install:

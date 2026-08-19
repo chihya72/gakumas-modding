@@ -47,8 +47,16 @@ def _bundle_src(root: Path) -> Path:
     raise FileNotFoundError(f"找不到 bundle-src/mod.json: {root}")
 
 
-def _record(report, level: str, message: str):
+# 每条结论都带一句"下一步做什么"。
+#
+# 作者拿到 "*_H 矫正骨一份权重都没拿到" 之后仍然不知道该干嘛 —— 而每次进游戏试的成本很高
+# （workspace 实测：54 个候选 blend 才收敛出 7 个成品）。所以瓶颈是**往返次数**，
+# 让每条报错自带修法比再加一条闸门更省。`action` 为空表示"没有已知的通用修法"，
+# 那本身也是信息，不要拿一句空话填。
+def _record(report, level: str, message: str, action: str = ""):
     report[level].append(message)
+    report.setdefault("findings", []).append(
+        {"level": level, "message": message, "action": action})
 
 
 def _asset_path(bundle_src: Path, asset: str) -> Path:
@@ -93,6 +101,35 @@ def _check_colors(report, geo: dict):
         if not any(float(value) for value in values):
             check["allZeroVertices"] += 1
     check["zeroChannelValues"] = sum(check["zeroByChannel"].values())
+
+    # G8：顶点 COLOR 的语义，不只是形状。
+    #
+    # 这游戏的描边宽度、rim、`_RampAddMap` 的行号全打包在 COLOR 的 nibble 里
+    # （R=描边色 / G 低 4 位=RampAdd 行 / B 低 4 位=描边宽 / A 高 4 位=rim）。
+    # 一个没有顶点色的网格导进来会拿到**纯白** (255,255,255,255)，于是描边被冲掉、
+    # 行号读到 15、rim 读到 15 —— 画面上就是"换完模型没描边"。
+    #
+    # 判据取自 22 套原版实测：**纯白顶点 0 个**（行号用到 {0,1,2,3,6,9,12,15}，
+    # rim 以 9 为主、0 也占三分之一，所以不能拿 rim 当判据；纯白才是干净的红线）。
+    rows = {}
+    rims = {}
+    white = 0
+    for offset in range(0, len(colors), 4):
+        red, green, blue, alpha = (int(round(float(v) * 255)) if float(v) <= 1.0 else int(float(v))
+                                   for v in colors[offset:offset + 4])
+        rows[green & 15] = rows.get(green & 15, 0) + 1
+        rims[alpha >> 4] = rims.get(alpha >> 4, 0) + 1
+        if (red, green, blue, alpha) == (255, 255, 255, 255):
+            white += 1
+    check["rampAddRows"] = dict(sorted(rows.items()))
+    check["rimNibbles"] = dict(sorted(rims.items()))
+    check["pureWhiteVertices"] = white
+    if white:
+        _record(report, "errors",
+                f"{white} 个顶点是纯白 COLOR（原版 22 套实测 0 个）"
+                "—— 描边宽/rim/RampAdd 行都会读错，画面上表现为没有描边",
+                "导出前把「描边颜色」设成「取自基础色」或「按材质预设」，"
+                "并确认每个材质槽都标了「材质类型」")
     report["colors"] = check
 
 
@@ -126,6 +163,138 @@ def _check_weights(report, geo: dict, sidecar: dict, is_body: bool):
     if is_body and (missing or absent):
         _record(report, "errors", "身体承重骨缺失或零权重: " + ", ".join(missing + absent))
     report["weights"] = check
+
+
+# G1.  Stock bodies skin their joints to a corrective helper rig — 16 `*_H` bones per body,
+# 530/530 costumes carry all of them, and ~17% of the whole body's weight mass sits there
+# (tools/measure_helper_rig.py, 1060 limbs).  A converted mod inherits the target's skeleton, so
+# those bones are *already present* in the sidecar — but the source's own weights never land on
+# them, and both shipped mods measure a flat 0.00%.  What that costs is twist distribution: the
+# forearm shears and the shoulder/elbow crease instead of folding, which is what the author sees.
+#
+# This is a share, not a count: the bones being listed proves nothing, only weight on them does.
+#
+# The floor is measured, not picked.  Running this same function over 49 stock bodies that load
+# cleanly out of `mod-workspace/libraries/all_body`: min 6.02% (amao-cstm-0062), P5 7.43%,
+# median 11.28%, max 21.00% (atbm-othr-0002), none at zero.  A first cut at 8% would have fired on
+# 13 of those 49 — a quarter of the stock population — so it sits at 4%, below the observed
+# minimum with margin.  The hard error stays at *exactly zero*, which no stock body is.
+# (17% appears in measure_helper_rig.py over a different denominator; do not reuse it here.)
+HELPER_FLOOR = 0.04
+VANILLA_HELPER_SHARE = 0.1128
+
+
+def helper_rig_share(bone_names, skin):
+    """Fraction of total weight mass carried by `*_H` bones.  Pure function of the two inputs so
+    the same judge can be run against a stock body's own data (see INV-8 in research/ab-v2-plan.md)."""
+    total = 0.0
+    helper = 0.0
+    for influence in skin or []:
+        indices = influence.get("boneIndex", []) if isinstance(influence, dict) else []
+        weights = influence.get("weight", []) if isinstance(influence, dict) else []
+        for index, weight in zip(indices, weights):
+            index = int(index)
+            weight = float(weight)
+            if weight <= 0.0 or index < 0 or index >= len(bone_names):
+                continue
+            total += weight
+            if str(bone_names[index]).endswith("_H"):
+                helper += weight
+    return (helper / total if total else 0.0), total
+
+
+def _check_helper_rig(report, geo: dict, sidecar: dict, is_body: bool):
+    bone_names = [item.get("name") for item in sidecar.get("bones", [])
+                  if isinstance(item, dict) and item.get("name")]
+    present = sorted(name for name in bone_names if str(name).endswith("_H"))
+    share, mass = helper_rig_share(bone_names, geo.get("m_Skin"))
+    report["helperRig"] = {
+        "presentCount": len(present),
+        "weightShare": round(share, 4),
+        "vanillaShare": VANILLA_HELPER_SHARE,
+        "floor": HELPER_FLOOR,
+    }
+    if not is_body or not mass:
+        return
+    if not present:
+        _record(report, "warnings", "骨架里没有 *_H 矫正骨，无法判断扭转分配")
+    elif share <= 0.0:
+        _record(report, "errors",
+                f"{len(present)} 根 *_H 矫正骨一份权重都没拿到（原版 {VANILLA_HELPER_SHARE:.0%}）"
+                "；肩/肘/腕在扭转时会剪切",
+                "源模型自带捩骨（MMD 腕捩/手捩、原神 UpperArmTwist）的话，"
+                "确认骨名映射把它们落到 *_Roll_H 而不是折叠进 LeftArm；"
+                "源模型没有捩骨就跑 tools/redistribute_helper_weights.py（破坏性，先不加 --write 试跑）")
+    elif share < HELPER_FLOOR:
+        _record(report, "warnings",
+                f"*_H 矫正骨只承重 {share:.1%}（原版 {VANILLA_HELPER_SHARE:.0%}）")
+
+
+# G5/G6.  Bones reach the game through `BoneNameToTransformDictionary`, and body/face/hair are
+# linked to each other by name as well (`VLActorModelParts.InitializeBones`), so a duplicate name
+# silently overwrites rather than erroring.  `TransformCapacity = 256` is the stock capacity
+# constant for that same class; whether it is a hard ceiling is unread (plan §P5), so going over
+# is a warning with the number rather than a refusal.
+TRANSFORM_CAPACITY = 256
+
+
+def _check_skeleton_budget(report, sidecar: dict):
+    names = [item.get("name") for item in sidecar.get("bones", [])
+             if isinstance(item, dict) and item.get("name")]
+    # 运行时真正建出来的节点 = bones（模板 + 已合并的源专属骨）+ 顶层 extraSwingBones（链尾）。
+    # `sourceRigRemap.newBones` 是同一批骨的**报告视图**，导出器把它们同时写在两处；
+    # 走 _new_bone_records() 会把每根新骨数两遍，于是任何带新骨的包都被判"骨名重复"、
+    # 节点数也虚高（已发布的 hmsz-fuyuko-icu 成品同样中招：报 292，实际 192）。
+    names += [item.get("name") for item in sidecar.get("extraSwingBones") or []
+              if isinstance(item, dict) and item.get("name")]
+    seen = {}
+    for name in names:
+        seen[name] = seen.get(name, 0) + 1
+    duplicates = sorted(name for name, count in seen.items() if count > 1)
+    report["skeletonBudget"] = {"nodeCount": len(names), "capacity": TRANSFORM_CAPACITY,
+                                "duplicateNames": duplicates}
+    if duplicates:
+        _record(report, "errors",
+                "骨名重复（按名字进字典，重名会互相覆盖）: " + ", ".join(duplicates[:10]),
+                "游戏的 RegisterBone 遇到重名会**整根跳过**，那根骨上的摇物/驱动器/碰撞体"
+                "一个都收不到。在 Blender 里把重名骨改掉，注意 body/face/hair 三个部件是一个命名空间")
+    if len(names) > TRANSFORM_CAPACITY:
+        _record(report, "warnings",
+                f"骨节点 {len(names)} 超过原版容量常量 {TRANSFORM_CAPACITY}")
+
+
+# G11：Avatar 建不起来，动画就一帧都不播。
+#
+# 判据是读出来的，不是抄 Unity 的：`VLActorDefine.ClearRequiredDescriptionFlags` 分配的
+# `_requiredDescriptionFlags` 长度是 **19**（`sub_A845FF4` @0x0A845FF4），
+# `AddRequiredDescriptionFlag(hbb)` 直接 `arr[(int)hbb] = 1`（@0x0A846130 —— 索引就是
+# `HumanBodyBones` 枚举值），`IsValidHumanDescription()` 是这 19 位的全 AND（@0x0A846228）。
+#
+# 所以必备集合 = `HumanBodyBones` 0–18。**Unity 自己的必备集只有 15 根，不含 Chest / Neck /
+# 两个 Shoulder** —— 这四根在这个游戏里是硬要求，缺一根 Avatar 就无效。
+# 这是**存在性**检查，不是承重检查：Head/Neck 在 body 网格上完全可以零权重（脸是另一个部件）。
+REQUIRED_HUMANOID_BONES = (
+    "Hips",
+    "LeftUpLeg", "RightUpLeg", "LeftLeg", "RightLeg", "LeftFoot", "RightFoot",
+    "Spine", "Spine1",                    # Spine / Chest
+    "Neck", "Head",
+    "LeftShoulder", "RightShoulder",
+    "LeftArm", "RightArm", "LeftForeArm", "RightForeArm", "LeftHand", "RightHand",
+)
+
+
+def _check_required_humanoid(report, sidecar: dict, is_body: bool):
+    names = {item.get("name") for item in sidecar.get("bones", [])
+             if isinstance(item, dict) and item.get("name")}
+    names |= {item.get("name") for item in _new_bone_records(sidecar) if item.get("name")}
+    missing = [bone for bone in REQUIRED_HUMANOID_BONES if bone not in names]
+    report["requiredHumanoid"] = {"required": len(REQUIRED_HUMANOID_BONES), "missing": missing}
+    if is_body and missing:
+        _record(report, "errors",
+                "缺 Avatar 必备骨（19 根里少了 " + str(len(missing)) + " 根）: "
+                + ", ".join(missing) + " —— IsValidHumanDescription() 会判失败，动画一帧都不播",
+                "这 19 根是 HumanBodyBones 0–18，比 Unity 自己的必备集多 Chest/Neck/两个 Shoulder。"
+                "在骨名映射里把源模型对应的骨补上；目标骨架本来就有这些骨，缺的是映射")
 
 
 def _check_ownership(report, sidecar: dict):
@@ -386,6 +555,7 @@ def verify_package(root, log_paths=(), hash_paths=()):
         "bundleSource": str(bundle_src),
         "errors": [],
         "warnings": [],
+        "findings": [],
         "files": {},
     }
     for path in sorted(bundle_src.iterdir()):
@@ -454,20 +624,26 @@ def verify_package(root, log_paths=(), hash_paths=()):
     if sidecar:
         _check_ownership(report, sidecar)
         _check_swing(report, sidecar)
+        _check_skeleton_budget(report, sidecar)
+        _check_required_humanoid(report, sidecar, is_body)
     geometry_reports = []
     for geo_path in geo_paths:
         geo = _read_json(geo_path)
-        geometry_report = {"path": str(geo_path), "errors": [], "warnings": []}
+        geometry_report = {"path": str(geo_path), "errors": [], "warnings": [], "findings": []}
         _check_colors(geometry_report, geo)
         if sidecar:
             _check_weights(geometry_report, geo, sidecar, is_body)
-        for level in ("errors", "warnings"):
-            for message in geometry_report[level]:
-                _record(report, level, f"{geo_path.name}: {message}")
+            _check_helper_rig(geometry_report, geo, sidecar, is_body)
+        # 逐 geometry 的结论要连 action 一起搬上来 —— 只搬 message 的话，
+        # 「下一步做什么」在这里被静默丢掉，而 G1/G8 这两条高频错误恰好都在这条路径上。
+        for finding in geometry_report.get("findings", []):
+            _record(report, finding["level"], f"{geo_path.name}: {finding['message']}",
+                    finding.get("action", ""))
         geometry_reports.append({
             "path": geometry_report["path"],
             "colors": geometry_report.get("colors"),
             "weights": geometry_report.get("weights"),
+            "helperRig": geometry_report.get("helperRig"),
         })
     report["geometries"] = geometry_reports
     # 保留单 Renderer 时代的顶层摘要，避免现有报告消费者失效；完整结果以上面的数组为准。

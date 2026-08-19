@@ -1,7 +1,7 @@
 {
  "_source": "tools/scan_vanilla_swing_bones.py --install 生成，别手改",
  "_amplitude": "range 里的分位数只作参考/闸门，代码不用它调幅度。2026-08-11 试过做弱/标准/强三档，实测五个参数从分布一端拉到另一端摆幅只动 ±35% 且方向与预期相反，档位已撤销，只保留标准档（中位数）。",
- "_collisionMask": "原版逐服装的碰撞分组归属，对 mod 新骨无对应语义；统一取 -1(Everything)。",
+ "_collisionMask": "逐档取原版众数（**实机实验档**，不是已定案的默认值）：skirt 1、cloth 64、sleeve 0、ribbon 256",
  "categories": {
   "ribbon": {
    "useChain": false,
@@ -34,7 +34,7 @@
      "colliderType": 0,
      "colliderRadius": 0.028,
      "colliderRadiusSub": 0.05,
-     "collisionMask": -1,
+     "collisionMask": 256,
      "dynamicType": 0,
      "range": {
       "damping": {
@@ -128,7 +128,7 @@
      "colliderType": 0,
      "colliderRadius": 0.018,
      "colliderRadiusSub": 0.05,
-     "collisionMask": -1,
+     "collisionMask": 256,
      "dynamicType": 0,
      "range": {
       "damping": {
@@ -222,7 +222,7 @@
      "colliderType": 0,
      "colliderRadius": 0.015,
      "colliderRadiusSub": 0.05,
-     "collisionMask": -1,
+     "collisionMask": 256,
      "dynamicType": 0,
      "range": {
       "damping": {
@@ -323,7 +323,7 @@
      "colliderType": 0,
      "colliderRadius": 0.03,
      "colliderRadiusSub": 0.05,
-     "collisionMask": -1,
+     "collisionMask": 64,
      "dynamicType": 0,
      "range": {
       "damping": {
@@ -417,7 +417,7 @@
      "colliderType": 0,
      "colliderRadius": 0.022,
      "colliderRadiusSub": 0.05,
-     "collisionMask": -1,
+     "collisionMask": 64,
      "dynamicType": 0,
      "range": {
       "damping": {
@@ -511,7 +511,7 @@
      "colliderType": 0,
      "colliderRadius": 0.02,
      "colliderRadiusSub": 0.05,
-     "collisionMask": -1,
+     "collisionMask": 64,
      "dynamicType": 0,
      "range": {
       "damping": {
@@ -612,7 +612,7 @@
      "colliderType": 0,
      "colliderRadius": 0.05,
      "colliderRadiusSub": 0.05,
-     "collisionMask": -1,
+     "collisionMask": 0,
      "dynamicType": 0,
      "range": {
       "damping": {
@@ -706,7 +706,7 @@
      "colliderType": 4,
      "colliderRadius": 0.05,
      "colliderRadiusSub": 0.05,
-     "collisionMask": -1,
+     "collisionMask": 0,
      "dynamicType": 1,
      "range": {
       "damping": {
@@ -800,7 +800,7 @@
      "colliderType": 4,
      "colliderRadius": 0.05,
      "colliderRadiusSub": 0.05,
-     "collisionMask": -1,
+     "collisionMask": 0,
      "dynamicType": 1,
      "range": {
       "damping": {
@@ -901,7 +901,7 @@
      "colliderType": 0,
      "colliderRadius": 0.02,
      "colliderRadiusSub": 0.05,
-     "collisionMask": -1,
+     "collisionMask": 1,
      "dynamicType": 0,
      "range": {
       "damping": {
@@ -995,7 +995,7 @@
      "colliderType": 0,
      "colliderRadius": 0.02,
      "colliderRadiusSub": 0.05,
-     "collisionMask": -1,
+     "collisionMask": 1,
      "dynamicType": 0,
      "range": {
       "damping": {
@@ -1089,7 +1089,7 @@
      "colliderType": 0,
      "colliderRadius": 0.02,
      "colliderRadiusSub": 0.05,
-     "collisionMask": -1,
+     "collisionMask": 1,
      "dynamicType": 0,
      "range": {
       "damping": {

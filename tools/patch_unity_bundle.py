@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 import struct
@@ -199,6 +200,13 @@ def _patch_mesh(mesh_object, geo: dict, allow_bindpose_growth=False):
 
     submeshes = geo.get("m_SubMeshes") or []
     template_submeshes = tree.get("m_SubMeshes") or []
+    # 自建半透明段比原版多出材质段（原版 body 只有 bdy(+bdyco)），所以允许**变多**：
+    # 复制最后一段当模板再逐字段覆盖。变少仍然报错——那是归并出错的信号，不是新功能。
+    if len(submeshes) > len(template_submeshes) and template_submeshes:
+        for _ in range(len(submeshes) - len(template_submeshes)):
+            template_submeshes.append(copy.deepcopy(template_submeshes[-1]))
+        tree["m_SubMeshes"] = template_submeshes
+        print(f"[patch] submesh grown to {len(template_submeshes)} (自建半透明段)")
     if len(submeshes) != len(template_submeshes):
         raise ValueError(f"submesh count changed: template={len(template_submeshes)} input={len(submeshes)}")
     for target, source in zip(template_submeshes, submeshes):
@@ -539,12 +547,14 @@ def patch_bundle(template: Path, mod_root: Path, output: Path) -> None:
     output.write_bytes(env.file.save("original"))
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    # argv 可传：插件在 Blender 自带 Python 里直接 import 这个模块调 main()，不起子进程
+    # （UnityPy 的 wheel 随插件一起装，见 tools/package_blender_addon.py --with-unitypy）。
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--template", type=Path, required=True)
     parser.add_argument("--mod-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     patch_bundle(args.template, args.mod_root, args.output)
     print(f"patched {args.output}")
 

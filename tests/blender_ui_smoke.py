@@ -1,3 +1,4 @@
+import json
 import re
 import sys
 from pathlib import Path
@@ -56,7 +57,9 @@ try:
     assert [item.identifier for item in component.enum_items] == ["body", "hair"]
     strategy = operators.GMI_bone_map_item.bl_rna.properties["strategy"]
     assert [item.identifier for item in strategy.enum_items] == [
-        "auto", "rigid", "integrate", "follow_skirt", "follow_nearest",
+        "auto", "rigid", "integrate", "follow_skirt", "follow_nearest", "native_driver",
+        # bake / reject 只能追加在末尾：老 .blend 存的是枚举的**整数**下标
+        "bake", "reject",
     ]
     legacy_strategy = bpy.context.scene.gmi_bone_map.add()
     legacy_strategy["strategy"] = 3
@@ -168,6 +171,28 @@ try:
     item.strategy = "rigid"                 # 不新建骨的策略同样不该产出类别
     assert operators._form_swing_categories(scene) == {}
 
+
+    # 批次 6：原版布料驱动器只作用在**作者点名的那几根骨**上，且只支持运行时实现的三类。
+    scene.gmi_bone_map.clear()
+    driver_row = scene.gmi_bone_map.add()
+    driver_row.source = "LeftSkirt1_S"
+    driver_row.members = "LeftSkirt1_S\nLeftSkirt2_S"
+    driver_row.strategy = "native_driver"
+    driver_row.swing_category = "skirt"
+    other = scene.gmi_bone_map.add()          # 同类别、没点名：不该被带上
+    other.source = "RightSkirt1_S"
+    other.members = "RightSkirt1_S"
+    assert operators._form_driver_bones(scene) == {
+        "LeftSkirt1_S": "skirt", "LeftSkirt2_S": "skirt"}
+    assert operators._form_driver_gaps(scene) == []
+    driver_row.swing_category = "ribbon"      # 没有对应驱动器 → 必须被闸门抓住
+    assert operators._form_driver_bones(scene) == {}
+    assert [name for name, _category in operators._form_driver_gaps(scene)] == [
+        "LeftSkirt1_S", "LeftSkirt2_S"]
+    driver_row.target = "Hips"                # 填了目标骨=确定映射，驱动器那一列失效
+    assert operators._form_driver_gaps(scene) == []
+    scene.gmi_bone_map.clear()
+
     class ListRow:
         def __init__(self, sink):
             self.sink, self.enabled = sink, True
@@ -198,6 +223,47 @@ try:
     assert draw_row()["swing_category"] is False, "非 integrate 时部件类型必须置灰"
     item.strategy = "integrate"
     assert draw_row()["swing_category"] is True
+
+    # 一行 = 一组：表单里的决定必须落到组里每一根骨，否则作者点一次只管到代表骨。
+    # 五档状态列的图标不走 icon="..." 字面量，上面那道 icon 校验扫不到，这里单独查。
+    assert not (set(ui._STATE_ICONS.values()) - valid_icons)
+    scene.gmi_bone_map.clear()
+    group = scene.gmi_bone_map.add()
+    group.source, group.members = "スカート0", "スカート0\nスカート1\nスカート2"
+    group.strategy = "integrate"
+    group.swing_category = "skirt"
+    assert operators._form_swing_categories(scene) == {
+        name: "skirt" for name in ("スカート0", "スカート1", "スカート2")}
+    assert operators._form_physics_overrides(scene) == {
+        name: "integrate" for name in ("スカート0", "スカート1", "スカート2")}
+    assert ui._row_state(group) == "helper"
+    group.strategy = "auto"
+    assert ui._row_state(group) == "undecided", "装饰骨没目标不是错，是「这一组还没决定」"
+    group.target = "Hips"
+    assert operators._form_bone_map(scene) == {
+        name: "Hips" for name in ("スカート0", "スカート1", "スカート2")}
+    assert ui._row_state(group) == "merge", "三根骨指到同一根目标骨 = 多对一"
+
+    # 拆开这一组 → 一行一根骨，组里的决定原样带过去
+    assert bpy.ops.gmi.split_bone_group(index=0) == {"FINISHED"}
+    assert [row.source for row in scene.gmi_bone_map] == ["スカート0", "スカート1", "スカート2"]
+    assert all(row.target == "Hips" for row in scene.gmi_bone_map)
+    assert ui._row_state(scene.gmi_bone_map[0]) == "direct"
+    scene.gmi_bone_map.clear()
+
+    # 尺子入口必须在导出面板上（作者唯一自查不到的是静止朝向差）
+    ruler_layout = FakeLayout()
+    scene.gmi_rig_report = json.dumps({
+        "alignment": [{"bone": "LeftShoulder", "mm": 0.2, "deg": 172.0, "grade": "red"}],
+        "bands": [{"joint": "肩", "share": 0.049, "vanilla": 0.133, "grade": "red"}],
+        "measured": 1, "skipped": 0, "baseline": "参考体",
+    })
+    ui.draw_export_step(ruler_layout, scene, bpy.context)
+    assert "gmi.report_rig_alignment" in ruler_layout.operators
+    assert "gmi.split_weight_from_neighbours" in ruler_layout.operators
+    assert "gmi.bake_rest_offset" in ruler_layout.operators
+    scene.gmi_rig_report = ""
+    ui.draw_export_step(FakeLayout(), scene, bpy.context)     # 没量过也要画得出来
 
     print("GMI_UI_SMOKE_OK", bpy.app.version_string, sorted(icons))
 finally:
