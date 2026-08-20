@@ -35,3 +35,21 @@ gakumas_mi/vendor/
 
 # Blender 无头跑留下的日志
 Logs/
+
+# Unity SDK 实验台（research/unity-humanoid-avatar-sdk/）：这些东西 2026-08-20 从历史里剥掉了。
+# 它们曾把 15 个未推送提交撑到 280 MB —— Library 是纯缓存，其余是可重新生成或本机备份的
+# 大块二进制。文件仍在磁盘上，只是不进 git；哪些能怎么重建见该目录的 README。
+research/unity-humanoid-avatar-sdk/GakumasAvatarSdk/Library/
+research/unity-humanoid-avatar-sdk/GakumasAvatarSdk/UserSettings/
+research/unity-humanoid-avatar-sdk/GakumasAvatarSdk/Temp/
+research/unity-humanoid-avatar-sdk/GakumasAvatarSdk/Obj/
+research/unity-humanoid-avatar-sdk/GakumasAvatarSdk/Assets/**/*.png
+research/unity-humanoid-avatar-sdk/GakumasAvatarSdk/Assets/**/*.png.meta
+research/unity-humanoid-avatar-sdk/GakumasAvatarSdk/Assets/**/*.asset
+research/unity-humanoid-avatar-sdk/GakumasAvatarSdk/Assets/**/*.asset.meta
+research/unity-humanoid-avatar-sdk/GakumasAvatarSdk/Assets/**/*.fbx
+research/unity-humanoid-avatar-sdk/GakumasAvatarSdk/Assets/**/*.fbx.meta
+research/unity-humanoid-avatar-sdk/.backup/
+research/unity-humanoid-avatar-sdk/reference/asset-inventory.json
+research/unity-humanoid-avatar-sdk/runtime-bepinex/obj/
+research/unity-humanoid-avatar-sdk/runtime-bepinex/bin/

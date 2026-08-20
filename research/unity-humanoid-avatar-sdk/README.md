@@ -23,8 +23,26 @@
    （吃 AssetStudio 导出的 `Geo_Body.json`，不是作者的 Unity prefab）。两者尚未收敛。
 
 当前已落地的开发切片：[`P0-STATUS.md`](P0-STATUS.md)、[`contracts/`](contracts/)、
-[`reference/asset-inventory.json`](reference/asset-inventory.json)、[`tools/`](tools/) 和
+`reference/asset-inventory.json`（不在 git 里，见下）、[`tools/`](tools/) 和
 可脱离 Unity 编译的 [`runtime-core/`](runtime-core/)。
+
+> ## ⚠️ 这个目录有 1476 个文件不在 git 里（2026-08-20）
+>
+> 它们曾经在：`6088ac7` 把整个 Unity 工程一起提交了，15 个未推送的提交因此撑到 **280 MB**
+> （Library 一个人占 175 MB），推一次要半小时。已从历史里剥掉，**文件仍在本机磁盘上**，
+> `.gitignore` 挡着不再进 git。
+>
+> | 不在 git 里 | 体积 | 怎么拿回来 |
+> |---|---|---|
+> | `GakumasAvatarSdk/Library/` | 175 MB | Unity 打开工程自动重建（纯缓存，本来就不该入库） |
+> | `GakumasAvatarSdk/Assets/**` 的 `.png` / `.asset` / `.fbx` | 74 MB | 贴图与生成的 mesh 从 `mod-workspace/` 重出；源 FBX 是第三方模型，本来也不该进公开仓 |
+> | `.backup/2026-08-14-working-medians/` | 15 MB | 本机回退备份（旧中位数版的包与 prefab），只在本机有意义 |
+> | `reference/asset-inventory.json` | 7 MB | 一条命令重建，见 [`reference/README.md`](reference/README.md) |
+> | `runtime-bepinex/obj` `bin` | — | 构建产物，`dotnet build` 重出 |
+>
+> 留在 git 里的是**判读结论所需的东西**：全部 `.cs` / `.py` / `.md` / `.mat` / `.prefab` /
+> `ProjectSettings/`，以及 `docs/` 里那些原版数字的原始出处。**clone 下来能读、能编译
+> `runtime-core/`，但要在 Unity 里真跑这个工程，得先按上表把资产补回去。**
 inventory 只代表解包数据中观察到的
 skeleton/mesh 证据；Animator、face、rest pose 和生命周期行为必须由 BepInEx 活体探针确认。
 
