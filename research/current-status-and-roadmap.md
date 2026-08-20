@@ -126,7 +126,8 @@ Blender 插件，v4.1.37 · 2026-07，10+ 游戏）提供的作者体验。注�
 
 > 表中「GPU 核心」「蒙皮转权」两行对应的功能已于 2026-07-27 随 3DMigoto 路线**整体删除**，
 > 保留行文仅为记录当时评估。0.9.0 的骨映射覆盖率账见
-> [universal-mod-automation-plan.md](universal-mod-automation-plan.md) 的 2026-07-27 进度。
+> `universal-mod-automation-plan.md` 的 2026-07-27 进度（该文档 2026-08-20 已删除，
+> 仍然管事的结论并进了 [`ab-target-rig-route-2026-08-17.md`](ab-target-rig-route-2026-08-17.md) §13.1）。
 
 | 模块 | 完成度 | 相对 0.7.2 评估的变化 |
 |---|---:|---|

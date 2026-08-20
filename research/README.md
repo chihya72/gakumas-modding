@@ -2,7 +2,10 @@
 
 更新：2026-08-20 · Blender 插件 1.2.0（未发布）
 
-**AB 路线只看两份文档。** 其余是专题记录或历史证据；与这两份冲突时，以这两份为准。
+**这个目录只放现在正在用的文档。** 过时的、被推翻的一律删掉，结论和取回方式在
+[`lessons-learned.md`](lessons-learned.md) §7（2026-08-20 按这条规矩清了一轮）。
+
+**AB 路线只看两份文档。** 其余是专题记录；与这两份冲突时，以这两份为准。
 **作者怎么做 mod 看 [`../docs/wiki/Home.md`](../docs/wiki/Home.md)**，这里是它背后的技术记录。
 
 ## AB 路线的两份主文档
@@ -21,9 +24,9 @@
 | [`ab-target-rig-contract.md`](ab-target-rig-contract.md) | **导出器/闸门/sidecar 的硬约束**：骨架契约、五档状态、尺子与阈值、缺骨怎么补。闸门清单只留指针，不存第二份 |
 | [`ab-target-rig-ingame-checklist.md`](ab-target-rig-ingame-checklist.md) | **离线做不了的那几件事，进游戏一次看什么**：判据全写成"跑哪个命令 / 看哪个数字" |
 
-> [`ab-source-proxy-summary-and-roadmap-tpose-locked-2026-08-16.md`](ab-source-proxy-summary-and-roadmap-tpose-locked-2026-08-16.md)
-> 自 2026-08-17 起降级为**对照组记录**（两副骨架桥 / whole-object），勿再投入；其中量到的事实
-> 仍然有效，作废的是路线结论。
+> 两副骨架桥 / whole-object 那条路的对照组记录（`ab-source-proxy-summary-...-2026-08-16.md`）
+> 已于 2026-08-20 删除 —— 它量到的事实全部进了事实文档，作废的路线结论进了
+> [`lessons-learned.md`](lessons-learned.md) §7。**代码没删**，双骨架 bridge 仍是特殊兼容模式。
 
 ## 专题记录（仍然有效）
 
@@ -31,23 +34,25 @@
 |---|---|
 | [`ab-route-notes.md`](ab-route-notes.md) | AB 路线：三段契约、运行时换网格机制、新增物理骨规范、无损边界、原生 `m_bdyco` 透明边界 |
 | [`hair-pipeline.md`](hair-pipeline.md) | 发型/发饰：资产结构、制作流程、踩坑总表 + shader 逐通道逆向证据 |
-| [`transparent-material-2026-08-18.md`](transparent-material-2026-08-18.md) | **半透明材质，路线暂停**（2026-08-19 收尾）：真 alpha 混合已成、「压背景时糊」根因已查到底（深度快照）；两条绕开 G-buffer 的路卡在同一个具体问题上。可用画面在兜底档（前向透明 queue 3000）。别重跑实验，先读这份 |
 | [`known-risks.md`](known-risks.md) | **本仓制作工具已知风险与排查索引**：导入、烘焙、导出或打包异常先查这里（更新到 2026-08-12，**早于 target-rig 那批**） |
 | [`lessons-learned.md`](lessons-learned.md) | **反面教训汇总**：已排除的路线、作废的做法、被推翻的结论 |
 | [`current-status-and-roadmap.md`](current-status-and-roadmap.md) | 远端已发布版本（1.1.0）的能力、边界和维护事项（更新到 2026-08-12，**早于 target-rig 那批**） |
-| [`universal-mod-automation-plan.md`](universal-mod-automation-plan.md) | 通用化的问题模型与算法规格（早于两份主文档，冲突时以主文档为准） |
 | [`unity-humanoid-avatar-sdk/`](unity-humanoid-avatar-sdk/) | **Unity 实验台**：`HANDOFF.md`、`docs/corrective-helper-rig.md`、`docs/rest-pose-dead-end.md` 是大量原版数字的原始出处，必须跟代码放在一起，**不归档** |
 
-## 历史证据档案
+## 不在这个目录里的东西
 
-[`archive-2026-08-16/`](archive-2026-08-16/) —— 9 份已被合并版取代的文档。
-**只作原始数据查阅**（IDA 逆向地址、原版扫描数据、失败样本、复现命令、三轮受控实验的
-逐材质逐骨误差、可交互 blend），结论一律以两份主文档为准。
+| 内容 | 在哪 |
+|---|---|
+| 半透明材质研究（938 行，路线暂停） | **分支 `research/transparent-material`**。主分支不留：路线停着，留在这里只会被当成现役 |
+| 9 份被合并版取代的 AB 研究文档 + 3 份过时文档 | git 历史，标签 `archive/research-2026-08-20`。逐份结论与取回命令见 [`lessons-learned.md`](lessons-learned.md) §7；每份里还值得查的原始数据列在事实文档 §10 |
+| 已放弃路线的旧记录（3DMigoto 逆蒙皮、PC IL2CPP、照搬 GIMI） | [`lessons-learned.md`](lessons-learned.md) §1 —— 只留结论，不留过程 |
 
 ---
 
-2026-08-16 的合并：9 份 AB 研究文档 → `ab-consolidated-facts-and-evidence-2026-08-16.md`，
-原文移入 `archive-2026-08-16/`。
+2026-08-20 的清理：删 3 份过时主文档 + `archive-2026-08-16/`（9 份）+ 两个过期数据目录，
+半透明研究移到自己的分支。结论表见 `lessons-learned.md` §7。
+
+2026-08-16 的合并：9 份 AB 研究文档 → `ab-consolidated-facts-and-evidence-2026-08-16.md`。
 
 2026-08-02 的一轮合并：4 份退役路线文档 → `retired-routes.md`（2026-08-03 再并入
 `lessons-learned.md` 并删除）；3 份发型文档 → `hair-pipeline.md`；`ab-route-handoff/docs/`

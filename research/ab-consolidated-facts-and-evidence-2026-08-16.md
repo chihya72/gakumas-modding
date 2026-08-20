@@ -9,7 +9,6 @@
 | 文档 | 管什么 |
 |---|---|
 | [`ab-target-rig-route-2026-08-17.md`](ab-target-rig-route-2026-08-17.md) | **做什么、按什么顺序做**（现行路线：target-rig） |
-| [`ab-source-proxy-summary-and-roadmap-tpose-locked-2026-08-16.md`](ab-source-proxy-summary-and-roadmap-tpose-locked-2026-08-16.md) | ~~路线~~ **对照组记录**（两副骨架桥 / whole-object），勿再投入 |
 | **本文** | **已知什么、量到多少、哪些结论已作废、怎么量才不出错** |
 
 冲突时：路线与顺序以 `ab-target-rig-route-2026-08-17.md` 为准，事实与数字以本文为准。
@@ -19,7 +18,7 @@
 > UnityPy 造不出来，必须 Unity 出包。现行路线是 **target-rig**：人体主骨架严格使用学马原版
 > 70 根，外部网格在 Blender 手动对齐，能对应的骨保留原权重并显式映射。
 
-被本文取代的文档见 §10，原文已移入 `archive-2026-08-16/`，只作原始数据查阅。
+被本文取代的文档见 §10。原文 2026-08-20 已从 `research/` 删除，取回方式写在那一节。
 
 ---
 
@@ -851,8 +850,16 @@ Unity 侧 `SdkPipeline.Shape()` 的八步（有序）：
 
 ## 10. 被本文取代的文档
 
-以下已移入 `archive-2026-08-16/`，**只作原始数据、逆向地址和复现命令的查阅**，结论一律以
-本文和路线图为准：
+以下 9 份 2026-08-16 先移入 `archive-2026-08-16/`、**2026-08-20 从工作树删除** —— 结论早已收进
+本文和路线文档，留在目录里只会让人以为它们还管事。**里面的原始数据仍然可取**，逐份从标签
+`archive/research-2026-08-20` 拿：
+
+```bash
+git show archive/research-2026-08-20:research/archive-2026-08-16/ab-route-v2-full-record.md > /tmp/x.md
+git checkout archive/research-2026-08-20 -- research/archive-2026-08-16/   # 整批取回
+```
+
+结论一律以本文和路线图为准；下表是每份里**还值得查的原始数据**：
 
 | 文档 | 里面还值得查的 |
 |---|---|

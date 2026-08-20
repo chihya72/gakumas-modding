@@ -106,6 +106,30 @@
 
 ---
 
+## 7. 已从 `research/` 删除的文档：结论与取回
+
+2026-08-20：`research/` 收成「只留现在正在用的」。下面每一份的结论都先落到了别处，
+原文从标签 **`archive/research-2026-08-20`** 取回：
+
+```bash
+git show archive/research-2026-08-20:research/<路径> > /tmp/x.md
+git checkout archive/research-2026-08-20 -- research/<路径>      # 取回到工作树
+```
+
+| 删掉的 | 结论去哪了 / 还剩什么值得知道 |
+|---|---|
+| `archive-2026-08-16/`（9 份，4813 行） | 结论早已合进 [`ab-consolidated-facts-and-evidence-2026-08-16.md`](ab-consolidated-facts-and-evidence-2026-08-16.md)；**每份里还值得查的原始数据**（IDA 地址、原版扫描、逐材质逐骨误差、评审对话原文）逐份列在那份文档的 §10 |
+| `ab-source-proxy-summary-and-roadmap-tpose-locked-2026-08-16.md`（723 行） | 两副骨架桥 / whole-object 的**对照组记录**。三条结论：① whole-object 作废的理由是「作者只开 Blender」—— 带组件的 prefab UnityPy 造不出来，必须 Unity 出包；② 双骨架 bridge 降级为**特殊兼容模式**（源身体比例是卖点、且不需要物理时），**代码没删**，是唯一还能动的对照；③ 它量到的数字（Claymore 三轮 A/B/C 的 37.7 / 21.9 / 12.8 cm 等）全部仍然有效，已在事实文档 §4.13–§4.15 和 Claymore 表里 |
+| `universal-mod-automation-plan.md`（407 行） | 泛用化的四条边界并进了 [`ab-target-rig-route-2026-08-17.md`](ab-target-rig-route-2026-08-17.md) §13.1（两层分开谈 / 自动兜 90% + 傻瓜 override 兜 10% / 默认整搬而非位置蹭 / 压力样本不定默认值）。其余是早于两份主文档的问题模型和过期进度 |
+| `transparent-material-2026-08-18.md`（938 行） | **整份移到分支 `research/transparent-material`**，路线暂停，不进主分支。结论：真 alpha 混合早就做出来了；「压背景时糊」的根因是**景深读的 RT0.z 由一趟全屏 resolve 从深度预 pass 的快照重算，我们的部件写得比快照晚**，在 G-buffer 里只有「变不透明（遮住身体）」或「变白」二选一。可用画面收在兜底档（前向透明 queue 3000）。绕开 G-buffer 的两条路机制已验证成立，卡在同一个具体问题（注入的 `DrawRenderer` 姿势不对）。要继续就 `git switch research/transparent-material` |
+| `inverse-skin/`（4 帧 `compute-emulation.json`） | 3DMigoto 逆蒙皮时期的 GPU 仿真收尾数据：四帧一致，顶点位置 max `2.2~3.0e-05`、法线角 max `≤0.32°` —— 即**离线仿真与 GPU 结果等价**，那条路线的死因从来不是精度（死因见 §1）。数值留在这里就够，不必再取回 |
+| `assetstudio/maps/gakumasassets.json` | 2026-06 的字体资源清单，全仓无人引用，无结论 |
+
+**为什么删而不是留着**：目录里躺着一份"已被取代"的文档，下一个人（和我）会先读它、再发现白读。
+`research/` 现在的规矩是**只放现在正在用的**；过时的进 git 历史 + 这张表。
+
+---
+
 原始记录：外部模型转换的逐步规范见 [`../docs/wiki/10-外部模型转换实战规范.md`](../docs/wiki/10-外部模型转换实战规范.md)；
 发型逐通道逆向见 [`hair-pipeline.md`](hair-pipeline.md)；摆动物理见
 [`ab-route-notes.md`](ab-route-notes.md)。
