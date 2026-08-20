@@ -1143,8 +1143,8 @@ ribbon）时，表单当场标 ERROR，导出**直接拦下并说清怎么改**�
 
 - [`ab-consolidated-facts-and-evidence-2026-08-16.md`](ab-consolidated-facts-and-evidence-2026-08-16.md)
   —— 事实与证据的唯一入口。本文引用的每一个数字都出自它
-- [`ab-source-proxy-summary-and-roadmap-tpose-locked-2026-08-16.md`](ab-source-proxy-summary-and-roadmap-tpose-locked-2026-08-16.md)
-  —— 两副骨架桥与 whole-object 的实施记录，**对照组，勿再投入**
+- [`lessons-learned.md`](lessons-learned.md) §7 —— 已删除文档的结论与取回（两副骨架桥 / whole-object
+  的对照组记录、泛用化计划、半透明研究都在这张表里）
 - [`ab-target-rig-contract.md`](ab-target-rig-contract.md) —— 本文 §4 的落地面：导出器/闸门/sidecar 的硬约束
 - [`ab-target-rig-ingame-checklist.md`](ab-target-rig-ingame-checklist.md) —— 进游戏一次该看什么（判据全是命令和数字）
 - `gakumas-mod-runtime/docs/manifest-v2.md` —— sidecar 契约（改格式要同时 grep 这里）
