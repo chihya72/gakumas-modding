@@ -126,7 +126,7 @@ Avatar 由 `CampusActorController.BuildAvatar()` 运行时按骨名现建。
 | lossless graft（协议 1） | manifest 带 `skeleton` | 用源 bindpose；root/数量/权重索引不符时硬失败 |
 | legacy | 没有 `skeleton` | root 同名时用 mod bindpose，否则退回原版，记 `bindposeMode` |
 
-**关键机制**（`ModRuntime.cpp:2855`，`BuildHybridBoneArray`）：
+**关键机制**（`ModRuntime.cpp` 的 `BuildHybridBoneArray`）：
 
 ```cpp
 if (originalBoneIndexMap.find(sidecarBone.name) != end) {
@@ -750,7 +750,7 @@ Swing motion over 300 frames: bone=Bone_SleeveSA01_L peakLocalRotation=0.00deg �
 
 ### 7.1 已修
 
-- `tools/verify_ab_package.py:241` **新骨被数了两遍**：顶层 `extraSwingBones` 与
+- `tools/verify_ab_package.py` **新骨被数了两遍**：顶层 `extraSwingBones` 与
   `sourceRigRemap.newBones` 是同一批骨的两份视图。任何带新骨的包都被判「骨名重复」、
   节点数虚高——**已发布的 `hmsz-fuyuko-icu` 成品也 FAIL**（报 292，实际 192）。
   违反项目自己「坏样本会报、正常样本不误报」的不变量。已改，6 个单测全绿。
@@ -759,7 +759,7 @@ Swing motion over 300 frames: bone=Bone_SleeveSA01_L peakLocalRotation=0.00deg �
 
 | 项 | 状态 |
 |---|---|
-| 运行时空引用只 warn 后继续（`ModRuntime.cpp:779/756`），且 `AddComponent` 在 743 早于引用循环，748 已有半初始化组件泄漏 | 必须改成 **AddComponent 之前预检、缺任一必需引用整体拒绝** |
+| 运行时空引用只 warn 后继续（`ModRuntime.cpp`），且 `AddComponent` 早 早于引用循环，748 已有半初始化组件泄漏 | 必须改成 **AddComponent 之前预检、缺任一必需引用整体拒绝** |
 | 映射没有 `via` 来源标注 | 72 根静默塌 Hips 的骨和真映射长得一模一样，排错要靠 dump JSON |
 | 表单按「有没有填目标」报警 | 装饰骨没有目标是**正常状态**，57 行全在喊 |
 | 结构分组（锚点 + 链）未进生产 | `group_key()` 仍按名字剥 left/right，日语/中文/乱码全废 |

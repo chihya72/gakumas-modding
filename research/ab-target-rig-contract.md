@@ -41,8 +41,8 @@ D = 目标 bindPose · 源骨静止世界        自洽时 D = 单位阵
 | `direct` | 直接映射到一根学马骨 | 表单填目标骨（唯一） |
 | `merge` | 合并到一根学马骨（多对一） | 一组多根填同一目标骨，或 rigid / follow_* 策略 |
 | `helper` | 保留为新增辅助骨，挂在学马骨架下 | 策略选「自建摇物链」/「原版布料驱动器」 |
-| `bake` | 静止形变烘进网格后合并到父级学马骨 | ✅ 策略 + `gmi.bake_rest_offset` 算子；标了没烘就导出会被拦（`operators.py:1615`） |
-| `reject` | 无法安全处理，禁止导出 | ✅ 策略已在表单；有这档的骨直接拦下导出（`operators.py:1590`） |
+| `bake` | 静止形变烘进网格后合并到父级学马骨 | ✅ 策略 + `gmi.bake_rest_offset` 算子；标了没烘就导出会被拦（`operators._prepare_bundle_export_data` 的未烘检查） |
+| `reject` | 无法安全处理，禁止导出 | ✅ 策略已在表单；有这档的骨直接拦下导出（`operators._prepare_bundle_export_data` 的 `reject` 检查） |
 | `undecided` | 还没决定 | 装饰骨的正常起点；**默认拦下导出**，显式放行会写进 sidecar（闸门 9，`40819e4`） |
 
 判定是纯函数 `core.row_state(target, strategy, shared_target)`，UI 与闸门读同一个它。
@@ -170,6 +170,9 @@ Claymore rip、同一个网格：
 
 验收是可复算的：把**原版自己身体**的 `LeftShoulder` 整组删掉再归一化，劈回来与真值逐顶点比 ——
 864 个顶点最差 5.96e-08（`tests/blender_weight_split_smoke.py`）。
+
+> **引用代码只写符号名，不写行号。** 2026-08-20 核对：18 条行号引用里 6 条已指到不相干的函数，
+> 且漂移全由同一周自己的提交造成。详见路线文档 §16 规矩 11。
 
 ## 6. 硬闸门（导出前必须全过）
 

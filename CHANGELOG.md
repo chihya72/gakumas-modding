@@ -70,7 +70,7 @@
   48292 根原版摇物骨扫出来）。值以 `gakumas_mi/swing_presets.json` 的 `_collisionMask` 注为准；
   **这是实机实验档，画面判定还欠一次**；
 - **`native_driver` 作用域化**：导出器以前收的是**类别集合** —— 作者在一行上选了裙，全模型每一根
-  skirt 类别的新骨都跟着改走驱动器。现在收 `{骨名: 类别}`（`tests/test_driver_scope.py` 钉住重导逐字节一样）；
+  skirt 类别的新骨都跟着改走驱动器。现在收 `{骨名: 类别}`（`tests/test_swing_params.py` 钉住重导逐字节一样）；
 - **置灰做对**：运行时只实现 Skirt / Frill / HumanoidSleeve 三类驱动器，选了「原版布料驱动器」而类别落在
   ribbon 时表单当场标 ERROR、导出拦下并说清怎么改。以前这种组合导出后那几根骨**既没驱动器也没摇物**
   = 不会动的哑骨，而日志全绿。

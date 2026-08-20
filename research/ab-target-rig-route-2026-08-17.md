@@ -327,7 +327,7 @@ Leg_pendant_R_* → RightLeg （刚性）           旧 AB 同
 Lace_R_*        → RightFrontSkirt4_S          正是 physics-override 注释里记的那根
 ```
 
-双向验：`tests/test_name_rule_scope.py` 四条；撤掉修复前两条变红。
+双向验：`tests/test_bone_classification.py` 的「名字规则作用域」一节四条；撤掉修复前两条变红。
 
 **方法论**：这次能查到，是因为判据换成了「与画面已确认正确的旧包逐条比对」，
 而不是「我觉得哪个类别更像」。E 那次翻车正是缺这个真值。
@@ -525,9 +525,9 @@ Unity 拒、留旧 typetree 写新字节原生崩），必须 Unity 出包，直
 所以 P0 与结构分组绑死，同批施工：
 
 ```text
-gakumas_mi/ui.py:300     """一行 = 一根带权重的源骨。"""   ← 痛点的根
-gakumas_mi/core.py:2780  group_key() 正则剥 left/right     ← 日语/中文/乱码全废
-gakumas_mi/core.py:2975  swing_category_by_geometry()      ← 已写好，只有测试在调
+gakumas_mi/ui.py   GMI_UL_bone_map  「一行 = 一根带权重的源骨」  ← 痛点的根
+gakumas_mi/core.py group_key()（在 build_accessory_physics_remap 内）正则剥 left/right ← 日语/中文/乱码全废
+gakumas_mi/core.py swing_category_by_geometry()  ← 已写好，只有测试在调
 ```
 
 分组换成**结构信号，一个骨名不读**：
@@ -640,7 +640,7 @@ Hips
 
 判据是**这根骨在原版身上扛多少权重**。
 
-**档 1 — 必需骨（21 根，`gakumas_mi/core.py:2665 CRITICAL_TARGET_BONES`）**
+**档 1 — 必需骨（21 根，`core.CRITICAL_TARGET_BONES`）**
 没拿到权重不是"少个细节"，是那块几何**跟着别的骨乱跑**（实测：整只手 100% 钉在 `Spine1`）。
 
 | 常缺 | 常见于 | 从哪劈 | 原版基线 |
@@ -712,7 +712,7 @@ Hips
 - 合并了多少权重（`merge`）
 - 烘焙了多少权重（`bake`）
 - 哪些顶点发生了较大影响变化
-- **跨关节带与原版逐关节对比**（`tools/audit_ab_rig.py:116 cross_joint_bands` 已实现）
+- **跨关节带与原版逐关节对比**（`audit_ab_rig.cross_joint_bands` 已实现）
 
 最后一项是唯一能**预判**「肩膀会不会崩」的数字。原版真值：**肩 13.3% / 肘 3.9% /
 腕 6.2% / 膝 9.5%**。作者那句"A→T 之后肩膀变小崩坏"，量出来就是源自己跨肩带只有 4.9%。
@@ -765,8 +765,8 @@ Runtime 尽量不增加"智能猜测"：
 **一处现存违反要落到这一步**：
 
 ```text
-ModRuntime.cpp:743  AddComponent 早于引用循环
-ModRuntime.cpp:756/779  空引用只 warn 后继续  → 半初始化组件泄漏
+ModRuntime.cpp  AddComponent 早于引用循环检查
+ModRuntime.cpp  空引用只 warn 后继续  → 半初始化组件泄漏
 ```
 
 改成 **AddComponent 之前预检、缺任一必需引用整体拒绝**。
@@ -881,13 +881,13 @@ whole-object 那边三轮参数工作**全部作废**，根因是跳过了这一
 | 已有资产 | 怎么用 |
 |---|---|
 | `gakumas_mi/swing_presets.json` | **直接复用**，别重建（530 套原版扫描） |
-| `gakumas_mi/core.py:2665 CRITICAL_TARGET_BONES` | P4 闸门 1 已实现，只需补出路文案 |
-| `gakumas_mi/core.py:2975 swing_category_by_geometry()` | **接进生产**（现在只有测试调） |
-| `gakumas_mi/core.py:2780 group_key()` | ✅ 已退成兜底（生产路径走 `structural_bone_groups`） |
-| `gakumas_mi/ui.py:300` UIList | ✅ 已改成一行一组（+ 五档状态列 + 「拆开这一组」） |
+| `core.CRITICAL_TARGET_BONES` | P4 闸门 1 已实现，只需补出路文案 |
+| `core.swing_category_by_geometry()` | **接进生产**（现在只有测试调） |
+| `core.build_accessory_physics_remap` 里的 `group_key()` | ✅ 已退成兜底（生产路径走 `structural_bone_groups`） |
+| `ui.GMI_UL_bone_map` | ✅ 已改成一行一组（+ 五档状态列 + 「拆开这一组」） |
 | `tools/report_joint_alignment.py` | ✅ 已搬进面板（`core.rest_alignment`，并补上朝向差；老脚本留着离线用） |
-| `tools/audit_ab_rig.py:116 cross_joint_bands` | ✅ 已搬进面板（`core.cross_joint_bands`；那边按骨下标算，两处同源要一起改） |
-| `operators.py:722 _form_driver_categories` | ✅ 已作用域化 → `_form_driver_bones`（`{骨名: 类别}`，一行=一组=一条链） |
+| `audit_ab_rig.cross_joint_bands` | ✅ 已搬进面板（`core.cross_joint_bands`；那边按骨下标算，两处同源要一起改） |
+| `operators._form_driver_categories`（旧名） | ✅ 已作用域化 → `_form_driver_bones`（`{骨名: 类别}`，一行=一组=一条链） |
 | whole-object / 双骨架桥代码 | **标为对照组，勿再投入，不删** |
 
 ---
@@ -985,17 +985,17 @@ P 编号是分层，不是时序。实际施工按批次：
 
 | # | 内容 | 状态 | 实现位置 |
 |---|---|---|---|
-| 1 | 21 个承重关节都有权重 | ✅ 拦；报错文案给**两条出路**（去表单指定 / 从相邻骨劈） | `core.critical_coverage_error`（`core.py:2725`），调用 `operators.py:1586` |
-| 2 · 10 | 没有未映射的 deform bone / 网格没有引用不存在的骨 | ✅ 拦；文案中文 + 三条出路。两条是**同一处实现** | `operators.py:1516`（`unresolved and not fallback_bone`） |
-| 3 | 没有未归一化或全零权重 | ✅ 拦：写包时逐顶点归一化，全零报错。另有截断量告警（第 5 个影响骨起被丢） | `core._bundle_skin`（`core.py:1492`） |
-| 4 | `bones[]` 数量/顺序与 bindpose 一致 | ✅ 拦（骨数 vs `m_BindPose`、查骨下标越界、`m_Skin` 数量 vs 顶点数）。`verify_ab_package` 里**没有** bindpose 检查，别当第二道 | `core.py:1586` + `_bundle_skin` |
+| 1 | 21 个承重关节都有权重 | ✅ 拦；报错文案给**两条出路**（去表单指定 / 从相邻骨劈） | `core.critical_coverage_error`（`core.critical_coverage_error`），调用 `operators._prepare_bundle_export_data` |
+| 2 · 10 | 没有未映射的 deform bone / 网格没有引用不存在的骨 | ✅ 拦；文案中文 + 三条出路。两条是**同一处实现** | `operators._inverse_skin_export_data`（`unresolved and not fallback_bone`） |
+| 3 | 没有未归一化或全零权重 | ✅ 拦：写包时逐顶点归一化，全零报错。另有截断量告警（第 5 个影响骨起被丢） | `core._bundle_skin`（`core._bundle_skin`） |
+| 4 | `bones[]` 数量/顺序与 bindpose 一致 | ✅ 拦（骨数 vs `m_BindPose`、查骨下标越界、`m_Skin` 数量 vs 顶点数）。`verify_ab_package` 里**没有** bindpose 检查，别当第二道 | `core._bundle_geojson` + `_bundle_skin` |
 | 5 | 目标骨 bindpose 没被来源骨覆盖 | ❌ **不做**：lossless 下 mod 就是要带自己的 bindpose，target-rig 下没有能成立的判据。硬凑一个会变成"在原版上也报"（风险登记 V5） | — |
 | 6 | 头/手/脚/根骨没有明显静止姿势偏移 | 🟡 **只报不拦**：位置差被重定向吸收（"免的是位置"），拦它等于误伤 | `core.rest_alignment`（位置最高只判黄） |
-| 7 | 全部 `direct` 映射骨的静止朝向差在阈值内 | ✅ 拦（≥15° 拒绝导出）。两个方向都验过 | `operators._rest_orientation_error`（`operators.py:2991`），调用 `:1634` |
+| 7 | 全部 `direct` 映射骨的静止朝向差在阈值内 | ✅ 拦（≥15° 拒绝导出）。两个方向都验过 | `operators._rest_orientation_error`（`operators._rest_orientation_error`），调用 `:1634` |
 | 8 | `bindpose · 骨静止世界 ≈ I` | ❌ **作废**，见上（原版自己会报） | — |
-| 9 | 来源辅助骨均有明确的 helper/bake/reject | ✅ **拦**（`40819e4` 起）：`undecided` 默认拦下导出，显式放行必须留痕，`undecided {count, allowed}` 写进 sidecar 和权重报告。~~只报不拦~~ 是 2026-08-17 的状态 | `core.undecided_export_error` / `undecided_export_record`（`core.py:3145` / `:3169`），调用 `operators.py:1604`；`tests/test_undecided_gate.py` |
-| 9b | `reject` 的骨不许进导出；标了 `bake` 却没烘也不许 | ✅ 拦 | `operators.py:1590`（reject）、`operators.py:1615`（未烘），`tests/blender_bake_rest_offset_smoke.py` |
-| 11 | 空摇物链（垂到胯下、没人驱动的衣物链）不许出包 | ✅ **拦**（`2109371` 新增，§8.1 第 11 条） | `core.empty_swing_chain_error`（`core.py:3115`），调用 `operators.py:1610` |
+| 9 | 来源辅助骨均有明确的 helper/bake/reject | ✅ **拦**（`40819e4` 起）：`undecided` 默认拦下导出，显式放行必须留痕，`undecided {count, allowed}` 写进 sidecar 和权重报告。~~只报不拦~~ 是 2026-08-17 的状态 | `core.undecided_export_error` / `undecided_export_record`（`core.undecided_export_error` / `core.undecided_export_record`），调用 `operators._prepare_bundle_export_data`；`tests/test_undecided_gate.py` |
+| 9b | `reject` 的骨不许进导出；标了 `bake` 却没烘也不许 | ✅ 拦 | `operators._prepare_bundle_export_data`（`reject` 与未烘的 `bake` 两段），`tests/blender_bake_rest_offset_smoke.py` |
+| 11 | 空摇物链（垂到胯下、没人驱动的衣物链）不许出包 | ✅ **拦**（`2109371` 新增，§8.1 第 11 条） | `core.empty_swing_chain_error`（`core.empty_swing_chain_error`），调用 `operators._prepare_bundle_export_data` |
 
 **拦下导出的判据共 7 组**（1、2·10、3、4、7、9+9b、11），其中 2 与 10 是同一处实现。
 
@@ -1097,7 +1097,7 @@ python tools/scan_vanilla_swing_bones.py --bundles <all_body> --output <out> \
 **2. `native_driver` 作用域化 ✅（§14 点名的"全局类别泄漏"）。** 导出器以前收的是**类别集合**：
 作者在一行上选了裙，全模型每一根 skirt 类别的新骨都跟着改走驱动器 —— 他点的是一条链，
 拿到的是整件衣服。现在收 `{骨名: 类别}`，一行=一组=一条链，作用域正好是作者的本意。
-默认空 = 完全不碰这条路径，现有成品重导逐字节一样（`tests/test_driver_scope.py` 钉住）。
+默认空 = 完全不碰这条路径，现有成品重导逐字节一样（`tests/test_swing_params.py` 钉住）。
 
 **3. 置灰做对 ✅。** 运行时只实现三类驱动器（`core.DRIVER_CATEGORIES` = Skirt / Frill /
 HumanoidSleeve），UI 与导出器读同一份：选了「原版布料驱动器」而类别落在 ribbon（或"自动"猜成
@@ -1136,6 +1136,13 @@ ribbon）时，表单当场标 ERROR，导出**直接拦下并说清怎么改**�
 8. 共享文件、贴图、骨名和缓存必须按模型/部件限定作用域
 9. 低可信推断不得自动变成已确认事实；源数据、推断结果和作者覆盖必须可区分可追溯
 10. **动手前先 grep `research/` 和记忆索引**——已有量化结论的不要重新用实机去测
+11. **活跃开发期的文档不写行号。** 引用代码一律用符号名（`core.undecided_export_error`、
+    `ui.GMI_UL_bone_map`），不写 `core.py:3145`。理由是实测的：2026-08-20 核对这三份文档，
+    **18 条行号引用里 6 条已经指到毫不相干的函数** —— `ui.py:300` 从骨映射表的 UIList 漂到了
+    `GMI_PT_step_profile.draw_step`，`core.py:3145` 从 `undecided_export_error` 漂到了
+    `anchor_only_chain_note`。而漂移全是同一周自己的提交推的（`units_for` 约 70 行、闸门 9
+    两个函数约 40 行、anchor 逻辑约 30 行，下面的全体下移）。
+    符号名改了 grep 得到、CI 也能查；行号改了**无声无息**，而且读者会照着错位置去理解代码。
 
 ---
 
