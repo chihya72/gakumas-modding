@@ -147,9 +147,19 @@ def check_unweighted_node_composition():
 gakumas_mi.register()
 try:
     check_unweighted_node_composition()
+    reference_files = (
+        PROFILE / "Reference" / "Geo_Body.json",
+        PROFILE / "Reference" / "Geo_Body.skeleton.json",
+    )
+    if not all(path.is_file() for path in reference_files):
+        print("GMI_REFERENCE_RIG_SKIP：仓库不分发原版 Reference；本地有资源时运行完整逐骨验收")
+        raise SystemExit(0)
     scene = bpy.context.scene
     scene.gmi_component_id = "body"
     scene.gmi_profile_dir = str(PROFILE)
+    # 仓内 profile 自带 Reference，首段必须在没有本机 7.8GB 资源库时也能跑；否则开发机的
+    # 默认路径会把 CI 必现的问题遮住。
+    scene.gmi_body_json_library_dir = ""
     assert bpy.ops.gmi.import_weighted_reference() == {"FINISHED"}
     bones, unweighted = check_profile(scene, "仓内 profile（synthetic 骨架）")
 

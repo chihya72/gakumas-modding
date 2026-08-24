@@ -22,6 +22,14 @@ from gakumas_mi import core, operators
 PROFILE = ROOT / "profiles" / "atbm-cstm-0140"
 VICTIM = "LeftShoulder"
 
+reference_files = (
+    PROFILE / "Reference" / "Geo_Body.json",
+    PROFILE / "Reference" / "Geo_Body.skeleton.json",
+)
+if not all(path.is_file() for path in reference_files):
+    print("GMI_WEIGHT_SPLIT_SKIP：仓库不分发原版 Reference；本地有资源时运行完整权重真值验收")
+    raise SystemExit(0)
+
 
 def group_weights(obj, name):
     group = obj.vertex_groups.get(name)

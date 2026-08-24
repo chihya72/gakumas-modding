@@ -1,6 +1,8 @@
 name: CI
 
 # 纯 Python 回归 + Blender 4.2/4.5 安装、UI、材质和导出闭环。
+# 参考骨架逐骨真值与劈权重真值需要 gitignored 的原版 Reference；开发机有资源时完整运行，
+# GitHub runner 会明确打印 SKIP，不把官方模型塞进公开仓库。
 
 on:
   push:
