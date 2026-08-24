@@ -139,6 +139,6 @@ git checkout archive/research-2026-08-20 -- research/<路径>      # 取回到�
 
 ---
 
-原始记录：外部模型转换的逐步规范见 [`../docs/wiki/10-外部模型转换实战规范.md`](../docs/wiki/10-外部模型转换实战规范.md)；
+作者侧外部模型整理流程见 [`../docs/wiki/12-外部模型转换.md`](../docs/wiki/12-外部模型转换.md)；
 发型逐通道逆向见 [`hair-pipeline.md`](hair-pipeline.md)；摆动物理见
 [`ab-route-notes.md`](ab-route-notes.md)。

@@ -30,16 +30,18 @@ base/mask/shade 三张贴图，**永不碰 PS hash 或寄存器槽位**——AB 
 
 | 你要做的事 | 看哪页 |
 |---|---|
-| 装环境、拿网盘资源库和模板 | [1-环境准备与安装](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/1-环境准备与安装.md) |
-| 搞懂配置档 / 抓帧 / 骨骼映射这些词 | [2-核心概念](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/2-核心概念.md) |
-| 跑通第一个换装 mod | [3-快速上手](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/3-快速上手：第一个换装%20mod.md) |
-| 阶段 1：目标配置档与参照 | [4-步骤①-准备配置档](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/4-步骤①-准备配置档.md) |
-| 阶段 2–3：作者模型、材质与贴图 | [5-步骤②-材质与贴图](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/5-步骤②-材质与贴图.md) |
-| 阶段 4–5：骨架处理、检查与导出 | [6-步骤③-导出AB bundle](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/6-步骤③-导出AB%20bundle.md) |
-| 发型与配套发饰 | [7-发型与发饰](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/7-发型与发饰.md) |
-| 透明 / 镂空（原生 co） | [8-透明材质（原生co）](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/8-透明材质（原生co）.md) |
-| 报错、没描边、颜色错乱 | [9-常见问题与排错](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/9-常见问题与排错.md) |
-| 从 MMD/PMX 等外部模型做起 | [10-外部模型转换实战规范](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/10-外部模型转换实战规范.md) |
+| 安装插件、资源库、打包器和 Runtime | [1-安装与资源](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/1-安装与资源.md) |
+| 搞懂配置档、作者模型和骨名映射的边界 | [2-插件负责什么](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/2-插件负责什么.md) |
+| 跑通第一个 body Mod | [3-快速上手-body](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/3-快速上手-body.md) |
+| 阶段 1：目标与参照 | [4-阶段1-目标与参照](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/4-阶段1-目标与参照.md) |
+| 阶段 2：作者模型 | [5-阶段2-作者模型](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/5-阶段2-作者模型.md) |
+| 阶段 3：材质与贴图 | [6-阶段3-材质与贴图](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/6-阶段3-材质与贴图.md) |
+| 阶段 4：骨架与物理 | [7-阶段4-骨架与物理](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/7-阶段4-骨架与物理.md) |
+| 阶段 5：检查与导出 | [8-阶段5-检查与导出](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/8-阶段5-检查与导出.md) |
+| 发型与配套发饰 | [9-发型与发饰](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/9-发型与发饰.md) |
+| 镂空与透明路线 | [10-透明材质](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/10-透明材质.md) |
+| 报错、没描边、颜色错乱 | [11-常见问题与排错](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/11-常见问题与排错.md) |
+| 从 PMX、FBX、VRM 等外部模型做起 | [12-外部模型转换](https://github.com/chihya72/gakumas-modding/blob/main/docs/wiki/12-外部模型转换.md) |
 
 ## 两种 JSON 的区别
 
