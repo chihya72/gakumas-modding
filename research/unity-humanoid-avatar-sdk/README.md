@@ -5,7 +5,7 @@
 >
 > 建档：2026-08-13 · 与实现对齐：2026-08-13 晚
 >
-> 当前已发布、已实机的路线仍以 [`../current-status-and-roadmap.md`](../current-status-and-roadmap.md)
+> 当前已发布、已实机的路线仍以 [`../ab-target-rig-route-2026-08-17.md`](../ab-target-rig-route-2026-08-17.md)
 > 和 [`../ab-route-notes.md`](../ab-route-notes.md) 为准。
 
 **读本文档前必须知道的三件事**（否则会照着已被推翻的设计动手）：

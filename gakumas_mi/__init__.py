@@ -1,10 +1,10 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (1, 2, 0),
+    "version": (1, 3, 0),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
-    "description": "学园偶像大师换装/换发 mod 制作（AB bundle 路线）：抓帧生成配置档 → 骨名映射到游戏骨架 → 导出并打包 AB bundle（原生蒙皮/描边/物理）",
+    "description": "学园偶像大师换装/换发 mod 制作：目标参照 → 作者模型 → 材质 → 骨架物理 → 检查并导出 AB bundle",
     "category": "Import-Export",
 }
 
@@ -12,10 +12,10 @@ import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 from pathlib import Path
 
-from . import core, operators, ui, unity_route
+from . import core, operators, ui
 
 
-CLASSES = operators.CLASSES + unity_route.CLASSES + ui.CLASSES
+CLASSES = operators.CLASSES + ui.CLASSES
 
 
 def _material_class_items():
@@ -50,16 +50,7 @@ def _default_body_json_dir():
 def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
-    # Unity 路线：作者只在 Blender 里点两下，Unity 无头跑完学马那一侧的规矩。
-    bpy.types.Scene.gmi_unity_sdk_dir = StringProperty(
-        name="Unity SDK 工程", description="GakumasAvatarSdk 工程目录", subtype="DIR_PATH", default="")
-    bpy.types.Scene.gmi_unity_editor = StringProperty(
-        name="Unity.exe", description="留空则自动在 Unity Hub 里找", subtype="FILE_PATH", default="")
-    bpy.types.Scene.gmi_unity_kind = EnumProperty(
-        name="类型", items=[("body", "服装", ""), ("hair", "发型", "")], default="body")
-    bpy.types.Scene.gmi_unity_target = StringProperty(
-        name="替换目标", default="mdl_chr_hmsz-cstm-0059_body")
-    bpy.types.Scene.gmi_unity_report = StringProperty(name="上次检查结果", default="")
+    # 工作流状态只控制界面显示；项目数据仍分别保存在 Scene / Object / Material 上。
     bpy.types.Scene.gmi_allow_undecided = BoolProperty(
         name="允许未决定的骨导出",
         description="闸门 9 默认拦下还没决定处理方式的骨组。勾上就放行，"
@@ -69,6 +60,34 @@ def register():
         name="上次对齐体检结果", default="",
         description="「量对齐 / 跨关节带」的结果（JSON）：逐骨关节位置差与静止朝向差、"
                     "跨关节权重带与原版的对比。只读尺子，不改模型",
+    )
+    bpy.types.Scene.gmi_workflow_stage = EnumProperty(
+        name="制作阶段",
+        description="一次只显示一个阶段；切换阶段不会丢失已经填写的内容",
+        items=[
+            ("TARGET", "1 目标", "建立被替换目标的配置档并导入参考模型"),
+            ("MODEL", "2 模型", "指定并检查要导出的作者网格"),
+            ("MATERIAL", "3 材质", "配置贴图、材质类型与描边"),
+            ("RIG", "4 骨架", "处理骨骼映射、装饰物理与对齐问题"),
+            ("EXPORT", "5 导出", "集中预检并打包最终 bundle"),
+        ],
+        default="TARGET",
+    )
+    bpy.types.Scene.gmi_target_source = EnumProperty(
+        name="目标来源",
+        description="第一次制作从抓帧建立配置档；已有配置档时直接复用",
+        items=[
+            ("CAPTURE", "从抓帧新建", "从 3DMigoto 抓帧和 AssetStudio JSON 建立完整配置档"),
+            ("PROFILE", "使用已有配置档", "跳过抓帧解析，直接导入现有配置档的参考模型与骨架"),
+        ],
+        default="CAPTURE",
+    )
+    bpy.types.Scene.gmi_author_object = bpy.props.PointerProperty(
+        name="作者模型",
+        type=bpy.types.Object,
+        poll=lambda self, obj: obj.type == "MESH",
+        description="要替换进游戏的作者网格。后续材质、骨架、检查和导出都明确使用这个对象，"
+                    "不再依赖当时碰巧激活了谁",
     )
     bpy.types.Scene.gmi_profile_dir = StringProperty(
         name="配置档目录", subtype="DIR_PATH", default=_default_profile_dir(),
@@ -127,7 +146,7 @@ def register():
                     "renderer，导出时激活发型网格、在「发饰对象」里选上发饰，合成一个包",
         items=[
             ("body", "身体（body）",
-             "替换 Geo_Body 整个身体网格；透明/镂空部件在步骤②把对应材质槽设为「原生co」"),
+             "替换 Geo_Body 整个身体网格；透明/镂空部件在阶段 3 把对应材质槽设为「原生co」"),
             ("hair", "发型（hair）",
              "替换 Geo_Hair；配套发饰 Geo_HairProp 可选制作——「发饰对象」留空则只换发型、"
              "保留原发饰，选上发饰则两个 renderer 合并为一个完整包"),
@@ -160,6 +179,10 @@ def register():
                     "留空的交给预设/自动判断。预设认识的骨架（MMD/Mixamo/Rigify/SCSP）"
                     "预填后一行都不用碰；认不出来的骨架靠这里点选，不再受命名规范限制",
     )
+    bpy.types.Scene.gmi_bone_map_only_undecided = BoolProperty(
+        name="只看未决定",
+        description="只列出还没决定怎么处理的组（闸门 9 拦的就是这些）",
+        default=False)
     bpy.types.Scene.gmi_bone_map_index = IntProperty(default=0)
     bpy.types.Scene.gmi_bone_targets = bpy.props.CollectionProperty(
         type=operators.GMI_bone_name, name="目标骨名",
@@ -283,9 +306,13 @@ def register():
         description="描边颜色的来源。游戏描边读顶点 COLOR，新网格必须由插件写入——"
                     "缺 COLOR 会被默认白色冲掉，描边直接消失",
         items=[
-            ("BASECOLOR", "取自基础色", "逐顶点从 t0 采样生成描边色，复刻原版观感（需要步骤②已填 t0）"),
+            ("BASECOLOR", "取自基础色", "逐顶点从 t0 采样生成描边色，复刻原版观感（需要阶段 3 已填 t0）"),
             ("MATERIAL_PRESET", "按材质预设", "按材质槽类型用预设描边色（布料/皮肤/金属…）"),
             ("CONSTANT_BLACK", "黑色常量", "全部描边统一纯黑，最保守"),
+            ("SOURCE", "沿用源模型顶点色",
+             "逐顶点原样用网格自带的 COLOR。给已经把描边语义处理好的源用（IP 源跑过 "
+             "tools/process_ip_geo_body.py 就是这种）——别的模式按材质槽写常量，"
+             "同一个槽里的皮肤和布料会拿到同一行 ramp"),
         ],
         default="BASECOLOR",
     )
@@ -378,13 +405,13 @@ def register():
 
 
 def unregister():
-    unity_route.unregister_previews()
     for name in (
+        "gmi_workflow_stage", "gmi_target_source", "gmi_author_object",
         "gmi_profile_dir", "gmi_capture_dir", "gmi_extract_output_dir",
         "gmi_body_json_library_dir", "gmi_body_resource",
         "gmi_extract_draw", "gmi_output_dir", "gmi_bundle_template", "gmi_bundle_python", "gmi_component_id",
         "gmi_source_mesh_json", "gmi_skeleton_json", "gmi_bone_remap_file",
-        "gmi_source_rig", "gmi_bone_map", "gmi_bone_map_index", "gmi_bone_targets",
+        "gmi_source_rig", "gmi_bone_map", "gmi_bone_map_index", "gmi_bone_map_only_undecided", "gmi_bone_targets",
         "gmi_unmapped_bone_fallback", "gmi_rig_report",
         "gmi_package_id",
         "gmi_base_color_file", "gmi_hair_use_base_alpha", "gmi_packed_mask_file", "gmi_shade_color_file",

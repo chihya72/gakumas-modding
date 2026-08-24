@@ -349,9 +349,13 @@ def _check_ownership(report, sidecar: dict):
 
 def _side_of(name: str):
     normalized = re.sub(r"[^a-z0-9]+", "_", str(name).lower()).strip("_")
-    if normalized.startswith("left_") or normalized.startswith("left"):
+    # 前缀不该让这把尺子瞎掉：自建骨按契约 §4.1 要带 mod 前缀防撞名
+    # （`chssucu_RightFrontSkirt1_S`），只看开头会把它们全判成 unclassified，
+    # 「左右数量不对称」那条 bug 指纹就再也报不出来了。
+    left, right = normalized.find("left"), normalized.find("right")
+    if left >= 0 and (right < 0 or left < right):
         return "left"
-    if normalized.startswith("right_") or normalized.startswith("right"):
+    if right >= 0:
         return "right"
     tokens = normalized.split("_")
     if "l" in tokens:

@@ -31,6 +31,52 @@ def _is_bone_group(name):
     return bool(name) and not name.startswith("GMI_") and name not in NON_BONE_GROUPS
 
 
+def _dominant_group_tip_offsets(obj):
+    """{骨名: 合成链尾该放的位置（该骨**局部** Unity 坐标）}。
+
+    链尾定义"这一节朝哪儿"，解算就按它把这一段拽过去。以前链尾是硬写的
+    `[0, 0, -骨长]`（Blender 骨的局部 -Z + 默认骨长 55mm），而源骨的局部轴是任意的 ——
+    实测 chs-sucu：三片前裙板的链尾世界方向是 `(-1,0,0)` 正侧向、左右翅膀一个朝下一个朝上，
+    画面上就是裙片整体偏向一侧。源模型自己的链尾在局部 -X（`CenterBackTail5_S_End`
+    实测 -0.221m），也不是 -Z —— 所以这个轴不能猜，要按几何定。
+
+    这里把链尾放到该骨**主导顶点的质心**：那是这块几何真正的去向，任何源都成立。
+    没有主导顶点（纯配角骨/空骨）就返回不了值，调用方退回旧的骨长兜底。
+    """
+    armature = next(
+        (modifier.object for modifier in obj.modifiers
+         if modifier.type == "ARMATURE" and modifier.object), None
+    )
+    if armature is None:
+        return {}
+    names = {group.index: group.name for group in obj.vertex_groups}
+    sums, counts = {}, {}
+    world = obj.matrix_world
+    for vertex in obj.data.vertices:
+        best_name, best_weight = None, 0.0
+        for item in vertex.groups:
+            name = names.get(item.group)
+            if not _is_bone_group(name) or item.weight <= best_weight:
+                continue
+            best_name, best_weight = name, item.weight
+        if best_name is None:
+            continue
+        position = world @ vertex.co
+        sums[best_name] = sums.get(best_name, Vector((0.0, 0.0, 0.0))) + position
+        counts[best_name] = counts.get(best_name, 0) + 1
+    offsets = {}
+    for name, total in sums.items():
+        bone = armature.data.bones.get(name)
+        if bone is None:
+            continue
+        centroid = total / counts[name]
+        local = (armature.matrix_world @ bone.matrix_local).inverted() @ centroid
+        if local.length < 1e-6:
+            continue
+        offsets[name] = list(core._to_unity(local))
+    return offsets
+
+
 def _dominant_group_counts(obj):
     """每根骨"主导"多少个顶点（在该顶点上权重最大）。
 
@@ -201,6 +247,13 @@ def _object_component_id(obj, scene=None):
     return str(obj.get("gmi_component_id")) if obj and obj.get("gmi_component_id") else (
         scene.gmi_component_id if scene else "body"
     )
+
+
+def _author_mesh(context):
+    """Return the explicitly chosen author mesh, with active-object fallback for old .blend files."""
+    scene = context.scene
+    chosen = getattr(scene, "gmi_author_object", None)
+    return chosen if chosen is not None else context.active_object
 
 
 def _scene_texture_path(scene, component_id, semantic):
@@ -562,7 +615,7 @@ def _vertex_colors(mesh):
 
 def _profile_weight_reference(context, component_id=None):
     if component_id is None:
-        component_id = _object_component_id(context.active_object, context.scene)
+        component_id = _object_component_id(_author_mesh(context), context.scene)
     references = [
         obj for obj in context.scene.objects
         if obj.type == "MESH" and obj.get("gmi_weighted_reference")
@@ -876,6 +929,19 @@ def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
             physics_overrides = dict(override_data.get("physics", override_data))
         # 同上:面板表单比外部 JSON 更"手边",冲突时以表单为准
         physics_overrides.update(_form_physics_overrides(scene))
+        # 作者给了物理策略、又没填目标骨 = 他明确说这根骨不走目标骨。以前这种骨如果**名字**
+        # 恰好也在目标骨架里（`build_bone_remap` 的 direct 命中），名字仍然赢，作者的
+        # 「自建摇物链」被静默吞掉 —— 违反「作者覆盖 > 内置规则」。实测代价：IP 源的
+        # `*Skirt*_S` 与目标服装同名但位置差 221mm，包臀裙会被拉成目标那条裙子的形状。
+        # 只认全名（前缀匹配留给 build_accessory_physics_remap 的策略解析，不用来解绑映射）。
+        forced_helpers = [name for name, strategy in physics_overrides.items()
+                          if name in remap and name not in explicit and strategy != "rigid"]
+        for name in forced_helpers:
+            remap.pop(name, None)
+            report["bones"].pop(name, None)
+            report["bodyBones"] = [bone for bone in report["bodyBones"] if bone != name]
+            if name not in report["accessoryBones"]:
+                report["accessoryBones"].append(name)
         # 分组按结构（锚点+链+链长），不读骨名——外语/乱码骨名下正则剥 left/right 全废。
         parents = _source_bone_parents(obj)
         groups = core.structural_bone_groups(
@@ -915,6 +981,7 @@ def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
             weight_by_name=dict(_weighted_group_mass(obj)),
             dominant_by_name=_dominant_group_counts(obj),
             swing_anchor_bones=_form_swing_anchor_bones(scene),
+            tip_offset_by_name=_dominant_group_tip_offsets(obj),
         )
         # 新骨链的根挂在游戏骨下，local 必须按游戏骨架的静止姿势重算
         _retarget_new_bone_roots(report["newBones"]["newBones"], records, skeleton)
@@ -1432,6 +1499,17 @@ def _inverse_skin_export_data(
     uv0_layer_name = uv0_layer.name
     uv1_layer_name = uv1_layer.name
     color_layer = mesh.color_attributes.get("COLOR")
+    # 「沿用源模型顶点色」：逐顶点原样用网格自带的 COLOR。别的模式按**材质槽**写常量，而
+    # IP 源一个 m_bdy 槽里同时装着皮肤和布料——常量会把皮肤按布料的 ramp 行渲染（实测
+    # chs-sucu：脖子/大腿发黑）。源已经处理好描边语义时（process_ip_geo_body.py），
+    # 逐顶点保留才是对的。
+    source_colors = None
+    if vertex_color_mode == "SOURCE":
+        if color_layer is None or color_layer.domain != "POINT":
+            raise ValueError(
+                "描边颜色选了「沿用源模型顶点色」，但网格没有逐顶点的 COLOR 属性。"
+                "换个描边模式，或者先把源的顶点色导进来（IP 源见 tools/process_ip_geo_body.py）")
+        source_colors = [tuple(item.color) for item in color_layer.data]
     no_outline_vertices = set()
     if outline_width_mode == "RISK_ONLY":
         no_outline_vertices = (
@@ -1482,7 +1560,8 @@ def _inverse_skin_export_data(
                 tex1 = (core._safe_float(value[0], 0.0), core._safe_float(value[1], 0.0))
             else:
                 tex1 = tex0
-            color = color_per_slot.get(int(polygon.material_index), GMI_CLOTH_COLOR_FLOAT)
+            color = (source_colors[loop.vertex_index] if source_colors is not None
+                     else color_per_slot.get(int(polygon.material_index), GMI_CLOTH_COLOR_FLOAT))
             if outline_width_mode == "DISABLE_ALL" or loop.vertex_index in no_outline_vertices:
                 color = _clear_outline_width(color)
             resolved = {}
@@ -1605,6 +1684,15 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
     if undecided_error:
         raise ValueError(undecided_error)
     undecided_record = core.undecided_export_record(undecided_rows, allow_undecided)
+    # 闸门：自建骨与目标骨架重名（契约 §4.1）
+    collision = core.new_bone_name_collision_error(
+        [bone.get("name") for bone in
+         ((remap_report.get("newBones") or {}).get("newBones") or [])
+         if isinstance(bone, dict)],
+        [node.get("name") for node in (skeleton.get("nodes") or ())] if skeleton else (),
+    )
+    if collision:
+        raise ValueError(collision)
     # 闸门①：自建摇物链上没有任何带权重的骨 —— 建了也没人看得见，日志却全绿。
     new_bone_report = (remap_report.get("newBones") or {}) if isinstance(remap_report, dict) else {}
     empty_error = core.empty_swing_chain_error(new_bone_report.get("emptyChains"))
@@ -2201,6 +2289,60 @@ class GMI_OT_import_weighted_reference(Operator):
             return {"CANCELLED"}
 
 
+class GMI_OT_prepare_target(Operator):
+    bl_idname = "gmi.prepare_target"
+    bl_label = "准备目标参照"
+    bl_description = "按当前目标来源建立或读取配置档，然后把带权重参考模型与骨架导入场景"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        scene = context.scene
+        if scene.gmi_target_source == "CAPTURE":
+            result = bpy.ops.gmi.build_full_profile()
+            if "FINISHED" not in result:
+                return result
+        if not str(scene.gmi_profile_dir or "").strip():
+            self.report({"ERROR"}, "请先选择已有配置档目录")
+            return {"CANCELLED"}
+        result = bpy.ops.gmi.import_weighted_reference()
+        if "FINISHED" in result:
+            scene.gmi_workflow_stage = "MODEL"
+            self.report({"INFO"}, "目标配置档、参考模型与骨架已准备好")
+        return result
+
+
+class GMI_OT_activate_author_object(Operator):
+    bl_idname = "gmi.activate_author_object"
+    bl_label = "使用这个作者模型"
+    bl_description = "把显式选择的作者网格设为当前对象；未选择时采用 3D 视图里当前激活的网格"
+
+    def execute(self, context):
+        scene = context.scene
+        obj = getattr(scene, "gmi_author_object", None)
+        if (obj is None and context.active_object and context.active_object.type == "MESH"
+                and not context.active_object.get("gmi_weighted_reference")):
+            obj = context.active_object
+            scene.gmi_author_object = obj
+        if obj is None or obj.type != "MESH":
+            self.report({"ERROR"}, "请在「作者模型」选择一个网格，或先在 3D 视图激活网格")
+            return {"CANCELLED"}
+        if obj.name not in context.view_layer.objects:
+            self.report({"ERROR"}, "作者模型不在当前视图层，无法激活")
+            return {"CANCELLED"}
+        if context.mode != "OBJECT":
+            try:
+                bpy.ops.object.mode_set(mode="OBJECT")
+            except Exception:
+                pass
+        for selected in context.selected_objects:
+            selected.select_set(False)
+        obj.select_set(True)
+        context.view_layer.objects.active = obj
+        scene.gmi_workflow_stage = "MATERIAL"
+        self.report({"INFO"}, f"后续阶段将使用作者模型：{obj.name}")
+        return {"FINISHED"}
+
+
 class GMI_OT_export_bundle_source(Operator):
     bl_idname = "gmi.export_bundle_source"
     bl_label = "导出 bundle 源"
@@ -2209,7 +2351,7 @@ class GMI_OT_export_bundle_source(Operator):
     also_patch: bpy.props.BoolProperty(default=False, options={"HIDDEN"})
 
     def execute(self, context):
-        obj = context.active_object
+        obj = _author_mesh(context)
         scene = context.scene
         if not obj or obj.type != "MESH":
             self.report({"ERROR"}, "请激活带顶点组权重的作者网格")
@@ -2374,7 +2516,7 @@ class GMI_OT_create_body_material_template(Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        obj = context.active_object
+        obj = _author_mesh(context)
         if not obj or obj.type != "MESH":
             self.report({"ERROR"}, "请选择要添加材质模板的网格")
             return {"CANCELLED"}
@@ -2496,7 +2638,7 @@ class GMI_OT_bake_material_maps(Operator):
         import numpy as np
 
         scene = context.scene
-        obj = context.active_object
+        obj = _author_mesh(context)
         if not obj or obj.type != "MESH":
             self.report({"ERROR"}, "请选择网格")
             return {"CANCELLED"}
@@ -2767,6 +2909,9 @@ class GMI_bone_map_item(bpy.types.PropertyGroup):
     # 几何全绑在链根、子骨是空的那种链（实测 Lace_R_A0 主导 97 顶点、Lace_R_Aend 0 个）：
     # 链根按原版是惰性锚，照拓扑出参数 = 装了摇物也不会动。勾上让链根按链中段的参数自己摆。
     # **逐行**而不是全局开关：同一个模型里，靴口花边要摆、腰侧挂坠要焊死，是两个决定。
+    # 「几何全在链根」是**几何事实**（与策略无关），生成表单时算一次存在行上，
+    # UI 就能一直标黄，而不是等到导出后在状态栏闪一句 WARNING。
+    anchor_only: bpy.props.BoolProperty(default=False, options={"HIDDEN"})
     swing_anchor: bpy.props.BoolProperty(
         name="链根自己摆",
         description="只对「自建摇物链」有意义。这一组的几何全在链根上时，"
@@ -2822,7 +2967,7 @@ class GMI_bone_map_item(bpy.types.PropertyGroup):
 
 def _bone_map_context(context):
     """表单要用的三样：作者网格、目标骨名表、预设映射结果。"""
-    obj = context.active_object
+    obj = _author_mesh(context)
     scene = context.scene
     if not obj or obj.type != "MESH" or not obj.vertex_groups:
         raise ValueError("请先激活带顶点组权重的作者网格")
@@ -2866,6 +3011,7 @@ class GMI_OT_build_bone_map(Operator):
         # 装饰骨按结构并成组（一行一组）；身体骨仍然一行一根 —— 它们本来就被预设填好了，
         # 而且承重关节要能逐根点。分组信号一个骨名都不读，见 core.structural_bone_groups。
         mass_by_name = dict(_weighted_group_mass(obj))
+        dominant_counts = _dominant_group_counts(obj)
         weighted = [name for name, _mass in _weighted_group_mass(obj)]
         body = set(preset["bodyBones"]) | set(kept)
         groups = core.structural_bone_groups(weighted, _source_bone_parents(obj), body)
@@ -2888,6 +3034,8 @@ class GMI_OT_build_bone_map(Operator):
             item.target = next((kept[name] for name in members if name in kept), auto or "")
             item.origin = "preset" if auto else ""
             item.mass = sum(mass_by_name.get(name, 0.0) for name in members)
+            item.anchor_only = bool(core.anchor_only_roots(
+                members, _source_bone_parents(obj), dominant_counts))
             strategy = next((kept_strategy[name] for name in members
                              if name in kept_strategy), None)
             if strategy:
@@ -2926,17 +3074,25 @@ class GMI_OT_split_bone_group(Operator):
             self.report({"INFO"}, "这行只有一根骨，不用拆")
             return {"CANCELLED"}
         kept = (item.target, item.strategy, item.swing_category, item.origin)
+        kept_anchor = bool(item.swing_anchor)
         # remove() 之后 item 是野指针，用到的值必须先取出来
         fallback_mass = item.mass / len(members)
-        obj = context.active_object
+        obj = _author_mesh(context)
         mass_by_name = (dict(_weighted_group_mass(obj))
                         if obj and obj.type == "MESH" and obj.vertex_groups else {})
+        # 「几何全在链根」是逐根的事实：拆开后只有真正的链根该继续标黄，中段骨不标。
+        anchor_only_roots = set()
+        if obj and obj.type == "MESH" and obj.vertex_groups:
+            anchor_only_roots = set(core.anchor_only_roots(
+                members, _source_bone_parents(obj), _dominant_group_counts(obj)))
         scene.gmi_bone_map.remove(index)
         for offset, name in enumerate(members):
             new = scene.gmi_bone_map.add()
             new.source = name
             new.members = name
             new.target, new.strategy, new.swing_category, new.origin = kept
+            new.swing_anchor = kept_anchor
+            new.anchor_only = name in anchor_only_roots
             new.mass = mass_by_name.get(name, fallback_mass)
             scene.gmi_bone_map.move(len(scene.gmi_bone_map) - 1, index + offset)
         scene.gmi_bone_map_index = index
@@ -3027,7 +3183,7 @@ class GMI_OT_split_weight_from_neighbours(Operator):
 
     def execute(self, context):
         scene = context.scene
-        obj = context.active_object
+        obj = _author_mesh(context)
         try:
             _obj, bone_map, _preset = _bone_map_context(context)
             reference = _profile_weight_reference(context, "body")
@@ -3196,7 +3352,7 @@ class GMI_OT_bake_rest_offset(Operator):
 
     def execute(self, context):
         scene = context.scene
-        obj = context.active_object
+        obj = _author_mesh(context)
         if not obj or obj.type != "MESH":
             self.report({"ERROR"}, "请先激活作者网格")
             return {"CANCELLED"}
@@ -3285,7 +3441,7 @@ class GMI_OT_report_rig_alignment(Operator):
 
     def execute(self, context):
         scene = context.scene
-        obj = context.active_object
+        obj = _author_mesh(context)
         try:
             _obj, bone_map, _preset = _bone_map_context(context)
             resolved = _resolve_body_json_library(scene, _object_component_id(obj, scene))
@@ -3353,7 +3509,7 @@ class GMI_OT_show_bone_weights(Operator):
     source: bpy.props.StringProperty(options={"HIDDEN"})
 
     def execute(self, context):
-        obj = context.active_object
+        obj = _author_mesh(context)
         if not obj or obj.type != "MESH":
             self.report({"ERROR"}, "请先激活作者模型")
             return {"CANCELLED"}
@@ -3483,6 +3639,8 @@ CLASSES = (
     GMI_OT_import_profile_object,
     GMI_OT_import_reference,
     GMI_OT_import_weighted_reference,
+    GMI_OT_prepare_target,
+    GMI_OT_activate_author_object,
     GMI_OT_export_bundle_source,
     GMI_OT_create_body_material_template,
     GMI_OT_bake_material_maps,

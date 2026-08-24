@@ -49,12 +49,12 @@ def test_good_log_passes(tmp_path):
 def test_bad_log_fails_and_says_which(tmp_path, capsys):
     assert reader.main([str(write(tmp_path, BAD))]) == 1
     output = capsys.readouterr().out
-    for key in ("droppedInfluences", "fallbackVertices", "swingNotSimulated", "driverRefused"):
+    for key in ("droppedInfluences", "fallbackVertices", "driverRefused"):
         assert key in output.split("不合格：")[-1] or key in output
 
 
-def test_legacy_single_bone_probe_is_not_a_failure(tmp_path):
-    """老日志里两种探针形状同时存在，宽泛匹配 NOT SIMULATED 会把好包判红。"""
+def test_legacy_probe_lines_are_ignored(tmp_path):
+    """300 帧探针 2026-08-22 已从运行时删除；老日志里那些行不许再影响判定。"""
     assert reader.main([str(write(tmp_path, LEGACY))]) == 0
 
 
@@ -73,7 +73,6 @@ def test_only_the_last_session_is_judged(tmp_path, capsys):
 def test_numbers_are_read_not_guessed(tmp_path):
     counts, numbers, _samples, _boot = reader.scan(write(tmp_path, GOOD))
     assert numbers["swingDynamicBones"] == [178]
-    assert numbers["swingMoved"] == [17]
     assert numbers["socketGrown"] == [9]
     assert numbers["droppedInfluences"] == [0] and numbers["fallbackVertices"] == [0]
     assert counts["nativeChainLayers"] == 1

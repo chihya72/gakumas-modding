@@ -2412,8 +2412,13 @@ def read_weighted_reference(mesh_json, skeleton_json):
     colors = _group(mesh["m_Colors"], 4)
     if colors and max(colors[0]) > 1.0:
         colors = [tuple(channel / 255.0 for channel in color) for color in colors]
-    uv0 = [(u, 1.0 - v) for u, v in _group(mesh["m_UV0"], 2)]
-    uv1 = [(u, 1.0 - v) for u, v in _group(mesh["m_UV1"], 2)]
+    # UV 原样进 Blender：Unity 和 Blender 的 UV 原点都在左下，不需要翻 v。以前这里翻了一次，
+    # 而导出端**不翻回去**（`operators._inverse_skin_export_data` 原样写 Blender 的 UV 层），
+    # 于是任何从 Mesh JSON 导进来再出包的模型，贴图都是上下颠倒着采的 —— 画面上就是"贴图错乱"。
+    # 判据（chs-sucu 源模型 + 它自己的 col 图）：Head 的皮肤顶点原样 v 采到 (228,193,179) 肤色，
+    # 翻转 v 采到 (122,104,104)。
+    uv0 = list(_group(mesh["m_UV0"], 2))
+    uv1 = list(_group(mesh["m_UV1"], 2))
     indices = mesh["m_Indices"]
     faces = [tuple(indices[i : i + 3]) for i in range(0, len(indices), 3)]
     if len(vertices) != vertex_count or len(mesh["m_Skin"]) != vertex_count:
@@ -3026,8 +3031,12 @@ def cross_joint_band_findings(mod_bands, vanilla_bands=None):
 # 父链上没权重的中间骨不算断链：按"最近的在册祖先"接，否则一个空骨就把裙摆劈成两组。
 # ponytail: §4.3 的第三个信号"影响顶点在网格上连片"没做 —— 锚点+链长已经把 12 片裙摆并成
 # 一行；同锚点同链长的尾巴混进裙摆那一行时，作者拆开逐根覆盖即可。真需要再加顶点连通性。
-def structural_bone_groups(bones, parent_of, body_bones=()):
-    """把装饰骨按结构并成组，返回 [{key, anchor, chains, depth, members}]（成员保持输入顺序）。"""
+def resolve_chains(bones, parent_of, body_bones=()):
+    """把装饰骨切成链：返回 `(chains, anchor)`，`chains` = {链根: [成员，保持输入顺序]}。
+
+    **链是部件类型、物理指令、分组三者共同的语义单位**，所以只能有一个切法：
+    最近的在册祖先接父子（父链上没权重的中间骨不算断链），分叉即断。
+    """
     order = [str(name) for name in bones if str(name)]
     body = {str(name) for name in body_bones}
     garment = [name for name in order if name not in body]
@@ -3062,6 +3071,13 @@ def structural_bone_groups(bones, parent_of, body_bones=()):
     chains = {}
     for name in garment:
         chains.setdefault(root_of(name), []).append(name)
+    return chains, anchor
+
+
+def structural_bone_groups(bones, parent_of, body_bones=()):
+    """把装饰骨按结构并成组，返回 [{key, anchor, chains, depth, members}]（成员保持输入顺序）。"""
+    order = [str(name) for name in bones if str(name)]
+    chains, anchor = resolve_chains(bones, parent_of, body_bones)
 
     by_anchor = {}
     for root, members in chains.items():
@@ -3071,7 +3087,10 @@ def structural_bone_groups(bones, parent_of, body_bones=()):
     for anchor_name, items in sorted(by_anchor.items()):
         buckets = []
         for length, root in sorted(items):
-            if buckets and length - buckets[-1][-1][0] <= 1:   # 链长 ±1 归一组
+            # 跟**桶里第一条**比，不是跟上一条比：跟上一条比会像多米诺一样串起来，
+            # 长度 1,2,3,4,5 的链全并成一组（chs-sucu 实测 12 条链 → 24 根一组，
+            # 裙摆和尾巴、飘带混在一起）。规矩本来就是"链长相同 ±1"。
+            if buckets and length - buckets[-1][0][0] <= 1:
                 buckets[-1].append((length, root))
             else:
                 buckets.append([(length, root)])
@@ -3128,6 +3147,38 @@ def empty_swing_chain_error(empty_chains, limit=12):
             "要么把这些骨的策略改成刚性跟父骨，要么先在 Blender 里把权重画上去。")
 
 
+def anchor_only_roots(members, parent_of, dominant_by_name):
+    """这一组里"几何全在链根、子骨是空的"那些链根（表单上要常驻标黄的那一行的判据）。
+
+    链根按原版是惰性锚（`spring/mass` 近 0，自身不摆、由子骨摆）。几何全绑在链根上时，
+    照拓扑出参数就是"摆的骨没几何、有几何的骨不摆" —— 装了摇物画面纹丝不动，而日志全绿。
+    以前这条只在**导出后**报一句 WARNING（状态栏一闪就没），作者很容易错过；有了这个
+    判据，表单里那一行可以一直标着。
+    """
+    pool = {str(name) for name in members or ()}
+    dominant = {str(k): int(v) for k, v in (dominant_by_name or {}).items()}
+    parents = parent_of or {}
+
+    def descendants(name):
+        found, stack = set(), [name]
+        while stack:
+            current = stack.pop()
+            for candidate in pool:
+                if candidate not in found and parents.get(candidate) == current:
+                    found.add(candidate)
+                    stack.append(candidate)
+        return found
+
+    roots = []
+    for name in sorted(pool):
+        if parents.get(name) in pool or dominant.get(name, 0) <= 0:
+            continue
+        if any(dominant.get(child, 0) > 0 for child in descendants(name)):
+            continue
+        roots.append(name)
+    return roots
+
+
 def anchor_only_chain_note(anchor_only, applied=False, limit=12):
     """链根自己扛着全部几何 —— 这条链装了摇物也不会动。只报，不替作者决定。"""
     names = [str(n) for n in anchor_only or ()]
@@ -3142,6 +3193,25 @@ def anchor_only_chain_note(anchor_only, applied=False, limit=12):
             "想让它们动，三选一：勾「链根自己摆」、在 Blender 里把根的权重分一部分给子骨、"
             "或者把策略改成刚性跟父骨（省掉不起作用的摇物骨）。"
             "不管它也行 —— 那几块几何就是跟着父骨刚性走。")
+
+def new_bone_name_collision_error(new_bones, target_bones, limit=12):
+    """闸门：自建骨的名字不许和目标骨架里已有的骨重名（契约 §4.1 的防撞名）。
+
+    重名的后果实测过（chs-sucu → hmsz-cstm-0059）：目标服装自己也有 `RightFrontSkirt1_S`，
+    导出器于是拿**目标那根**的 local 变换去填 renderer 的 `bones[]`（localPosition 变成 0，
+    即胯中心），而 `newBones` 段里记的还是我们自己的位置 —— 两处打架，运行时那片裙板绕胯
+    中心摆，画面上是"先向上折再垂下来"。游戏侧同样按名字建索引（`RegisterBone` 遇到重名
+    整根跳过），所以这不是风格问题，是硬冲突。
+    """
+    taken = {str(name) for name in target_bones or ()}
+    hit = sorted({str(name) for name in new_bones or () if str(name) in taken})
+    if not hit:
+        return None
+    shown = "、".join(hit[:limit]) + ("…" if len(hit) > limit else "")
+    return (f"{len(hit)} 根自建摇物骨与目标骨架里的骨重名：{shown}。"
+            "自建骨要么改个名（加 mod 前缀），要么就别自建、直接映射到那根同名的目标骨 —— "
+            "两者同名会让 renderer 的 bones[] 取到目标骨的变换，装饰件绕错枢轴摆")
+
 
 def undecided_export_error(rows, allow=False, limit=12):
     """闸门 9（§8.1 第 9 条 / 契约 §4.2）：`undecided` 不许静默进导出。
@@ -3545,34 +3615,41 @@ def geometric_swing_categories(bones, parent_of, positions, body_remap=None):
     """
     body = body_remap or {}
     groups = structural_bone_groups(bones, parent_of, body)
+    chains, _anchor_of = resolve_chains(bones, parent_of, body)
+    chain_of = {name: root for root, members in chains.items() for name in members}
     result = {}
+
+    def centre(names):
+        picked = [positions[name] for name in names if name in (positions or {})]
+        if not picked:
+            return None
+        return [sum(item[axis] for item in picked) / len(picked) for axis in range(3)]
+
     for group in groups:
-        members = group["members"]
-        pool = set(members)
-        roots = [name for name in members if (parent_of or {}).get(name) not in pool]
-        tips = [name for name in members
-                if not any((parent_of or {}).get(child) == name for child in pool)]
-
-        def centre(names):
-            picked = [positions[name] for name in names if name in (positions or {})]
-            if not picked:
-                return None
-            return [sum(item[axis] for item in picked) / len(picked) for axis in range(3)]
-
-        start, end = centre(roots), centre(tips)
-        direction = None
-        if start and end:
-            delta = [end[axis] - start[axis] for axis in range(3)]
-            length = math.sqrt(sum(value * value for value in delta))
-            if length > 1e-6:
-                direction = [value / length for value in delta]
         # 锚点要换成**游戏骨名**：`_ANCHOR_CATEGORY` 那张表按游戏骨名匹配（Hips / Spine2 / …）
         anchor = body.get(group["anchor"], group["anchor"])
-        category = swing_category_by_geometry(
-            anchor, direction=direction, siblings=group["chains"],
-            fallback_name=members[0] if members else "")
-        for name in members:
-            result[name] = category
+        # **一条链一个类别，不是一组一个**：类别决定这条链要不要挂环形碰撞链、取哪一档
+        # 参数，语义单位就是链。一组一档时，同锚点的裙摆会把混进同组的尾巴/飘带一起
+        # 判成 skirt（chs-sucu 实测 24 根一组）—— 和物理指令按组发是同一类错误。
+        # 「同锚点有几条链」这个信号仍然取组级：一圈裙板本来就是靠"有几条"认出来的。
+        for root in dict.fromkeys(chain_of[name] for name in group["members"]
+                                  if name in chain_of):
+            members = chains[root]
+            pool = set(members)
+            tips = [name for name in members
+                    if not any((parent_of or {}).get(child) == name for child in pool)]
+            start, end = centre([root]), centre(tips)
+            direction = None
+            if start and end:
+                delta = [end[axis] - start[axis] for axis in range(3)]
+                length = math.sqrt(sum(value * value for value in delta))
+                if length > 1e-6:
+                    direction = [value / length for value in delta]
+            category = swing_category_by_geometry(
+                anchor, direction=direction, siblings=group["chains"],
+                fallback_name=root)
+            for name in members:
+                result[name] = category
     return result
 
 
@@ -3666,7 +3743,8 @@ def bone_side(name):
 def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
                              body_remap=None, default_swing=None, categories=None,
                              presets=None, driver_bones=None, weight_by_name=None,
-                             dominant_by_name=None, swing_anchor_bones=None):
+                             dominant_by_name=None, swing_anchor_bones=None,
+                             tip_offset_by_name=None):
     """Build runtime-created source bones plus a synthetic tip per leaf.
 
     每根骨的摆动参数按 **部件类别 × 链上角色** 从原版基准表取（`swing_presets.json`，
@@ -3874,13 +3952,19 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
         if not is_leaf[name]:
             continue
         length = float(records[name].get("length") or 0.0)
-        if length <= 1e-8:
-            continue
+        # 链尾位置按几何来（该骨主导顶点的质心，见 `operators._dominant_group_tip_offsets`）。
+        # 兜底才用骨长沿局部 -Z：那是 Blender 骨的默认轴，源骨的轴是任意的，硬写会让
+        # 解算按错的方向拽（实测：前裙板链尾指向正侧向 → 裙片整体偏一边）。
+        offset = (tip_offset_by_name or {}).get(name)
+        if offset is None:
+            if length <= 1e-8:
+                continue
+            offset = [0.0, 0.0, -length]
         category = category_of(name)
         extra_tips.append({
             "name": f"{name}_End",
             "parentName": name,
-            "localPosition": [0.0, 0.0, -length],
+            "localPosition": [float(value) for value in offset],
             "localRotation": [0.0, 0.0, 0.0, 1.0],
             "localScale": [1.0, 1.0, 1.0],
             "swingCategory": category,

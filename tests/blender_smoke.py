@@ -187,6 +187,30 @@ with tempfile.TemporaryDirectory(prefix="gmi-blender-e2e-") as tmp:
         assert bundle_manifest["replacements"][0]["replaceMaterials"] is False
         assert len(bundle_manifest["replacements"][0]["textures"]) == 3
 
+        # 「沿用源模型顶点色」：逐顶点原样出包。别的模式按材质槽写常量，同一个槽里的皮肤
+        # 和布料会拿到同一行 ramp —— IP 源（一个 m_bdy 槽装皮肤+布料）就是这么渲染坏的。
+        colour = (obj.data.color_attributes.get("COLOR")
+                  or obj.data.color_attributes.new(name="COLOR", type="FLOAT_COLOR", domain="POINT"))
+        marks = [(index / 255.0, 0.125, 0.0588, 1.0) for index in range(len(obj.data.vertices))]
+        colour.data.foreach_set("color", [channel for mark in marks for channel in mark])
+        scene.gmi_outline_width_mode = "KEEP"
+        scene.gmi_vertex_color_mode = "SOURCE"
+        assert bpy.ops.gmi.export_bundle_source() == {"FINISHED"}
+        exported = json.loads(
+            (bundle_src / "mdl_chr_test-cstm-0000_body.geojson.txt").read_text(encoding="utf-8")
+        )["m_Colors"]
+        seen = {tuple(round(value, 4) for value in exported[index:index + 4])
+                for index in range(0, len(exported), 4)}
+        assert seen == {tuple(round(channel, 4) for channel in mark) for mark in marks}, seen
+        obj.data.color_attributes.remove(obj.data.color_attributes["COLOR"])
+        try:                                         # 坏样本要报：没有 COLOR 就不许出包
+            result = bpy.ops.gmi.export_bundle_source()
+        except RuntimeError:
+            result = {"CANCELLED"}
+        assert result == {"CANCELLED"}, "SOURCE 模式缺逐顶点 COLOR 必须拦下，不能静默换描边色"
+        scene.gmi_outline_width_mode = "DISABLE_ALL"
+        scene.gmi_vertex_color_mode = "CONSTANT_BLACK"
+
         # 一键打包成功后，游戏要读取的 mod.json 必须和成品 bundle 并排，
         # bundle-src 内仍保留一份供 patch 脚本和排错使用。
         def fake_bundle_patch(_scene, mod_root, output_bundle):

@@ -4,17 +4,18 @@
 Blender + 本项目插件就能换装 / 换模，**不装 Unity、不写 3DMigoto 配置**。只做视觉 Mod
 （模型 / 贴图 / 材质 / 显隐），不碰文本汉化、逻辑、数值。
 
-> **状态（插件 v1.1.0，正式版）**：插件只做 **AB（AssetBundle）路线**，3DMigoto 逆蒙皮的传权与导出
-> 已整体移除。身体与发型（含 co/配套发饰）的换模 + 贴图 + 骨映射闭环已实机验证：三步面板
-> 从发布 ZIP 全新安装走通，并产出了 **7 个进游戏的成品 mod**（6 件服装 + 1 个发型，覆盖
+> **状态（插件 v1.3.0，正式版）**：插件只做 **AB（AssetBundle）路线**，3DMigoto 逆蒙皮的传权与导出
+> 已整体移除。身体与发型（含 co/配套发饰）的换模 + 贴图 + 骨映射闭环已实机验证；插件现采用
+> 目标、作者模型、材质、骨架、检查导出的五阶段单页工作流。当前 AB 路线已从发布 ZIP
+> 全新安装走通，并产出了 **7 个进游戏的成品 mod**（6 件服装 + 1 个发型，覆盖
 > `atbm-cstm-0140` / `fktn-cstm-0119` / `fktn-othr-0002` / `hmsz-cstm-0059` / `ttmr-cstm-0111`
 > / `ttmr-cstm-0119` / `ttmr-hair-0002`）。八家骨名预设里 MMD 与 SCSP 有真实模型样本，另外
 > 六家只按公开命名规范写成、没拿到对应模型，认不出来时走面板逐行点选。**自建摇物骨已于
 > 2026-08-11 用 `hmsz-fuyuko-icu` 取得第一个稳定画面级案例**；幅度手感仍需逐件目视调整。逐项验证等级见
-> [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md)。
+> [research/ab-target-rig-route-2026-08-17.md](research/ab-target-rig-route-2026-08-17.md) §0。
 
 > **维护与排障必读**：本仓 Blender 插件、离线工具和制作流程的审计结论、已知风险与按现象
-> 排查入口见 [research/known-risks.md](research/known-risks.md)。遇到导入、烘焙、导出或打包异常时
+> 排查入口见 [research/lessons-learned.md](research/lessons-learned.md)。遇到导入、烘焙、导出或打包异常时
 > 先查这份台账。
 
 ## 核心思路
@@ -31,7 +32,7 @@ T-pose，所以不能照搬 GIMI/WWMI。现在的解法**不去逆解**：把作
 - 导出前查 21 个承重关节有没有拿到权重，缺任一根拒绝导出并点名。
 
 3DMigoto 在本工具链里**只剩抓帧工具**这一个角色——做配置档必须用它抓帧。原理、验证与
-已排除路线见 [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md)。
+已排除路线见 [research/ab-target-rig-route-2026-08-17.md](research/ab-target-rig-route-2026-08-17.md) §13「明确不做」。
 
 ## 仓库结构
 
@@ -77,10 +78,8 @@ chinosk6 的 `gkms-localify-dmm` 读的是它自己的 `gakumas-local/local-file
 
 | 文档 | 内容 |
 |---|---|
-| [docs/wiki/Home.md](docs/wiki/Home.md) | **作者使用手册**：环境、概念、三步工作流、发型/透明专题、排错 |
-| [research/known-risks.md](research/known-risks.md) | **本仓制作工具审计结论与已知风险台账**：导入、烘焙、导出或打包异常先查 |
+| [docs/wiki/Home.md](docs/wiki/Home.md) | **作者使用手册**：环境、概念、五阶段工作流、发型/透明专题、排错 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 仓库规范（新建文件前必读） |
-| [research/current-status-and-roadmap.md](research/current-status-and-roadmap.md) | 进度 / 完成度 / 计划（**最新状态以此为准**） |
 | [research/ab-route-notes.md](research/ab-route-notes.md) | AB 路线的数据侧脚本与新骨摆动物理记录 |
 | [research/lessons-learned.md](research/lessons-learned.md) | **反面教训汇总**：已排除的路线、作废的做法、被推翻的结论 |
 | [gakumas_mi/README.md](gakumas_mi/README.md) · [3dmigoto_gkms/README.md](3dmigoto_gkms/README.md) | 两个子项目各自的安装与用法 |

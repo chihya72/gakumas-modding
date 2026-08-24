@@ -37,15 +37,8 @@ PATTERNS = {
     "socketGrown": re.compile(r"Grew missing socket nodes from replaced asset.*count=(?P<n>\d+)"),
     "wholeObjectGap": re.compile(r"Whole-object contract gap"),
     "nativeChainLayers": re.compile(r"native ActorSwing chain layers"),
-    # §11.2 的"先证明有骨真的在动"：运行时里 `SampleSwingMotion` 已经实现了这把尺子
-    # （300 帧局部旋转峰值），这里只负责把它的结论读成数字。
-    "swingProbeWatching": re.compile(r"Swing motion probe watching (?P<n>\d+) of"),
-    "swingMoved": re.compile(r"Swing motion over \d+ frames: (?P<n>\d+)/\d+ bones moved"),
-    # 只认**多骨结论行**的 NOT SIMULATED。探针早期是单骨版（`bone=... peakLocalRotation=0.00deg
-    # — NOT SIMULATED`），而它抽到的恰好是袖子 —— 按这套服装自己的数据袖子本来就不挂链，
-    # 那行不是"解算没跑"的证据。老日志里两种形状同时存在，宽泛匹配会把好包判红。
-    "swingNotSimulated": re.compile(r"bones moved.*NOT SIMULATED"),
-    "swingProbeLegacySingle": re.compile(r"peakLocalRotation=.*NOT SIMULATED"),
+    # 300 帧摇物探针 2026-08-22 从运行时删掉了（`SampleSwingMotion`，测试期的东西）。
+    # 它产出的 swingMoved / swingProbe* 三个键随之下线；老日志里还有那些行也不再判。
     "boneNotFound": re.compile(r"指向的骨 .* 找不到|resolveBone .* failed"),
     "nullReference": re.compile(r"按空引用跑"),
     "error": re.compile(r"\[error\]|Log::Error|ERROR", re.IGNORECASE),
@@ -57,8 +50,6 @@ CHECKS = (
     ("droppedInfluences", "全部为 0", "有非 0 就是有顶点的权重被丢掉了"),
     ("fallbackVertices", "全部为 0", "有非 0 就是有顶点退回了兜底骨"),
     ("swingDynamicBones", ">0（这个包有新摇物骨时）", "游戏把骨**收进**解算表了（注册）"),
-    ("swingMoved", ">0", "300 帧里真的动了几根（§11.2：先证明在动，再谈参数）"),
-    ("swingNotSimulated", "0", "出现 = 一根都没动，参数/碰撞笼/限位全都别谈"),
     ("driverRefused", "0", "预检拒绝 = 有 sidecar 引用对不上；正常包不该出现（批次 5）"),
     ("driverRolledBack", "0", "回滚 = 预检过了但装配失败；正常包不该出现"),
     ("driverMissing", "0", "有的话那根骨在游戏里不会动"),
@@ -68,8 +59,6 @@ CHECKS = (
 
 # 只报数字、不判好坏的那些（它们是"发生了什么"，不是"对不对"）
 NOTES = {
-    "swingProbeLegacySingle": "早期单骨版探针的结论行（抽到不挂链的袖子就会是 0°），不作判据",
-    "swingProbeWatching": "300 帧探针在看几根骨（它自己按 24 根抽样）",
     "socketGrown": "运行时从被替换资产**长出**缺的 socket 节点（手持道具挂点等），"
                    "所以参考资产里没有 socket 不影响成品",
     "wholeObjectGap": "whole-object 对照组的契约缺口 —— 出现说明这份日志来自那条已作废的路线",
@@ -155,9 +144,9 @@ def main(argv=None):
     # 脚本却照样打印"全部判据通过" —— 那正是这套工具存在意义的反面（静默通过）。
     # 所以三类规则合起来必须**恰好覆盖** CHECKS，少一个就在这里断言失败，别再手抄键名清单。
     zero_count_keys = {"driverRefused", "driverRolledBack", "driverMissing",
-                       "nullReference", "swingNotSimulated", "error"}
+                       "nullReference", "error"}
     zero_value_keys = {"droppedInfluences", "fallbackVertices"}
-    positive_keys = {"graft", "swingDynamicBones", "swingMoved"}
+    positive_keys = {"graft", "swingDynamicBones"}
     assert zero_count_keys | zero_value_keys | positive_keys == {
         name for name, _expected, _note in CHECKS}, "判定规则没覆盖 CHECKS 里的全部项"
 
@@ -166,7 +155,7 @@ def main(argv=None):
     bad += [key for key in sorted(zero_count_keys) if counts.get(key)]
     if not counts.get("graft"):
         bad.append("graft（这份日志里可能根本没应用过 mod）")
-    for key in ("swingDynamicBones", "swingMoved"):
+    for key in ("swingDynamicBones",):
         # 有输出但全是 0 = 探针跑到了、结论是"没有"，这不叫通过
         if numbers.get(key) and not any(value > 0 for value in numbers[key]):
             bad.append(f"{key}（有输出但全是 0）")

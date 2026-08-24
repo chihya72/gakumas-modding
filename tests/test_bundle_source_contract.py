@@ -907,3 +907,72 @@ def test_twist_bones_fall_back_when_the_target_has_no_corrective_rig():
     assert report["bones"]["左手捩"] == "LeftForeArm"
     assert report["bones"]["右腕捩"] == "RightArm"
     assert not [name for name in report["unmapped"] if "捩" in name]
+
+
+def test_weighted_reference_keeps_unity_uv_orientation(tmp_path):
+    """Mesh JSON 的 UV 原样进 Blender：Unity 与 Blender 的原点都在左下，翻 v 就是错的。
+
+    导出端不翻回去（`operators._inverse_skin_export_data` 原样写 Blender 的 UV 层），
+    所以这里翻一次 = 出包的贴图上下颠倒着采（chs-sucu 实测：整身贴图错乱）。
+    """
+    mesh = tmp_path / "mesh.json"
+    skeleton = tmp_path / "skeleton.json"
+    mesh.write_text(json.dumps({
+        "m_VertexCount": 1,
+        "m_Vertices": [0.0, 0.0, 0.0],
+        "m_Normals": [0.0, 1.0, 0.0],
+        "m_Tangents": [1.0, 0.0, 0.0, 1.0],
+        "m_Colors": [1.0, 1.0, 1.0, 1.0],
+        "m_UV0": [0.25, 0.75],
+        "m_UV1": [0.125, 0.875],
+        "m_Indices": [],
+        "m_Skin": [{"weight": [1.0, 0, 0, 0], "boneIndex": [0, 0, 0, 0]}],
+        "m_BindPose": [{}],
+    }), encoding="utf-8")
+    skeleton.write_text(json.dumps({"weightedBoneCount": 1, "nodes": []}), encoding="utf-8")
+
+    data = core.read_weighted_reference(mesh, skeleton)
+    assert data["uv0"] == [(0.25, 0.75)]
+    assert data["uv1"] == [(0.125, 0.875)]
+
+
+def test_new_bone_names_must_not_collide_with_the_target_rig():
+    """契约 §4.1：自建骨不许和目标骨架重名（坏样本会报 / 正常样本不误报）。"""
+    target = ["Hips", "RightFrontSkirt1_S", "LeftUpLeg"]
+    message = core.new_bone_name_collision_error(["RightFrontSkirt1_S", "MyRibbon1"], target)
+    assert message and "RightFrontSkirt1_S" in message
+    assert core.new_bone_name_collision_error(["chssucu_RightFrontSkirt1_S"], target) is None
+    assert core.new_bone_name_collision_error([], target) is None
+
+
+def test_chain_tip_follows_the_geometry_not_the_bone_axis():
+    """链尾按主导顶点质心放；没有几何时才退回骨长沿局部 -Z。
+
+    链尾定义"这一节朝哪儿"。硬写 `[0,0,-骨长]` 用的是 Blender 骨的默认轴，而源骨的局部轴
+    是任意的 —— chs-sucu 实测：三片前裙板的链尾世界方向是正侧向，画面上裙片整体偏一边。
+    """
+    args = (
+        [{"name": "Panel_A", "localPosition": [1, 0, 0], "length": 0.055}],
+        ["Panel_A"],
+    )
+    kwargs = {"parent_by_name": {"Panel_A": "Hips"}, "body_remap": {"Hips": "Hips"}}
+
+    geometry = core.build_source_extra_bones(
+        *args, tip_offset_by_name={"Panel_A": [0.01, -0.10, 0.0]}, **kwargs)
+    assert geometry["extraSwingBones"][0]["localPosition"] == [0.01, -0.10, 0.0]
+
+    fallback = core.build_source_extra_bones(*args, **kwargs)
+    assert fallback["extraSwingBones"][0]["localPosition"] == [0.0, 0.0, -0.055]
+
+
+def test_anchor_only_roots_flags_chains_whose_geometry_sits_on_the_root():
+    """表单常驻黄标的判据：几何全在链根、子骨是空的 → 装了摇物也不会动。"""
+    parents = {"Lace_A0": "Hips", "Lace_Aend": "Lace_A0",
+               "Bow_A0": "Hips", "Bow_A1": "Bow_A0"}
+    members = ["Lace_A0", "Lace_Aend", "Bow_A0", "Bow_A1"]
+    dominant = {"Lace_A0": 97, "Lace_Aend": 0, "Bow_A0": 12, "Bow_A1": 40}
+    # Lace：97 个主导顶点全在链根，子骨 0 → 要标；Bow：子骨扛着几何 → 不标
+    assert core.anchor_only_roots(members, parents, dominant) == ["Lace_A0"]
+    # 链根自己没有几何（纯锚点）也不该标
+    assert core.anchor_only_roots(
+        members, parents, {"Lace_A0": 0, "Lace_Aend": 30}) == []

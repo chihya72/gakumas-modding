@@ -7,7 +7,7 @@
 
 | 位置 | 职责 | 新文件落点规则 |
 |---|---|---|
-| `gakumas_mi/` | Blender 作者插件（版本 1.0.x） | 插件代码/预设只放这里；目录名固定，Blender 按它 import |
+| `gakumas_mi/` | Blender 作者插件（版本 1.x） | 插件代码/预设只放这里；目录名固定，Blender 按它 import |
 | `3dmigoto_gkms/` | 抓帧环境（随插件同版本发布） | d3d11.dll、d3dx.ini、ShaderFixes、键位说明 |
 | `tools/` | 离线脚本（导出/构建/审计/打包） | 一个脚本一个文件，snake_case |
 | `tests/` | Python 回归/冒烟测试 | `test` 语义文件名，CI 可跑的进 `ci.yml` |
@@ -60,7 +60,7 @@ Blender 插件 ZIP 和抓帧环境安装包只放 `dist/`。
 |---|---|
 | `README.md` | 项目总览、仓库结构、工作流入口 |
 | `CHANGELOG.md` | Blender 插件（gakumas-mi）逐版本变更；release workflow 校验本版版本段存在（notes 正文取自 tag 注解），**不可移动** |
-| `research/current-status-and-roadmap.md` | 当前状态、完成度、后续计划 |
+| `research/ab-target-rig-route-2026-08-17.md` | 路线、批次状态与硬闸门 |
 | `research/README.md` | research 目录索引 |
 
 规则：

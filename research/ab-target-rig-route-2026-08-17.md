@@ -17,9 +17,10 @@
 
 ---
 
-## §0 当前状态 — 接手先读这一节
+## §0 这条路线做完了什么 —— 历史记录
 
-日期：2026-08-19。下面每格都是可复跑的数字，不是"看着对"。
+日期：2026-08-22 收口。**本文是历史记录，不是计划**：下面每格都是当时可复跑的数字，
+不写"下一步""待办"。要开新工作请另立文档，别把这里的记录当成排期。
 
 | 批次 | 状态 | 可复跑判据 |
 |---|---|---|
@@ -27,34 +28,11 @@
 | 2 参考资产 | ✅ | 逐骨 `150` 根（无权重 `18`）；最大位置差 `0.00008 mm`、朝向差 `0.000000°` |
 | 3 权重与闸门 | ✅ | 删除 `LeftShoulder` 后 `864` 顶点最大误差 `5.96e-08`；拦下导出的判据 `7` 组（逐条 + 实现位置见批次 3 的表）；朝向差 `≥15°` 拒绝导出 |
 | 4 打包 | ✅ | zip `10.8 MiB`；bundle 对象 `11/11` 逐项一致；覆盖 Blender `4.2/4.5.3` |
-| 5 Runtime 收严 | ✅ | `hmsz-fuyuko-icu` 会话：`graft=2`、`droppedInfluences=0`、`fallbackVertices=0`；`driverRefused/RolledBack/Missing/nullReference/error=0`；`swingDynamicBones=[203,206,236,238]`；300 帧 `16/23` 根移动。**该 Mod 已不在 `mods/` 里**，要复跑这组数字得先装回去；2026-08-19 的 2a 会话用同一把尺子同样退出码 `0`（`swingDynamicBones=[203,206,236,318]`、`swingMoved=16`） |
-| 6 物理 | 🟡 2/3 | 驱动器作用域 `1/1`、置灰+闸门 `1/1`；`collisionMask` **定性实机 `0/1`** —— 注意真值不只"量过"：`swing_presets.json` 2026-08-18 02:50 就已按众数装上，B/D 两个包都是照它出的（见下方叉点 §B/§D），欠的是一次**有对照**的画面判定 |
-| 7 三类样本 | 🟡 | **样本 `2a` 已定版收口**（`1375a006a8fc685f`，作者确认画面可接受，见叉点 §G）；过程中修掉四个插件缺陷，其中"物理指令按结构组而不是按链"让整条裙子被误判成自建摇物。样本 `1` 已进游戏，`2b` / `3` 未做。判据见 [`ab-target-rig-ingame-checklist.md`](ab-target-rig-ingame-checklist.md) |
+| 5 Runtime 收严 | ✅ | `hmsz-fuyuko-icu` 会话：`graft=2`、`droppedInfluences=0`、`fallbackVertices=0`；`driverRefused/RolledBack/Missing/nullReference/error=0`；`swingDynamicBones=[203,206,236,238]`。（当时还有一条 300 帧探针的 `16/23` 根移动 —— 探针已于 2026-08-22 从运行时删除） |
+| 6 物理 | ✅ 3/3（2026-08-22 收口） | 驱动器作用域 `1/1`、置灰+闸门 `1/1`；`collisionMask` **定性已做**：拿包臀裙样本出 A/B 两版（除 84 处 `collisionMask` 外逐字节相同），`-1` **裙摆整个炸开**、众数（`skirt=1/ribbon=256`）正常 —— 判据是画面，见 [`ab-target-rig-ingame-checklist.md`](ab-target-rig-ingame-checklist.md) §2 |
+| 7 验证样本 | ✅ 做了三个 | 样本 `1`（只有人体骨，fktn-miku）实机通过；样本 `2a`（源自带裙骨，dress-2219）定版 `1375a006a8fc685f`；跨游戏源 chs-sucu-00（IP 的包臀裙）实机通过（见 §H），顺带修掉 8 个插件缺陷 + 2 个新路径专有缺陷。判据见 [`ab-target-rig-ingame-checklist.md`](ab-target-rig-ingame-checklist.md) |
 
-补做的三项（原计划列了但一直没接）也已完成：几何判部件类型**进生产**、五档补齐 `bake`/`reject`
-两档并接上闸门、节数不同的塌链会被标出来。
-
-### 下一步（严格一次只改一个变量）
-
-当前不能直接进入 `collisionMask` 实机对比：2a 的静止坐标和性能仍是混杂变量。
-接手顺序以本节末尾“接手决策”为准：先冻结好/坏包，做装饰根的选择性对齐和低开销 Runtime，
-再回到物理变量。
-
-1. **批次 7·2a 对齐回归**：重建并钉住 A 好基线；以 D `a157b8da783ac081` 为人体对齐基线，
-   只补偿装饰链根，不得恢复 B 的全量非 direct 传播。
-2. **性能隔离**：默认关闭逐骨骼诊断和 300 帧实验探针；低日志 DLL 只验证帧率与静止位置，
-   不在同一次实机里改 `collisionMask`。
-3. **`collisionMask` 定性**：⚠️ **这一档已经不是"还没改"了**。预设 2026-08-18 02:50 就装上了众数
-   （`skirt=1 / cloth=64 / sleeve=0 / ribbon=256`，`48292` 根原版骨），B 和 D 两个包出的都是这套值：
-   ```text
-   B c068…:  skirt 1 ×16   ribbon 256 ×10
-   D a157…:  skirt 1 ×16   ribbon 256 ×4   cloth 64 ×6
-   ```
-   所以要做的不是"改成众数"（`tools/scan_vanilla_swing_bones.py … --collision-mask vanilla --install`
-   已经跑过了），而是补一次**有对照的画面判定**：拿同一个窄裙样本各出一版 `-1` 与众数，看贴腿是否
-   不发僵、不穿插、该撞的仍撞，并用日志尺子确认 `swingMoved>0`。A 基线的 mask 状态无记录，
-   **不能当对照组**。
-4. **样本路线**：2a 稳定后再做样本 1 的正式验收，以及 `2a → 2b → 3`（源自带裙骨 → Blender 建裙骨 → 道具/socket）。
+几何判部件类型已进生产、五档补齐 `bake`/`reject` 两档并接上闸门、节数不同的塌链会被标出来。
 
 ### 环境现状
 
@@ -67,14 +45,19 @@
     只有半透明路线自己的任一 `.on` 开关（或空文件 `vl-probes.on`）存在时才装 —— 那条路线要用照样打开。
   - `gakumas-mod/gmi_shaders.bundle` 已从游戏目录移除（与 `gakumas-mod-runtime/packaging/gmi_shaders.bundle`
     逐字节相同，随时可放回）。
-- `gakumas-mod/config.json`：当前 `logLevel=info`；启用 `batch7-sample1-fktn-miku`（buildId `86cca1693c476307`）和 `batch7-sample2a-hmsz-source-skirt`（buildId `a157b8da783ac081`）。
+- `gakumas-mod/config.json`：当前 `logLevel=info`。**2026-08-21 装机状态**：启用
+  `batch7-sample1-fktn-miku`（`86cca1693c476307`）和 `mdl-chr-chs-sucu-00-body-ab`
+  （`70ec1d5e91486e73`，见 §H）；`batch7-sample2a-hmsz-source-skirt`（`1375a006a8fc685f`）
+  **已 `enabled:false`** —— 它和 chs-sucu 抢同一个 `mdl_chr_hmsz-cstm-0059_body` 槽，
+  同槽同优先级只能有一个生效。
 - 当前窄裙 Bundle：SHA-256 `C5C0C7FFF2B273A9C63246EB273A66BC0FE6E82A14A17A358195A3E552CBE2DB`；日志最近会话 `error=0`，但有大量 info 诊断输出。
 - 两仓工作区状态：2026-08-20 已全部提交（`gakumas-modding` 批次 1–7 + 四个修复；`gakumas-mod-runtime`
   批次 5 收严 + 300 帧探针）。推送状态见各仓 `git status`。
 
 ### 全套回归
 
-当前全绿基线：pytest `130/130`（2026-08-20 复跑）、Blender 冒烟 `5/5`；runtime 构建包含 `3/3` 个原生检查。
+当前全绿基线：pytest `136/136`（2026-08-21 复跑，比 08-20 多的 6 条全是这一批新增闸门/尺子的正反用例）、
+Blender 冒烟 `5/5`；runtime 构建包含 `3/3` 个原生检查。
 
 > 2026-08-19：这条曾经是红的（`111/112`）。`--collision-mask vanilla --install` 装了众数，
 > 但 `tests/test_bundle_source_contract.py` 里还钉着 `collisionMask == -1`，实测出的是 `256`。
@@ -98,239 +81,24 @@ runtime 的 3 个原生检查是 `ModPresentationModelTests`、`DriverPrecheckSm
 
 ---
 
-### 批次 7·2a 实机回归叉点（2026-08-19）
+### 批次 7·2a 的实机回归（2026-08-19，已收口）
 
-这段是给接手开发者的**状态冻结点**。这里的“好/坏”必须按下面的包、脚本和现象理解，
-不能把它们混称为 `collisionMask` 实验结果。
+六轮实机的过程叙述已删，留结论与可复跑的包哈希：
 
-#### A. “整件衣服向角色右侧偏移”之前的好状态
+| 包 | 现象 | 结论 |
+|---|---|---|
+| B `c06816ff7908dcee` / `095EDA04…` | 整件衣服向角色右侧偏移 | 导出脚本把**所有非 `direct` 骨**一起乘上了人体父骨的目标矩阵差，绕过了五档分类 |
+| D `a157b8da783ac081` / `C5C0C7FF…` | 腰线与主体裙摆回中心，小挂饰仍偏 | 只对人体 `direct` 骨对齐、装饰骨保留源矩阵。离线凭据：`boneCount=225`、helper-rig 权重 `13.5%`（原版 `11.28%`）、与目标 `156` 个共同骨最大位置差 `0mm`／朝向差 `0.0497°` |
+| E（小挂饰按 ribbon） | 小挂饰没修好，**裙摆花边被拖出锯齿** | 按骨名选作用范围、没量影响面。两条 `Spine_Bow_*_A` 主导 `0` 顶点却在 `1185` 个顶点上当配角 —— 改它就是拖坏别人的形状 |
+| F（真根因） | 挂饰左右不对称 | 内置名字规则泄漏到同结构组的邻居：右腿花边与挂坠同锚点同链长被并成一组，`lace` 的 `follow_skirt` 带着挂坠跑。修在 `25c0457` |
 
-- 当时游戏仍在 `collisionMask` 实验版运行时上；`sample 1` 是独立放置/独立验证，
-  没有覆盖原有的 `hmsz-fuyuko-icu` 测试 Mod。
-- 用户实机确认：窄裙整体没有这次报告的“画面左侧 / 角色右侧”整体漂移。
-- 这个基线当时**没有记录可复跑的最终 DLL/Bundle SHA-256**，这是当前证据缺口；
-  新开发者不得把“当时看着正常”当成可复现基线。继续实验前必须先把基线包重新生成并钉住
-  manifest、sidecar、Bundle 和 DLL 哈希。
+三条留下来的规矩：
 
-#### B. 引入整体偏移的版本
-
-实际装入的是：
-
-```text
-mod-workspace/experiments/batch7-sample2a-hmsz-helper-rig/
-  buildId: c06816ff7908dcee
-  bundle bytes: 13,698,739
-  bundle SHA-256: 095EDA04AF80D07C995D7BDA2394614A2F350E9FEBD0CF91310B076765AAD8AA
-  sidecar: 225 bones / 26 extraSwingBones / 2 swingChains
-```
-
-这版不是 Runtime 加载失败：它是批次 7·2a 的 Blender 导出包，实机症状是**整件衣服向画面
-左侧、角色右侧偏移**。
-
-直接原因在 [batch7_sample2a_align_export.py](D:/GIT/gakumas-modding/mod-workspace/experiments/batch7_sample2a_align_export.py)：
-
-1. 先把人体 `direct` 骨对到目标学马骨架；
-2. 对每一根非 `direct` 骨寻找最近的 `direct` 祖先；
-3. 把该祖先的目标矩阵差 `delta` 继续乘到这根非人体骨上。
-
-等价逻辑是：
-
-```python
-delta = new[parent] @ old[parent].inverted()
-new[non_direct] = delta @ old[non_direct]
-```
-
-这把源裙饰、飘带、挂件等**所有非人体骨**一起搬进了目标身体坐标系，但没有按同一规则
-同步重建它们的权重/bindpose 语义。结果是人体骨对齐了，衣服装饰骨却整体带着错误的
-坐标差移动，形成统一横向偏移。
-
-#### C. 为什么当时会做这项改动
-
-它属于 target-rig 路线的 **P2（Blender 中对齐目标骨架）+ P3（权重/五档骨处理与导出闸门）**，
-也是批次 7·2a“源自带裙骨”样本的第一次 helper-rig 实现；**不是 P6 `collisionMask` 定性**。
-
-当时的意图是：人体骨换到学马目标静止姿势后，服装自己的裙骨/挂件骨也跟随人体父骨，避免
-衣服与身体脱离。这个目标本身属于开发计划，但“所有非 direct 骨无条件传播”并不是计划
-要求；它绕过了 §4.2 的 `helper / bake / reject` 分类闸门，是实现过度。
-
-#### D. 后续修正版及当前实机状态
-
-后来生成了只改人体 `direct` 骨、保留装饰骨源矩阵的版本：
-
-```text
-mod-workspace/experiments/batch7-sample2a-hmsz-fixed-helper-rig/
-  buildId: a157b8da783ac081
-  bundle bytes: 13,698,655
-  bundle SHA-256: C5C0C7FFF2B273A9C63246EB273A66BC0FE6E82A14A17A358195A3E552CBE2DB
-  sidecar: 225 bones / 26 extraSwingBones / 3 swingChains
-```
-
-游戏中装的是这版，外加 `batch7-sample1-fktn-miku`（E 失败后已回退到这里）。实机结果是：
-
-- 腰线、主体裙摆、角色右侧飘带回到身体中心；
-- `Bag / Belt / Key / Bow / Streamer` 等小挂饰仍有局部偏移；
-- Runtime 日志无错误，`225/225` 骨、`meshApplied=1`、`95/95` Mod 摇物骨注册成功；
-- 当前 `logLevel=info`，日志包含大量逐骨骼输出，并运行了 300 帧实验探针；用户报告游戏
-  “特别特别卡”。这与静止坐标偏移是两条独立问题。
-
-**D 的最终包离线凭据（2026-08-19 已补）**：
-
-- `verify_ab_package.py`：PASS；`boneCount=225`、无越界 influence、无关键缺失/缺权重；
-- helper-rig 权重占比 `13.5%`，原版基准 `11.28%`；
-- sidecar 与目标参考的 `156` 个共同骨：最大局部位置差 `0 mm`、最大朝向差约 `0.0497°`；
-- 装饰/新增骨 `69` 根：`left=31 / right=34 / unclassified=4`，`invalidParent=0`、
-  `missingParameter=0`，运行时创建计数 `95`；
-- 之前跑出的 `undecided=25.9%`、肘/膝跨关节带红值来自原始 `authoring.blend`，不是 D 的最终
-  对齐结果；该报告不能冒充 D 凭据。D 的最终 sidecar 位置/权重证据必须以本段数字和包哈希为准。
-
-因此，A → B 的回归是“非 direct 骨全量传播”造成的；B → D 的修复消除了整体漂移，
-D 已通过当前可复跑的离线包闸门，但仍没有完成装饰链的选择性对齐。
-
-⚠️ **B→D 之间不止改了对齐一件事**，逐包读 sidecar 得到：
-
-```text
-B c06816ff7908dcee   26 摇物骨： skirt 1 ×16   ribbon 256 ×10                 swingChains 2
-D a157b8da783ac081   26 摇物骨： skirt 1 ×16   ribbon 256 ×4   cloth 64 ×6    swingChains 3
-```
-
-有 **6 根骨从 ribbon 改判成 cloth**（`collisionMask` 跟着 256→64），链数也从 2 变 3。
-所以"小挂饰仍有局部偏移"**现在归因不了**：可能是装饰链对齐没补完，也可能是这 6 根的
-类别/碰撞档换了。下一包必须把"只改对齐"做成真的只改对齐 —— 类别与链数原样锁住。
-
-#### E. 当前可进入实机的单变量包（2026-08-19）
-
-E 不是重新从源模型导出一套“看起来相近”的包，而是以 D 的最终包为基底，只替换 22 个
-装饰链根的坐标补偿：
-
-```text
-mod-workspace/experiments/batch7-sample2a-hmsz-selective-root/
-  batch7-sample2a-hmsz-selective-root/
-  buildId: dea5054bb9cc6807
-  bundle bytes: 13,699,254
-  bundle SHA-256: 75A359C42B4280734FBE559A3DCBC282F10630C015193E11EDF8EFAB98F134DA
-  sidecar SHA-256: BDCDE0A3606A98AD7ECAFE5E5AD26A35DE7CE3C98F5C31A251ADDCF89A378FE5
-  geometry SHA-256: C3724BCD59FA7E00A1759C10BC979DBA8422F33161B4028D2A774475322564F5
-  sidecar: 225 bones / 26 extraSwingBones / 3 swingChains
-```
-
-E 的固定项全部沿用 D：几何权重、6 张纹理、6 根 cloth 的 `collisionMask=64` 与参数、3 条
-`swingChains`。验证结果：`boneCount=225`、`activeBoneCount=115`、`invalidInfluence=0`、
-helper-rig `13.5%`（原版 `11.28%`）、摇物 `69 = left 31 / right 34 / unclassified 4`、
-`runtimeCreated=95`、链问题 `0`、骨骼预算 `251/256`。
-
-D/E 对照证明：人体骨 local 数据相同；22 个链根变化；链根以下的 55 根骨只做根变换的正常
-向下传播；非链骨世界坐标变化 `0`；物理元数据、链声明、几何和纹理均与 D 相同。
-
-生成过程中有两个被拦下的中间错误，不能拿去实机：第一次 E 漏跑 helper-rig，权重占比为
-`0%`；第二次导出器把“子骨保留 local”错误实现成了 armature-space，造成链内坐标不随根正确
-传播。最终 E 是用 `batch7_sample2a_lock_d_physics.py` 和
-`batch7_sample2a_reduce_to_d_plus_roots.py` 收口后的结果。E 目前**只在实验目录，未打包进
-游戏、未安装、未启动游戏**。
-
-#### E. 小挂饰按 ribbon 出的包 —— **失败，已回退**（2026-08-19）
-
-**结论先写**：这一版进游戏后小挂饰**没修好**，而且**裙摆花边炸了**（作者截图：花边边缘
-变成锯齿）。游戏已回退到 D（`c5c0c7fff2b273a9` / `a157b8da783ac081`），
-`inputs/physics-override.json` 也退回原样。
-
-**站得住的那部分**（下次接着用）：
-
-- 静止姿势没问题 —— 逐骨算 `静止世界矩阵 x bindpose`，69 根 created 装饰骨全部偏离单位阵
-  `0.0 mm`。挂饰在画面上乱是**解算**造成的，不是摆错位置；
-- 小挂饰确实被几何分类判成了 `skirt`：`swingChains[0] host=Hips category=skirt chainLength=3`,
-  `roots=[Bag_R_A0, Chain_R_A0, Key_R_A0, Spine_Bow_L_A0, Spine_Bow_R_A0]`，
-  日志活体值 `Bag_R_A0 … spring=0.100 mass=0.500 collisionMask=1`。skirt 档一次带来三件事：
-  建裙摆环形碰撞链、撞半径 0.23 m 的胯胶囊、链根自己就摆（ribbon 根是惰性锚）；
-- 分类器自相矛盾：同一个蝴蝶结的两半 `Spine_Bow_*_A` 判 skirt、`Spine_Bow_*_B` 判 ribbon。
-
-**错在哪 —— 按骨名选了作用范围，没量影响面**。把五条链一起改成 ribbon，事后逐骨量：
-
-```text
-骨                  带权顶点  主导顶点  只当配角   包围盒(mm)     质心(x,y,z)
-Chain_R_A0             66      30       36      35x36x88   (0.152,0.992, 0.014)
-Key_R_A0                3       3        0       9x 6x25   (0.156,0.998, 0.017)
-Bag_R_A0              966     966        0      85x83x61   (0.076,1.016, 0.097)
-Spine_Bow_L_A0        613       0      613          —      （从不主导）
-Spine_Bow_R_A0        572       0      572          —      （从不主导）
-```
-
-真正的挂坠只有 `Chain_R`（30）和 `Key_R`（3）；`Bag_R` 是胯前一个近千顶点的包；
-两条 `Spine_Bow_*_A` **一个主导顶点都没有，却在 1185 个顶点上当配角**（那些顶点属于后裙和
-大蝴蝶结）。把它们从"裙链里被约束的骨"改成"自由摆动的 ribbon"，就是拖着这 1185 个共享顶点
-乱走 —— 花边的锯齿是这么来的。
-
-> **规矩：改一根骨的求解器之前，先量它的「带权顶点 / 主导顶点 / 只当配角」三个数。**
-> 只看骨名会把 `Bag`/`Bow` 当成小饰品；只看主导顶点会漏掉纯配角骨 —— 而配角骨改坏的是
-> 别人的形状，症状离被改的骨很远，最难归因。
-
-**下次只动 `Chain_R_A0`（必要时加 `Key_R_A0`）一条链**，其余四条留在原处；
-装之前先跑上面那张表确认动的骨没有配角影响。
-
-**这次唯一的净收益：D 变成可复跑的了。** 对照组（同 blend、同代码、原样 override）重打出来的
-bundle 与当时装在游戏里的 D **逐字节相同**（`c5c0c7fff2b273a9`）。完整四步：
-
-```bash
-blender --background --factory-startup --python-exit-code 1 \
-  --python mod-workspace/experiments/batch7_sample2a_ribbon_accessories_export.py \
-  -- ".../hmsz-cstm-0059_body_dress-2219-TEST/blend/authoring.blend"
-python tools/redistribute_helper_weights.py <包目录> --write   # 20 根 *_H 骨的权重，漏了 verify 会 FAIL
-python tools/patch_unity_bundle.py --template <模板> --mod-root <包>/bundle-src --output <包>/<id>.bundle
-python tools/verify_ab_package.py <包>/bundle-src              # 必须 PASS
-```
-
-> ⚠️ **blend 里存着作者的 123 行表单，优先级高于 JSON**（`operators.py` 的
-> `_form_swing_categories` / `_form_physics_overrides` 最后 update）。`authoring.blend` 与
-> `authoring - 副本 - 副本.blend` 逐行比过，只差 7 行（`Streamer_*` 的 ribbon↔skirt），
-> 其余 116 行相同。**换 blend 等于一次改掉一批作者决定，不能拿"和旧包哈希对得上"当理由。**
-
-#### F. 挂饰乱飞的真根因：内置名字规则泄漏到同组邻居（2026-08-19，已修）
-
-**问对了问题才查到**：不是"新包分类错了"，而是"旧 AB 为什么是对的"。逐包对 sidecar：
-
-```text
-                        旧 AB（08-04，画面正确）      E 之前的包
-Bag_R / Chain_R / Key_R  → Hips（刚性，没有物理）      自建摇物骨，进 skirt 链
-Leg_pendant_L_*          → LeftUpLeg（刚性）           LeftUpLeg（没变）
-Leg_pendant_R_*          → RightLeg（刚性）            RightBackSideSkirt4_S ← 裙摆末端摇物骨
-Skirt_L/R_A*             → 蹭原版 LeftFrontSkirt2_S…   自建摇物骨
-新建骨总数                26                            69
-```
-
-作者说的"旧 AB 正确，只是物理不够拟真"字面成立：**那些挂饰当时根本没有物理**，焊在胯上/腿上。
-
-**左右不对称是 bug 的指纹。** `Leg_pendant` 左右是镜像的同一样东西，却走了两条分支：
-
-```text
-左：组 LeftUpLeg_1|L3 = [Leg_pendant_L_A0/A1/Aend]              → 无指令 → 刚性 → LeftUpLeg
-右：组 RightLeg_1|L2  = [Lace_R_A0, Lace_R_Aend,
-                        Leg_pendant_R_A0, Leg_pendant_R_Aend]  → lace 语义 → 整组 follow_skirt
-```
-
-`structural_bone_groups` 按「锚点 + 链长 + 网格连片」归组 —— 右边花边与挂坠恰好同锚点、同两节，
-被并成一组；`directive_for` 把**整组**判成一个指令，lace 的 `follow_skirt` 就带着腿上的挂坠
-一起去蹭裙摆末端摇物骨。左边挂坠三节、没并组，所以是刚性。
-
-`verify_ab_package` 那条 `摇物骨左右分布不对称: Left=31 Right=34` 的 WARN 就是它的指纹，
-**被当成"源模型本来就不对称"放过去了一次**。下次见到左右计数不等，先当 bug 查。
-
-**修法**（`core.directive_for` → `units_for`）：三档作用域分开 ——
-作者覆盖整组生效（显式意图）、源链整条一起 `integrate`（拆开等于劈断链）、
-**内置名字规则只对名字命中的骨生效**。修完在真模型上逐条对上旧 AB 的真值：
-
-> ⚠️ 「作者覆盖整组生效」是**这一步的中间态**。`cf12f94` 之后作用域改成**按链** —— 结构组在这个
-> 模型上一组装下 57 根骨，整组生效会把作者的 `follow_skirt` 吞掉。终态见 §G 的第三条修复，
-> 别照这一段实现。
-
-```text
-Leg_pendant_L_* → LeftUpLeg（刚性）           旧 AB 同
-Leg_pendant_R_* → RightLeg （刚性）           旧 AB 同
-Lace_R_*        → RightFrontSkirt4_S          正是 physics-override 注释里记的那根
-```
-
-双向验：`tests/test_bone_classification.py` 的「名字规则作用域」一节四条；撤掉修复前两条变红。
-
-**方法论**：这次能查到，是因为判据换成了「与画面已确认正确的旧包逐条比对」，
-而不是「我觉得哪个类别更像」。E 那次翻车正是缺这个真值。
+1. **改一根骨的求解器之前，先量它的「带权顶点 / 主导顶点 / 只当配角」三个数**。只看骨名会把
+   `Bag`/`Bow` 当小饰品；只看主导顶点会漏掉纯配角骨 —— 配角骨改坏的是别人的形状，症状离被改
+   的骨很远，最难归因；
+2. **判据是「与画面已确认正确的旧包逐条比对」**，不是"我觉得哪个类别更像"；
+3. **`verify_ab_package` 报「摇物骨左右分布不对称」时先当 bug 查**，那是这类错误的指纹。
 
 #### G. 收口：dress-2219 定版（2026-08-19）
 
@@ -369,16 +137,9 @@ limitZ 众数             (-90,0) (-180,180) (-60,0)      (-20,0) (-40,0)
 的环形 `around/radius` 解算是给"一圈裙板互相不穿插"用的，背后两根飘带凑不成一圈。
 作者 blend 里原本写的 `skirt` 是与原版相反的一档（挂链 + 撞胯胶囊 + 摆动夹到 20°）。
 
-**仍然开着的口子**（都不阻塞这一批，但下次接手要知道）：
-
-1. **`Spine_Bow_L/R` 还是 skirt 档**，按名字属于原版 ribbon 族。真要改只该动 `_B` 两条
-   （主导 48/110 顶点）；`_A` 两条主导 0、却在 1185 个顶点上当配角，动它就是拖坏后裙和
-   大蝴蝶结的形状（§E 花边被拖出锯齿那次的原因）。
-2. **飘带的实际摆幅从没量过。** 三次改动都是读参数推的。运行时探针（`c5fb1d7`）能给
-   逐骨 300 帧峰值，但游戏里跑的还是 latch 有 bug 的 v1 —— 要用得先关游戏换 DLL。
-   参照系已经有了：原版飘带骨 `CenterLeftLRibbon1_S` 峰值 `28.21°`，原版裙摆末端 `90.03°`。
-3. **未决定组还有 38 个**，靠闸门 9 的显式放行导出的，sidecar 里记着
-   `undecided {"count": 38, "allowed": true}`。
+**收口时的两条记录**（作者 2026-08-21 判定画面合理，不再改）：`Spine_Bow_L/R` 保持 skirt 档；
+飘带定 `ribbon`。参照系留着：原版飘带骨 `CenterLeftLRibbon1_S` 峰值 `28.21°`、原版裙摆末端 `90.03°`。
+导出时有 `38` 个未决定组靠闸门 9 的显式放行过的，sidecar 里记着 `undecided {"count": 38, "allowed": true}`。
 
 **这一批真正的产出是插件侧的四个修复**，样本只是载具：
 
@@ -393,51 +154,72 @@ limitZ 众数             (-90,0) (-180,180) (-60,0)      (-20,0) (-40,0)
 "整组一个指令、第一个带覆盖的骨说了算"让整条裙子被误判成自建摇物，
 自建骨 69 根 → 修完 18 根，左右分布 `31/34` → `9/9`。
 
-#### 接手决策（按这个顺序，不要跳步）
+#### H. 跨游戏源样本 chs-sucu-00 → hmsz-cstm-0059（2026-08-21，实机通过）
 
-1. **冻结三个证据点**：A 的好基线仍需重新生成并补 SHA；B 的 `c068/095EDA04…` 偏移包和
-   D 的 `a157/C5C0C7FF…` 当前包已有哈希及 D 离线凭据；不得用覆盖安装代替对照。
-2. **选择性根骨补偿包 E 已完成离线闸门**：保留 D 的人体 `direct` 对齐，只对
-   `Bag/Belt/Key/Bow/Streamer` 等 22 个装饰链根做父坐标补偿，链内节距/形状保持不变；
-   下一步只需在游戏退出后手动安装 E，和 D 在同一场景、同一动作下观察小挂饰是否回中。
-   不要把未过上述闸门的中间 E 装入。
-3. **性能单独做变量隔离**：不要用降低 `collisionMask` 来“修卡顿”或“修静止偏移”。
-   ⚠️ 但 **"关诊断/关探针"这个方向 2026-08-19 读码查过，基本可以排除**：
+**性质**：第一次把「另一个游戏的整套服装」从解包一路做到画面可接受，也是第一次
+**把 Mesh JSON 导进 Blender 再出包**（以前作者的网格都是自己在 Blender 里导入的 FBX/PMX）。
+这条新路径一次性撞出 7 个缺陷，量化数字见事实文档 §4b。
 
-   | 怀疑对象 | 读到的事实 |
-   |---|---|
-   | 300 帧摇物探针 | `SampleSwingMotion` 有 `done` 原子标志，满 300 帧后每帧只剩一次原子读；只抽样 ≤24 根骨 |
-   | 逐骨骼 info 日志 | 整个会话日志才 `89 KiB`，不是逐帧写 |
-   | 每帧 `LateUpdate` 钩子 | `DriveSourceProxyBridges` 在 `g_sourceProxyBridges` 空时（target-rig 包就是空）立刻返回，只剩一次加锁 |
-   | VL 半透明探针 | 已经不装了（见「环境现状」）；装的时候也只是计数器+早退 |
+装机 `buildId 70ec1d5e91486e73`（`ribbon 14 + skirt 14`、4 条链、`boneCount 184`）。
+作者判定：摇物链正常、无目视问题（判定是在 `f1dbfcefe5cf49fe` 上做的；当前版只把部件类型
+从 auto 钉成显式 skirt，物理参数逐项相同）。
 
-   剩下的第一嫌疑是**样本自身的规模**，日志里直接读得到：
-   `originalVertices=19440 → modVertices=89748`（`4.6×`）、`originalBones=156 → modBones=225`、
-   场上 `swingDynamicBones=318`（其中 `95` 根是我们加的）。
-   所以性能这一步的第一个动作不是关日志，而是**先分清是"这个模型太重"还是"运行时有额外开销"**：
-   拿原版同场景和 `batch7-sample1`（顶点规模小得多）各测一次帧率，再决定要不要往运行时里找。
-4. 只有静止位置和帧率都稳定后，才回到路线 §0 的 P6：按原版众数重新生成 `collisionMask`
-   预设，再用同一个窄裙样本做一次实机对比。
+**这一批的产出是插件侧的 8 项修复**（样本仍然只是载具）：
 
----
+| 修的什么 | 落点 | 作者原来会不会中 |
+|---|---|---|
+| 作者的物理策略被「按名字撞上目标骨」压过 | `operators._resolve_source_bone_remap` | **会**：源与目标同名但几何差 221mm 时，作者点的「自建摇物链」被静默忽略 |
+| 自建骨与目标骨架重名 | 闸门 12 `core.new_bone_name_collision_error` | **会**，且以前零提示 |
+| 合成链尾硬写在骨的局部 -Z | `core.build_source_extra_bones` + `operators._dominant_group_tip_offsets` | **会**，且以前零提示（dress-2219 定版包里同样是坏的） |
+| 归组的链长 ±1 跟上一条比 → 多米诺 | `core.structural_bone_groups` | **会**：12 条链并成 24 根一组 |
+| 部件类型按结构组发 → 邻居把类别带跑 | `core.geometric_swing_categories` + 新抽出的 `core.resolve_chains` | **会**：与 `cf12f94` 修物理指令是同一类错误 |
+| 「几何全在链根」只在导出后闪一句 WARNING | 表单常驻黄标 `core.anchor_only_roots` + `ui` | **会**（能看到但极易错过） |
+| 「拆开这一组」丢掉链根自己摆/黄标 | `gmi.split_bone_group` | 会 |
+| `verify_ab_package._side_of` 只看名字开头 | 尺子本身 | 加了 mod 前缀后「左右不对称」这条 bug 指纹会哑掉 |
 
-## 1. 目标架构
+**另外两条只在「JSON → Blender → 出包」这条新路径上才会中**（作者的 FBX/PMX 流程不受影响）：
+
+- `core.read_weighted_reference` 导入时翻 `v`、导出端不翻回去 → 整身贴图错乱。那个函数原来
+  只被两个**导入参考模型**的算子用，从来没被再出包，所以潜伏了两个月；
+- body 导出器按材质槽写常量 COLOR，一个 `m_bdy` 槽里的皮肤和布料共用一行 ramp。新增描边模式
+  `SOURCE`「沿用源模型顶点色」（缺 COLOR 硬拦）。外部 rip 本来就没有学马语义顶点色，
+  原来三档对他们是对的。
+
+**P2 对齐这次是必须做的**：IP 与学马同中间件、骨名一一对应，但体型差 9%（Head 差 124mm）。
+不对齐的画面症状是头飘在脖子上方、手够不到手骨。做法（等比 + 逐骨摆到目标静止矩阵 +
+骨架修改器把形变烘进网格）的定版脚本随样本保存在
+`mod-workspace/mods/work/chs-sucu-00_body_ab-2026-08-21/`，
+实测最大骨差 `179.3mm → 0.000mm`。**闸门 6（位置只报不拦）在这个量级明显不够**，见下方口子。
+
+**这个样本顺带把批次 6 收口了（2026-08-22）**：它正好是验收清单 §2 要的"窄裙样本"。拿它的
+`bundle-src` 只改 `collisionMask` 重打了一版对照（84 处改成 `-1`，6 张贴图 + geojson 的
+SHA-256 逐字节相同、`boneCount/swingChains/extraSwingBones` 三项计数一致，逐项证明只差这一个变量）：
 
 ```text
-Blender 外部模型
-    ↓ 手动对齐、权重映射、物理骨配置
-学马目标骨架上的 SkinnedMeshRenderer
-    ↓ 便携式打包器
-AssetBundle + mod.json + sidecar
-    ↓
-Runtime 替换 Mesh / Material
-    ↓
-学马原生 Animator / IK / Physics / Socket
+A 众数  skirt=1 / ribbon=256   70ec1d5e91486e73   裙摆正常
+B 全 -1 collisionMask=-1 ×84   1a66d9ab686e813c   **裙摆整个炸开**
 ```
 
-**双骨架 bridge 不作为默认路线，只保留为特殊兼容模式。**
+`-1` = Everything 会去撞半径 0.23m 的胯胶囊，症状比预期的"发僵"更极端。**原版众数是对的，
+不要再回退到 `-1` 兜底。** 对照包留在 `mods/…-maskall/`（`enabled:false`）。
 
-一句话定性：**人体主骨架严格使用学马原版的；外部网格在 Blender 手动对齐；能对应的骨保留原权重并显式映射；不能对应的骨走辅助骨 / 烘焙 / 拒绝三选一，不猜；物理由目标 prefab 和明确的辅助链负责；Runtime 只替换已验证的 AB 资产。**
+⚠️ **切 mod 别用游戏内管理器 UI**：2026-08-22 实测，两个 mod 抢同一个槽时点被拒的那个会崩
+（`CampusUiProbe.cpp` 的 `PressHook → HandleModToggle → ApplyPresentationModelToToggleBindings
+→ SetCampusText → Call`，对已销毁的 il2cpp UI 对象 invoke，只有空指针检查没有活体检查）。
+改 `mod.json` 的 `enabled` 再重启游戏，顺带也保证 `BuildModel` 重跑、物理按新值重建。
+
+**这条路线交付时的已知限制**（陈述事实，不是排期）：
+
+- 游戏内 mod 管理器 UI 在「两个 mod 抢同一个槽、点被拒的那个」时会崩
+  （`CampusUiProbe.cpp` 的 `PressHook → HandleModToggle → ApplyPresentationModelToToggleBindings
+  → SetCampusText → Call`，对已销毁的 il2cpp UI 对象 invoke，只有空指针检查）。**切 mod 请改
+  `mod.json` 的 `enabled` 再重启游戏** —— 那样也保证 `BuildModel` 重跑、物理按新值重建；
+- 闸门 6（静止位置差）只报不拦，作者判定这样就够；
+- 导出器逐 corner 写顶点，源 `11870` → 出包 `45444`（`3.8×`）；
+- `tools/process_ip_geo_body.py` 只认 2 个 submesh，第 3 段的 `86` 个顶点按错图集分类描边；
+- IP 源的肤色没有按目标角色校准（IP 文档 §5 自己也标着跳过）；
+- 顶点 COLOR 的 RampAdd 行 / rim 档跨游戏不同族（量到了，作者判定画面没问题，保持保留源值）。
+
 
 ---
 
@@ -800,20 +582,19 @@ mass、stiffness、damping、collider、collision mask、limit、solver owner。
 >
 > **四个数字只写在 `gakumas_mi/swing_presets.json` 的 `_collisionMask` 注里，本文不复写。**
 > 这个事实此前存了四份（§0 / 本节 / 批次 6 / 预设），漂掉的就是本条。预设自己写着这是
-> 「实机实验档，不是已定案的默认值」——欠的不是改值，是一次**有对照的画面判定**，
-> 怎么做见 §0「下一步」第 3 条。
+> 「实机实验档」的标注已作废：2026-08-22 的 A/B 画面判定确认众数是对的。
 
 ### 11.2 诊断顺序：先证明在被解算，再谈参数
 
 whole-object 那边三轮参数工作**全部作废**，根因是跳过了这一步——三组实质不同的输入产生
 像素级相同的输出，而那个模式本身就是"输入没被读"的证据。
 
-正确起点：读无条件日志的 `swingDynamicBones=N` + 采样摇物骨的 300 帧局部旋转峰值。
+正确起点：读无条件日志的 `swingDynamicBones=N`（当时还配了一把 300 帧局部旋转峰值探针，2026-08-22 已删）。
 **只有确认有骨真的在动之后，参数、碰撞笼、限位才有讨论意义。**
 
-### 11.3 验收场景
+### 11.3 验收场景的定义
 
-原地待机 / 走路 / 跑步 / 跳舞 / 快速转身 / 裙子与腿部碰撞 / 飘带与身体碰撞 /
+判"摇物做得对不对"看这些工况：原地待机 / 走路 / 跑步 / 跳舞 / 快速转身 / 裙子与腿部碰撞 / 飘带与身体碰撞 /
 连续 300 帧运动。判据：无重复求解、爆振、抽搐、穿透。
 
 ### 11.4 参数来源
@@ -882,10 +663,10 @@ whole-object 那边三轮参数工作**全部作废**，根因是跳过了这一
 |---|---|
 | `gakumas_mi/swing_presets.json` | **直接复用**，别重建（530 套原版扫描） |
 | `core.CRITICAL_TARGET_BONES` | P4 闸门 1 已实现，只需补出路文案 |
-| `core.swing_category_by_geometry()` | **接进生产**（现在只有测试调） |
+| `core.swing_category_by_geometry()` | ✅ 已进生产（`core.geometric_swing_categories`）；2026-08-21 起**按链发**，不再一组一档 |
 | `core.build_accessory_physics_remap` 里的 `group_key()` | ✅ 已退成兜底（生产路径走 `structural_bone_groups`） |
-| `ui.GMI_UL_bone_map` | ✅ 已改成一行一组（+ 五档状态列 + 「拆开这一组」） |
-| `tools/report_joint_alignment.py` | ✅ 已搬进面板（`core.rest_alignment`，并补上朝向差；老脚本留着离线用） |
+| `ui.GMI_UL_bone_map` | ✅ 已改成一行一组（+ 五档状态列 + 「拆开这一组」+ 2026-08-21 起「几何全在链根」常驻黄标） |
+| 旧 `tools/report_joint_alignment.py` | ✅ 已搬进面板（`core.rest_alignment`，并补上朝向差）；零引用旧脚本已删除 |
 | `audit_ab_rig.cross_joint_bands` | ✅ 已搬进面板（`core.cross_joint_bands`；那边按骨下标算，两处同源要一起改） |
 | `operators._form_driver_categories`（旧名） | ✅ 已作用域化 → `_form_driver_bones`（`{骨名: 类别}`，一行=一组=一条链） |
 | whole-object / 双骨架桥代码 | **标为对照组，勿再投入，不删** |
@@ -990,12 +771,13 @@ P 编号是分层，不是时序。实际施工按批次：
 | 3 | 没有未归一化或全零权重 | ✅ 拦：写包时逐顶点归一化，全零报错。另有截断量告警（第 5 个影响骨起被丢） | `core._bundle_skin`（`core._bundle_skin`） |
 | 4 | `bones[]` 数量/顺序与 bindpose 一致 | ✅ 拦（骨数 vs `m_BindPose`、查骨下标越界、`m_Skin` 数量 vs 顶点数）。`verify_ab_package` 里**没有** bindpose 检查，别当第二道 | `core._bundle_geojson` + `_bundle_skin` |
 | 5 | 目标骨 bindpose 没被来源骨覆盖 | ❌ **不做**：lossless 下 mod 就是要带自己的 bindpose，target-rig 下没有能成立的判据。硬凑一个会变成"在原版上也报"（风险登记 V5） | — |
-| 6 | 头/手/脚/根骨没有明显静止姿势偏移 | 🟡 **只报不拦**：位置差被重定向吸收（"免的是位置"），拦它等于误伤 | `core.rest_alignment`（位置最高只判黄） |
+| 6 | 头/手/脚/根骨没有明显静止姿势偏移 | 🟡 **只报不拦 —— 2026-08-22 作者定案：就这样，不加硬阈值**。作者能在面板上看到这个误差就够了，剩下的是他的判断。（反例仍然记着：IP 源体型比学马小 9%、Head 差 `124mm`，那个量级重定向吸收不了，画面上头飘在脖子上方，见 §H；但那次是**自动化脚本没看面板**，不是作者会犯的错） | `core.rest_alignment`（位置最高只判黄） |
 | 7 | 全部 `direct` 映射骨的静止朝向差在阈值内 | ✅ 拦（≥15° 拒绝导出）。两个方向都验过 | `operators._rest_orientation_error`（`operators._rest_orientation_error`），调用 `:1634` |
 | 8 | `bindpose · 骨静止世界 ≈ I` | ❌ **作废**，见上（原版自己会报） | — |
 | 9 | 来源辅助骨均有明确的 helper/bake/reject | ✅ **拦**（`40819e4` 起）：`undecided` 默认拦下导出，显式放行必须留痕，`undecided {count, allowed}` 写进 sidecar 和权重报告。~~只报不拦~~ 是 2026-08-17 的状态 | `core.undecided_export_error` / `undecided_export_record`（`core.undecided_export_error` / `core.undecided_export_record`），调用 `operators._prepare_bundle_export_data`；`tests/test_undecided_gate.py` |
 | 9b | `reject` 的骨不许进导出；标了 `bake` 却没烘也不许 | ✅ 拦 | `operators._prepare_bundle_export_data`（`reject` 与未烘的 `bake` 两段），`tests/blender_bake_rest_offset_smoke.py` |
 | 11 | 空摇物链（垂到胯下、没人驱动的衣物链）不许出包 | ✅ **拦**（`2109371` 新增，§8.1 第 11 条） | `core.empty_swing_chain_error`（`core.empty_swing_chain_error`），调用 `operators._prepare_bundle_export_data` |
+| 12 | 自建骨不许和目标骨架里的骨重名（契约 §4.1 防撞名） | ✅ **拦**（2026-08-21 新增）。重名时 renderer 的 `bones[]` 会取到目标骨的变换，装饰件绕错枢轴摆 | `core.new_bone_name_collision_error`，调用 `operators._prepare_bundle_export_data`；`tests/test_bundle_source_contract.py` |
 
 **拦下导出的判据共 7 组**（1、2·10、3、4、7、9+9b、11），其中 2 与 10 是同一处实现。
 
@@ -1064,12 +846,12 @@ tools/package_blender_addon.py --with-unitypy "<Blender>/4.2/python/bin/python.e
 
 构建：`.\tools\package.ps1 -Version dev` 全绿（`ModPresentationModelTests` /
 `DriverPrecheckSmoke` / `ModRuntimeCatalogSmoke` + Python 契约测试 5 个），DLL 已部署到
-`D:/Games/gakumas/`。**实机复验还没做** —— 需要一次「正常包不误报」的进游戏确认（按贯穿规矩 1，
+`D:/Games/gakumas/`。（当时的记录：还需要一次「正常包不误报」的进游戏验证，后来在批次 7 的样本上做过了）
 这一轮只改了这一个变量）。
 
-### 批次 6 — 物理（P7）🟡 2026-08-17（两项做完，`collisionMask` 定性欠一次实机）
+### 批次 6 — 物理（P7）✅ 2026-08-17 起，2026-08-22 收口
 
-**1. `collisionMask` —— 真值量出来了，预设 2026-08-18 02:50 已装众数，欠画面判定。** 48292 根原版摇物骨（`vanilla-swing-bones.json`）
+**1. `collisionMask` —— 真值量出来了，预设已装众数，2026-08-22 画面判定确认。** 48292 根原版摇物骨（`vanilla-swing-bones.json`）
 逐档众数：
 
 ```text
@@ -1116,7 +898,9 @@ ribbon）时，表单当场标 ERROR，导出**直接拦下并说清怎么改**�
   droppedInfluences / swingDynamicBones / 300 帧动了几根 / 预检拒绝 / 空引用 / error），
   退出码非 0 就打印"不合格：<键名>"。它自己有 6 个自检（坏日志必须报、好日志不许误报，
   `tests/test_runtime_log_reader.py`）；
-- **300 帧摇物峰值探针本来就有**（运行时 `SampleSwingMotion`），不用新写 —— 尺子只负责读它；
+- ~~**300 帧摇物峰值探针**（运行时 `SampleSwingMotion`）~~ —— **2026-08-22 已从运行时删除**
+  （测试期的东西，作者判定不留）。日志尺子里 `swingMoved` / `swingProbe*` 三个键随之下线；
+  现在"骨被收进解算表了"看 `swingDynamicBones`，"有没有真的在动"只能看画面；
 - 拿现有日志已经量到三件事，**不用新跑**：`swingDynamicBones=158~236`；
   `17/23 bones moved, best=Bone_SkirtA02_R 94.42°`（§11.2 的前置条件成立）；
   `Grew missing socket nodes count=9`、`hostRestDelta` 全 `0deg` ——

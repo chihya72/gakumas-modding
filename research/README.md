@@ -34,9 +34,7 @@
 |---|---|
 | [`ab-route-notes.md`](ab-route-notes.md) | AB 路线：三段契约、运行时换网格机制、新增物理骨规范、无损边界、原生 `m_bdyco` 透明边界 |
 | [`hair-pipeline.md`](hair-pipeline.md) | 发型/发饰：资产结构、制作流程、踩坑总表 + shader 逐通道逆向证据 |
-| [`known-risks.md`](known-risks.md) | **本仓制作工具已知风险与排查索引**：导入、烘焙、导出或打包异常先查这里（更新到 2026-08-12，**早于 target-rig 那批**） |
 | [`lessons-learned.md`](lessons-learned.md) | **反面教训汇总**：已排除的路线、作废的做法、被推翻的结论 |
-| [`current-status-and-roadmap.md`](current-status-and-roadmap.md) | 远端已发布版本（1.1.0）的能力、边界和维护事项（更新到 2026-08-12，**早于 target-rig 那批**） |
 | [`unity-humanoid-avatar-sdk/`](unity-humanoid-avatar-sdk/) | **Unity 实验台**：`HANDOFF.md`、`docs/corrective-helper-rig.md`、`docs/rest-pose-dead-end.md` 是大量原版数字的原始出处，必须跟代码放在一起，**不归档** |
 
 ## 不在这个目录里的东西

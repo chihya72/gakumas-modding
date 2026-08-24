@@ -25,6 +25,9 @@ class FakeLayout:
     def row(self, **_kwargs):
         return self
 
+    def separator(self, **_kwargs):
+        return None
+
     def panel(self, *_args, **_kwargs):
         return self, self
 
@@ -55,6 +58,11 @@ gakumas_mi.register()
 try:
     component = bpy.types.Scene.bl_rna.properties["gmi_component_id"]
     assert [item.identifier for item in component.enum_items] == ["body", "hair"]
+    workflow = bpy.types.Scene.bl_rna.properties["gmi_workflow_stage"]
+    assert [item.identifier for item in workflow.enum_items] == [
+        "TARGET", "MODEL", "MATERIAL", "RIG", "EXPORT"]
+    target_source = bpy.types.Scene.bl_rna.properties["gmi_target_source"]
+    assert [item.identifier for item in target_source.enum_items] == ["CAPTURE", "PROFILE"]
     strategy = operators.GMI_bone_map_item.bl_rna.properties["strategy"]
     assert [item.identifier for item in strategy.enum_items] == [
         "auto", "rigid", "integrate", "follow_skirt", "follow_nearest", "native_driver",
@@ -81,21 +89,28 @@ try:
     scene.gmi_extract_output_dir = str(ROOT / ".local" / "test-output" / "blender-ui-smoke")
     scene.gmi_body_resource = "mdl_chr_test-hair-0001_hair"
 
-    # 工作流三步 = 三个常驻子面板,全部挂在 GMI_PT_main 下（AB 路线没有传权那一步）
-    step_panels = (ui.GMI_PT_step_profile, ui.GMI_PT_step_texture, ui.GMI_PT_step_export)
-    for panel_cls in step_panels:
-        assert panel_cls.bl_parent_id == "GMI_PT_main", panel_cls
-        assert panel_cls.is_registered, panel_cls
-    # 收三步时漏改过步骤号文案,这里钉死:面板按 ①②③ 排,且没有任何一处还写 ④
-    assert [cls.bl_label[0] for cls in step_panels] == ["①", "②", "③"]
+    # 五阶段只注册一个主面板；旧版三个巨型折叠子面板不能复活。
+    assert ui.GMI_PT_main.is_registered
+    assert ui.CLASSES == (ui.GMI_UL_bone_map, ui.GMI_PT_main)
+    assert not hasattr(ui, "GMI_PT_step_profile")
     init_source = (ROOT / "gakumas_mi" / "__init__.py").read_text(encoding="utf-8")
-    assert "④" not in ui_source and "④" not in init_source
-    # t0 在步骤②「准备材质」里填,引用它的提示不能再说步骤③
-    assert "步骤③已填 t0" not in ui_source and "步骤③已填 t0" not in init_source
+
+    # 构造一个明确的作者网格，验证 UI 不再依赖测试进程碰巧激活了哪个对象。
+    mesh = bpy.data.meshes.new("GMI_UI_SmokeMesh")
+    mesh.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
+    mesh.uv_layers.new(name="UVMap")
+    author_obj = bpy.data.objects.new("GMI_UI_SmokeAuthor", mesh)
+    scene.collection.objects.link(author_obj)
+    author_obj.vertex_groups.new(name="Hips").add([0, 1, 2], 1.0, "REPLACE")
+    material = bpy.data.materials.new("GMI_UI_SmokeMaterial")
+    mesh.materials.append(material)
+    scene.gmi_author_object = author_obj
 
     hair_layout = FakeLayout()
     ui.draw_profile_step(hair_layout, scene)
+    ui.draw_model_step(hair_layout, scene, bpy.context)
     ui.draw_texture_step(hair_layout, scene, bpy.context)
+    ui.draw_rig_step(hair_layout, scene, bpy.context)
     ui.draw_export_step(hair_layout, scene, bpy.context)
     # 3Dmigoto 的传权/导出入口必须一个都不剩
     for dead in ("transfer_profile_weights", "transfer_hairprop", "bind_hairprop_rigid",
@@ -104,6 +119,8 @@ try:
         assert not any(dead in op for op in hair_layout.operators), dead
     assert "gmi.export_bundle_source" in hair_layout.operators
     assert "gmi.build_bone_map" in hair_layout.operators
+    assert "gmi.prepare_target" in hair_layout.operators
+    assert "gmi.activate_author_object" in hair_layout.operators
     assert "gmi_hairprop_base_color_file" in hair_layout.properties
     assert "gmi_hair_use_base_alpha" in hair_layout.properties
     assert "gmi_opacity_texture_file" not in hair_layout.properties
@@ -193,6 +210,11 @@ try:
     assert operators._form_driver_gaps(scene) == []
     scene.gmi_bone_map.clear()
 
+    # 列表行只负责选择和暴露异常，不再横向塞目标骨、策略、类别等 6 列控件。
+    queue_item = scene.gmi_bone_map.add()
+    queue_item.source = "帯_01"
+    queue_item.strategy = "rigid"
+
     class ListRow:
         def __init__(self, sink):
             self.sink, self.enabled = sink, True
@@ -217,12 +239,19 @@ try:
     def draw_row():
         sink = []
         ui.GMI_UL_bone_map.draw_item(
-            None, bpy.context, ListRow(sink), scene, item, None, scene, "", 0)
-        return dict(sink)
+            None, bpy.context, ListRow(sink), scene, queue_item, None, scene, "", 0)
+        return sink
 
-    assert draw_row()["swing_category"] is False, "非 integrate 时部件类型必须置灰"
-    item.strategy = "integrate"
-    assert draw_row()["swing_category"] is True
+    assert draw_row() == []
+    rigid_detail = FakeLayout()
+    ui.draw_rig_step(rigid_detail, scene, bpy.context)
+    assert "target" in rigid_detail.properties and "strategy" in rigid_detail.properties
+    assert "swing_category" not in rigid_detail.properties
+    queue_item.strategy = "integrate"
+    integrate_detail = FakeLayout()
+    ui.draw_rig_step(integrate_detail, scene, bpy.context)
+    assert "swing_category" in integrate_detail.properties
+    assert "swing_anchor" in integrate_detail.properties
 
     # 一行 = 一组：表单里的决定必须落到组里每一根骨，否则作者点一次只管到代表骨。
     # 五档状态列的图标不走 icon="..." 字面量，上面那道 icon 校验扫不到，这里单独查。
@@ -251,19 +280,26 @@ try:
     assert ui._row_state(scene.gmi_bone_map[0]) == "direct"
     scene.gmi_bone_map.clear()
 
-    # 尺子入口必须在导出面板上（作者唯一自查不到的是静止朝向差）
+    # 尺子和会改模型的修复工具属于骨架阶段，导出页不再重复塞整张映射表。
     ruler_layout = FakeLayout()
+    ruler_item = scene.gmi_bone_map.add()
+    ruler_item.source = "Hips"
+    ruler_item.target = "Hips"
     scene.gmi_rig_report = json.dumps({
         "alignment": [{"bone": "LeftShoulder", "mm": 0.2, "deg": 172.0, "grade": "red"}],
         "bands": [{"joint": "肩", "share": 0.049, "vanilla": 0.133, "grade": "red"}],
         "measured": 1, "skipped": 0, "baseline": "参考体",
     })
-    ui.draw_export_step(ruler_layout, scene, bpy.context)
+    ui.draw_rig_step(ruler_layout, scene, bpy.context)
     assert "gmi.report_rig_alignment" in ruler_layout.operators
     assert "gmi.split_weight_from_neighbours" in ruler_layout.operators
     assert "gmi.bake_rest_offset" in ruler_layout.operators
+    export_layout = FakeLayout()
+    ui.draw_export_step(export_layout, scene, bpy.context)
+    assert "gmi.build_bone_map" not in export_layout.operators
+    assert "gmi.report_rig_alignment" not in export_layout.operators
     scene.gmi_rig_report = ""
-    ui.draw_export_step(FakeLayout(), scene, bpy.context)     # 没量过也要画得出来
+    ui.draw_rig_step(FakeLayout(), scene, bpy.context)     # 没量过也要画得出来
 
     print("GMI_UI_SMOKE_OK", bpy.app.version_string, sorted(icons))
 finally:

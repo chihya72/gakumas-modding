@@ -405,3 +405,37 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             fn()
     print("装饰骨分类自检全过")
+
+
+def test_chain_length_buckets_do_not_cascade():
+    """归组是「同锚点 + 链长相同 ±1」。±1 跟桶里第一条比，不能跟上一条比。
+
+    跟上一条比会像多米诺一样串起来：长度 1,2,3,4,5 的链全并成一组
+    （chs-sucu 实测 12 条链 → 24 根一组，裙摆和尾巴、飘带混在一起）。
+    """
+    parents = {}
+    bones = []
+    for index, length in enumerate((1, 2, 3, 4, 5)):
+        previous = None
+        for node in range(length):
+            name = f"C{index}_{node}"
+            bones.append(name)
+            parents[name] = previous or "Hips"
+            previous = name
+    groups = core.structural_bone_groups(bones, parents, ["Hips"])
+    assert len(groups) > 1, [g["key"] for g in groups]
+    assert max(len(g["members"]) for g in groups) < len(bones)
+
+
+def test_swing_category_is_decided_per_chain_not_per_group():
+    """一条链一个类别：同组里方向不同的链不该被邻居带跑。"""
+    parents = {"Skirt_0": "Hips", "Skirt_1": "Skirt_0",
+               "Tail_0": "Hips", "Tail_1": "Tail_0"}
+    positions = {
+        "Skirt_0": (0.1, 0.9, 0.0), "Skirt_1": (0.1, 0.7, 0.0),      # 垂下去
+        "Tail_0": (0.0, 0.9, -0.1), "Tail_1": (0.0, 0.95, -0.3),     # 朝后上翘
+    }
+    categories = core.geometric_swing_categories(
+        list(parents), parents, positions, body_remap={"Hips": "Hips"})
+    assert categories["Skirt_0"] == categories["Skirt_1"]
+    assert categories["Tail_0"] == categories["Tail_1"]

@@ -7,7 +7,7 @@
 > ⚠ **0.9.0 里各条的验证程度不一样。**（下面这段写于 2026-07-27 的发布冻结之前；
 > 冻结期的 RC 闭环之后，骨骼映射表单、承重关节闸门、三步 UI、校色 t0 和刚性/跟裙摆装饰
 > 策略已转为实机实证；自建摇物链当时只有建链日志（**2026-08-11 已画面级确认**）。逐项见
-> `research/current-status-and-roadmap.md`。）
+> `research/current-status-and-roadmap.md`（已于 2026-08-22 删除）。）
 >
 > **实机验证过（2026-07-26，星仪·大国主 PMX → `fktn-othr-0002`，进游戏确认）**：
 > `.L/.R` 折叠、MMD D 骨、`手捩→ForeArm`（肘部撕裂修复）、t1/t4 纯黑修复。
@@ -26,7 +26,21 @@
 > 英文 Humanoid 四张预设表。表里名字若拼错，表现是那几行不预填、要手动选（有闸门兜着不会
 > 静默出废品），但不能宣称"支持"。
 
-## 未发布 — target-rig 批次 2–7：参考资产、闸门、打包内置 UnityPy、物理作用域
+## 1.3.0 — 五阶段作者工作流与跨游戏模型防错
+
+- **界面按制作顺序重构为五阶段单页工作流**：目标与参照 → 作者模型 → 材质与贴图 →
+  骨架与物理 → 检查与导出。必经内容常驻，高级/诊断项折叠；正常状态不画标记，只把阻断项标红；
+  材质槽和骨组都改成「列表 + 当前项详情」，窄侧栏不再横塞多列控件；
+- **明确作者模型对象**：后续材质、骨架、体检与导出围绕同一个网格工作，不再依赖点击按钮时
+  碰巧激活了哪个对象；
+- **跨游戏源模型防错补齐**：Mesh JSON 的 UV 不再错误翻转；描边新增「沿用源模型顶点色」并在
+  缺少 COLOR 时硬拦；自建骨与目标骨架重名时拒绝导出；链尾朝向改由主导几何决定；
+- **骨架队列更可处理**：链长 ±1 分组不再多米诺式合并，部件类型按链判断；增加「只看未决定」
+  和「几何全在链根」提示，作者决定优先于按名字碰巧命中的目标骨；
+- **AB 路线收口**：删除未发布的 Unity SDK 旁路、过期研究页和零引用的一次性工具；运行时日志
+  阅读器不再把已经删除的 300 帧探针当成发布判据。
+
+### target-rig 批次 2–7：参考资产、闸门、打包内置 UnityPy、物理作用域
 
 路线与逐条交代见 [`research/ab-target-rig-route-2026-08-17.md`](research/ab-target-rig-route-2026-08-17.md)
 （闸门清单在批次 3 的表，含实现位置）。批次 1 见下一节。
@@ -93,7 +107,7 @@
 失败尝试见路线文档 §A–§G；定版导出脚本在那个 mod 自己的工作目录里
 （`mod-workspace/mods/work/hmsz-cstm-0059_body_dress-2219-TEST/export-final-2026-08-19.py`）。
 
-## 未发布 — target-rig 批次 1：两把尺子 + 一行一组
+### target-rig 批次 1：两把尺子 + 一行一组
 
 路线见 [`research/ab-target-rig-route-2026-08-17.md`](research/ab-target-rig-route-2026-08-17.md)，
 契约见 [`research/ab-target-rig-contract.md`](research/ab-target-rig-contract.md)。
@@ -333,7 +347,7 @@
 > 这一版的每条都来自真实作者会话：dress-2219（`hmsz-cstm-0059`）和 mltd-stage
 > （`ttmr-cstm-0119`）。7 个成品 mod（6 body + 1 hair）在本版下全部实机确认；
 > 仍未解决的是**自建摇物链的装饰件在游戏里不动**，见
-> `research/current-status-and-roadmap.md` 的「未解决：自建摇物链」。
+> `research/current-status-and-roadmap.md`（已于 2026-08-22 删除） 的「未解决：自建摇物链」。
 
 ### 新增骨的四个约定错误（装饰件先炸成黑刺、再坍缩、最后锁死不摆）
 
@@ -384,7 +398,7 @@ Unity 的 `Quaternion` 序列化顺序是 `(x,y,z,w)`，运行时按 `Quaternion
 > ⚠️ 装上这四项修复后 dress-2219 重导，日志显示数据链路完全正常
 > （`createdBones=26 swingPrepared=36 droppedInfluences=0`、链尾齐全、3 条链注册成功），
 > **但装饰件在游戏里仍然不动**。这是 0.9.3 未解决的问题，成品当前用刚性/跟裙摆绕开，
-> 排查经过与下一步见 `research/current-status-and-roadmap.md`。
+> 排查经过与下一步见 `research/current-status-and-roadmap.md`（已于 2026-08-22 删除）。
 
 ### SCSP 预设：`_1` 后缀不再挡住预设查表，并补上脚趾
 

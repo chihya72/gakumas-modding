@@ -118,15 +118,15 @@ Unity 全程 `-batchmode -executeMethod`。作者装一次（约 6GB），之后
 
 ---
 
-## 4. 代码在哪
+## 4. 实验期代码曾在哪（插件入口已于 1.3.0 删除）
 
 ### Blender 插件 `gakumas_mi/`
 
 | 文件 | 作用 |
 |---|---|
-| `unity_route.py` | 三个算子（摆 T-pose / 适配检查 / 导出 mod）+ 预览图加载 |
+| `unity_route.py` | 实验期的三个算子与预览图加载；路线证伪后已删除 |
 | `topology_map.py` | **本轮新增**。不看名字，从骨架结构认人形骨 |
-| `ui.py` | 面板 `GMI_PT_unity_route` |
+| `ui.py` | 实验面板 `GMI_PT_unity_route`；1.3.0 已从正式插件删除 |
 | `core.py` / `operators.py` | 原有：8 张骨名预设表、材质预设、贴图烘焙 |
 
 ### Unity SDK `research/unity-humanoid-avatar-sdk/GakumasAvatarSdk/`
