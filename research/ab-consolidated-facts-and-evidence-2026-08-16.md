@@ -8,10 +8,10 @@
 
 | 文档 | 管什么 |
 |---|---|
-| [`ab-target-rig-route-2026-08-17.md`](ab-target-rig-route-2026-08-17.md) | **做什么、按什么顺序做**（现行路线：target-rig） |
+| [`ab-target-rig-architecture.md`](ab-target-rig-architecture.md) | **当前怎么做、边界是什么**（现行路线：target-rig） |
 | **本文** | **已知什么、量到多少、哪些结论已作废、怎么量才不出错** |
 
-冲突时：路线与顺序以 `ab-target-rig-route-2026-08-17.md` 为准，事实与数字以本文为准。
+冲突时：流程与边界以 `ab-target-rig-architecture.md` 为准，事实与数字以本文为准。
 
 > **2026-08-17 路线变更对本文的影响：** §4.13–§4.15（whole-object）**量到的事实全部仍然有效**，
 > 作废的只是"该走这条路"这个结论。whole-object 违反「作者只开 Blender」——带组件的 prefab
@@ -511,7 +511,7 @@ Player.log 栈顶是游戏自己的 LateUpdate，我们的帧只是调用原函�
 > ⚠️ **§4.13–§4.15 是对照组记录。** 下面量到的数字、机制和坑**全部仍然有效**，且其中几条
 > （socket 从被替换资产照搬、`_H` 名字是工具链契约、"先证明在被解算再谈参数"）直接被
 > target-rig 路线复用。作废的只有一条：**"该走 whole-object"这个路线结论**——它要求作者装
-> Unity，违反基调。见 [`ab-target-rig-route-2026-08-17.md`](ab-target-rig-route-2026-08-17.md) §2。
+> Unity，违反基调。见 [`ab-target-rig-architecture.md`](ab-target-rig-architecture.md)「为什么使用 target-rig」。
 
 **结论先行：`replaceWholeObject` + SDK 的 `IkRigger` = 动画、跳舞全部由 Unity 自己的 Humanoid
 重定向负责，不需要任何手写桥。** 今晚为两副骨架写的桥、头挂点、Hips 位移、静止来源选择，
@@ -789,10 +789,10 @@ Hips y          0.853        0.938         85 mm
 | `RestPoseNormalizer`（把骨静止旋转对齐原版） | **作废** | 重定向本来就抹平轴向 |
 | 「肩半宽 17.4→12.6cm，需要肩部摆动矫正骨」 | **作废**，错误取样 | §2.2 |
 | 认领扭转骨能改善肩塌 | **错**，前后 4.9% 不变 | §4.3 |
-| 几何分类器已进入生产 | **错**，`swing_category_by_geometry` 只有测试调 | 生产走 `swing_category(name)` |
+| 几何分类器只有测试调用 | **已过时**，当前生产由 `core.geometric_swing_categories` 按链分类 | 现行架构 |
 | 12 种驱动器作者侧已完成 | **错**，只接通 Skirt/Frill/HumanoidSleeve 三种 | |
-| `audit_ab_rig` 的 G10 能证明 AB 动画角度 1:1 残差 | **错**，那是 SDK Avatar 的结论 | |
-| `audit_ab_rig` 的「绑定姿势偏差」能挡姿势问题 | **错**，上臂实差 90.6° 时它报 0.0° | 实测 |
+| 已退役 `audit_ab_rig` 的 G10 能证明 AB 动画角度 1:1 残差 | **错**，那是 SDK Avatar 的结论 | |
+| 已退役 `audit_ab_rig` 的「绑定姿势偏差」能挡姿势问题 | **错**，上臂实差 90.6° 时它报 0.0° | 实测 |
 | 「workspace 54 个候选 blend」 | **错**，可证明的是 9 个归档条目，`B054` 是编号 | |
 | 「SDK 侧 ChainClassifier 在 381 套原版上量过」 | **无对应实验记录** | |
 | 「SDK 只写 3/32 材质属性，AB 全对」 | **删除** | |
@@ -844,32 +844,19 @@ Hips y          0.853        0.938         85 mm
 
 ---
 
-## 7. 工具与代码现状
+## 7. 工具边界
 
-### 7.1 已修
-
-- `tools/verify_ab_package.py` **新骨被数了两遍**：顶层 `extraSwingBones` 与
-  `sourceRigRemap.newBones` 是同一批骨的两份视图。任何带新骨的包都被判「骨名重复」、
-  节点数虚高——**已发布的 `hmsz-fuyuko-icu` 成品也 FAIL**（报 292，实际 192）。
-  违反项目自己「坏样本会报、正常样本不误报」的不变量。已改，6 个单测全绿。
-
-### 7.2 缺陷与缺口（按性价比排）
-
-| 项 | 状态 |
-|---|---|
-| 运行时空引用只 warn 后继续（`ModRuntime.cpp`），且 `AddComponent` 早 早于引用循环，748 已有半初始化组件泄漏 | 必须改成 **AddComponent 之前预检、缺任一必需引用整体拒绝** |
-| 映射没有 `via` 来源标注 | 72 根静默塌 Hips 的骨和真映射长得一模一样，排错要靠 dump JSON |
-| 表单按「有没有填目标」报警 | 装饰骨没有目标是**正常状态**，57 行全在喊 |
-| 结构分组（锚点 + 链）未进生产 | `group_key()` 仍按名字剥 left/right，日语/中文/乱码全废 |
-| `swing_category_by_geometry()` 未进生产 | 只有测试调 |
-| `simulate_ab_skinning.py` 用旧路径数学 | 验不了 lossless |
-| `native_driver` / `_form_driver_categories()` | 作者不知道其存在、从没用过；且把选择压成全局类别集合（一行选 skirt，全模型 skirt 骨跟着走）。建议**删除** |
-| `material_presets.json` 的 `metal` 行 metallic 0.75 | 来自**头饰**；原版 **body 实测 t1.B = 0.000**，金属 body 室内混暗环境探针**渲成黑**。Unity 侧已修正，AB 侧未改 |
-| `bone_remap_presets.json` 的 `*_Roll_H` 目标 | 只有 mmd-standard 有 16 条（未提交）；其余 7 张全 0；**SCSP 预设还显式把 18 根扭转/锁骨骨塌进人形骨** |
+本文不维护会快速漂移的脚本清单、实现进度或待办表。现行入口以根
+[`README.md`](../README.md)、[`CONTRIBUTING.md`](../CONTRIBUTING.md) 和
+[`ab-target-rig-architecture.md`](ab-target-rig-architecture.md) 为准；本文只保留会影响判读的事实、
+反例与量法。引用实现时只写稳定符号名，不写行号。
 
 ---
 
-## 8. 从 Unity SDK 能搬什么
+## 8. 从已废弃 Unity SDK 留下的可复用结论
+
+原 Unity Humanoid / whole-object SDK 已从主分支删除；下面只保留经量测确认、仍可供当前
+Blender-only 路线复用的算法、常量和方法。原实现仅用于历史取证，不是待恢复的开发入口。
 
 Unity 侧 `SdkPipeline.Shape()` 的八步（有序）：
 
@@ -971,9 +958,10 @@ git checkout archive/research-2026-08-20 -- research/archive-2026-08-16/   # 整
 | `source-rest-claymore-experiment-2026-08-16.md` | **三轮受控实验的完整数字、逐材质逐骨误差、可交互 blend** |
 | `source-proxy-runtime-test-2026-08-16.md` | 协议 2 的实现细节与安全边界 |
 
-`unity-humanoid-avatar-sdk/` **不归档**——它是一个在用的 Unity 工程，其 `HANDOFF.md`、
-`docs/corrective-helper-rig.md`、`docs/rest-pose-dead-end.md` 是 §2、§3、§8 大量数字的原始出处，
-必须跟代码放在一起。
+`unity-humanoid-avatar-sdk/` 已随 Unity Humanoid / whole-object 路线从主分支删除。该路线要求
+Unity 生成带组件 prefab，违反“作者只开 Blender”的产品边界；插件入口与 `unity_route.py`
+也已在 1.3.0 删除。仍然有效的量测、算法和方法已收进本文 §2、§3、§8，否决结论与取回方式见
+[`lessons-learned.md`](lessons-learned.md) §1、§7；完整原实现只从 Git 历史取证。
 
 ---
 

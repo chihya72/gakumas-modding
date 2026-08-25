@@ -50,10 +50,10 @@ chinosk6 `gkms-localify-dmm` 插件如何把 mod 网格塞进游戏。理解这�
 3. Hook AssetBundle 加载,命中原始资源名(如 `mdl_chr_hmsz-cstm-0000_body`)→ 加载 mod prefab。
 4. 配对 renderer(targetRenderer↔modRenderer,按名),对每对做换网格。
 
-### 换网格核心(`PatchModMeshSkinningToOriginalOrder`,~L1142)
+### 换网格核心（`PatchModMeshSkinningToOriginalOrder`）
 
 **关键:插件把补好的 mod 网格 `set_sharedMesh` 塞回原(学马活体)renderer**
-(`SkinnedMeshRenderer_set_sharedMesh(pair.originalRenderer, clonedModMesh)`,~L1798)。
+（`SkinnedMeshRenderer_set_sharedMesh(pair.originalRenderer, clonedModMesh)`）。
 原 renderer 保留**学马活体 bones[]**(被学马动画驱动)。
 
 流程:

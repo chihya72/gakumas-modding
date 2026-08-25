@@ -1115,7 +1115,7 @@ def _load_rgba_sampler(image_path):
         buffer = np.nan_to_num(buffer, nan=0.0, posinf=1.0, neginf=0.0)
         # Blender exposes image pixels bottom-to-top; DDS/PIL and GPU UV sampling
         # for the frame dumps are top-to-bottom. Flip here so the native COLOR
-        # synthesis sees the same texels as tools/synthesize_mod_mcolors.py.
+        # synthesis sees the same top-to-bottom texel order as DDS/PIL and the GPU frame dump.
         pixels = np.clip(
             buffer.reshape(height, width, 4)[::-1] * 255.0 + 0.5, 0, 255
         ).astype(np.uint8)

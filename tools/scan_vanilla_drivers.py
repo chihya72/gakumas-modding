@@ -4,8 +4,8 @@
 学马自己的 bundle **内嵌 typetree**，所以 `setting` 的每个字段都能按名字读，不用猜偏移
 （这也是运行时 `AttachQuartzDriver` 按名字写值的前提：两边都只认名字）。
 
-输出 `gakumas_mi/driver_presets.json`，形状**就是 sidecar 里 `driver` 块的形状**，
-导出器抄进去即可：
+完整扫描报告写到 `.local/vanilla-driver-presets.json`；加 `--install` 时再把稳定预设写入
+`gakumas_mi/driver_presets.json`。预设形状**就是 sidecar 里 `driver` 块的形状**：
 
     {
       "Skirt": {
@@ -38,7 +38,7 @@ import UnityPy
 UnityPy.config.FALLBACK_UNITY_VERSION = "6000.0.67f1"
 
 LIBRARY = "D:/GIT/gakumas-modding/mod-workspace/libraries/all_body"
-OUTPUT = "reference/vanilla-driver-presets.json"
+OUTPUT = ".local/vanilla-driver-presets.json"
 INSTALL = "gakumas_mi/driver_presets.json"
 PREFIX = "ActorAnimationQuartzDriver"
 SUFFIX = "Bone"

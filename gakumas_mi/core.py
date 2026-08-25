@@ -2945,16 +2945,16 @@ def rest_alignment(source_positions, target_positions, children=None, lengths=No
 
 # 跨关节权重混合带：关节两侧都沾到权重的顶点占比。唯一能**预判**"肩膀会不会崩"的数字 ——
 # 作者那句"A→T 之后肩膀变小崩坏"，量出来就是源自己跨肩带只有 4.9%（原版 13.3%）。
-# 关节表与 tools/audit_ab_rig.py:27 JOINTS 同源；那边按 bundle 的骨下标算、这边按骨名算，
-# 共用不了同一个实现，改一边记得改另一边。
+# 关节定义与原版基线来自 research/ab-consolidated-facts-and-evidence-2026-08-16.md；
+# 当前生产检查统一在这里按骨名计算。
 CROSS_JOINT_BANDS = (
     ("肩", "LeftShoulder", "LeftArm"), ("肩", "RightShoulder", "RightArm"),
     ("肘", "LeftArm", "LeftForeArm"), ("肘", "RightArm", "RightForeArm"),
     ("腕", "LeftForeArm", "LeftHand"), ("腕", "RightForeArm", "RightHand"),
     ("膝", "LeftUpLeg", "LeftLeg"), ("膝", "RightUpLeg", "RightLeg"),
 )
-# 原版真值（tools/audit_ab_rig.py 逐件量出来的）。场景里有带权重参考体时用参考体现算，
-# 拿不到才用这张表 —— 数字是同一套量法的结果。
+# 原版真值。场景里有带权重参考体时用参考体现算，拿不到才用这张表；
+# 数字与 research 事实文档记录的是同一套量法。
 VANILLA_CROSS_JOINT_SHARE = {"肩": 0.133, "肘": 0.039, "腕": 0.062, "膝": 0.095}
 BAND_FLOOR = 0.02      # 原版自己都低于这个数的关节不做判断（那里本来不靠权重过渡）
 BAND_FAIL_RATIO = 0.4  # 掉到原版同关节的四成以下 = 会崩

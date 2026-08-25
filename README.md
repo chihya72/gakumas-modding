@@ -11,8 +11,8 @@ Blender + 本项目插件就能换装 / 换模，**不装 Unity、不写 3DMigot
 > `atbm-cstm-0140` / `fktn-cstm-0119` / `fktn-othr-0002` / `hmsz-cstm-0059` / `ttmr-cstm-0111`
 > / `ttmr-cstm-0119` / `ttmr-hair-0002`）。八家骨名预设里 MMD 与 SCSP 有真实模型样本，另外
 > 六家只按公开命名规范写成、没拿到对应模型，认不出来时走面板逐行点选。**自建摇物骨已于
-> 2026-08-11 用 `hmsz-fuyuko-icu` 取得第一个稳定画面级案例**；幅度手感仍需逐件目视调整。逐项验证等级见
-> [research/ab-target-rig-route-2026-08-17.md](research/ab-target-rig-route-2026-08-17.md) §0。
+> 2026-08-11 用 `hmsz-fuyuko-icu` 取得第一个稳定画面级案例**；幅度手感仍需逐件目视调整。现行
+> 架构与验证边界见 [research/ab-target-rig-architecture.md](research/ab-target-rig-architecture.md)。
 
 > **维护与排障必读**：本仓 Blender 插件、离线工具和制作流程的审计结论、已知风险与按现象
 > 排查入口见 [research/lessons-learned.md](research/lessons-learned.md)。遇到导入、烘焙、导出或打包异常时
@@ -32,7 +32,7 @@ T-pose，所以不能照搬 GIMI/WWMI。现在的解法**不去逆解**：把作
 - 导出前查 21 个承重关节有没有拿到权重，缺任一根拒绝导出并点名。
 
 3DMigoto 在本工具链里**只剩抓帧工具**这一个角色——做配置档必须用它抓帧。原理、验证与
-已排除路线见 [research/ab-target-rig-route-2026-08-17.md](research/ab-target-rig-route-2026-08-17.md) §13「明确不做」。
+已排除路线见 [research/ab-target-rig-architecture.md](research/ab-target-rig-architecture.md)「明确不做」。
 
 ## 仓库结构
 

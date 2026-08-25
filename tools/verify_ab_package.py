@@ -224,7 +224,8 @@ def _check_helper_rig(report, geo: dict, sidecar: dict, is_body: bool):
                 "；肩/肘/腕在扭转时会剪切",
                 "源模型自带捩骨（MMD 腕捩/手捩、原神 UpperArmTwist）的话，"
                 "确认骨名映射把它们落到 *_Roll_H 而不是折叠进 LeftArm；"
-                "源模型没有捩骨就跑 tools/redistribute_helper_weights.py（破坏性，先不加 --write 试跑）")
+                "源模型没有捩骨时，在 Blender 里补骨并用插件的「从相邻骨劈权重」处理；"
+                "不要用离线脚本直接重写整包权重")
     elif share < HELPER_FLOOR:
         _record(report, "warnings",
                 f"*_H 矫正骨只承重 {share:.1%}（原版 {VANILLA_HELPER_SHARE:.0%}）")

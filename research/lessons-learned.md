@@ -12,6 +12,7 @@
 | **3DMigoto 逆蒙皮** | 数学上做到了实机贯通，代价全在工程面：必须传权（作者不能用自己的权重）、贴图按寄存器硬绑（shader 变体一换就整体错乱）、换的是已蒙好皮的最终几何所以**新增物理骨不可能**、描边和透明都要 hack。AB 路线把这些换成一次性的打包门槛 |
 | **PC IL2CPP 进程内注入** | 它证明的命题（外部模型可由引擎自蒙皮）正是 AB 路线在做的事，而 AB 走正规资产管线不需要注入；且探针产物同样叫 `xinput1_3.dll`，与生产 runtime 撞名 |
 | **照搬 GIMI / WWMI** | 学马是 **CPU 蒙皮**，抓帧拿到的 `VB0` 是已蒙皮的当前姿势，没有骨骼/权重/T-pose。那套家族方法的前提在这里不成立 |
+| **Unity Humanoid / whole-object SDK** | 技术实验量到了有效事实，但产品路线已经证伪：带组件 prefab 必须由 Unity 生成，要求作者离开 Blender；两套 SDK/runtime 实现还发生分叉。插件入口与 `unity_route.py` 已在 1.3.0 删除，因此它不是暂停项目或下一代入口。可复用结论在合并事实文档 §2、§3、§8 |
 
 3DMigoto 本身没被放弃——它现在唯一的角色是抓帧工具。
 
@@ -120,10 +121,11 @@ git checkout archive/research-2026-08-20 -- research/<路径>      # 取回到�
 |---|---|
 | `archive-2026-08-16/`（9 份，4813 行） | 结论早已合进 [`ab-consolidated-facts-and-evidence-2026-08-16.md`](ab-consolidated-facts-and-evidence-2026-08-16.md)；**每份里还值得查的原始数据**（IDA 地址、原版扫描、逐材质逐骨误差、评审对话原文）逐份列在那份文档的 §10 |
 | `ab-source-proxy-summary-and-roadmap-tpose-locked-2026-08-16.md`（723 行） | 两副骨架桥 / whole-object 的**对照组记录**。三条结论：① whole-object 作废的理由是「作者只开 Blender」—— 带组件的 prefab UnityPy 造不出来，必须 Unity 出包；② 双骨架 bridge 降级为**特殊兼容模式**（源身体比例是卖点、且不需要物理时），**代码没删**，是唯一还能动的对照；③ 它量到的数字（Claymore 三轮 A/B/C 的 37.7 / 21.9 / 12.8 cm 等）全部仍然有效，已在事实文档 §4.13–§4.15 和 Claymore 表里 |
-| `universal-mod-automation-plan.md`（407 行） | 泛用化的四条边界并进了 [`ab-target-rig-route-2026-08-17.md`](ab-target-rig-route-2026-08-17.md) §13.1（两层分开谈 / 自动兜 90% + 傻瓜 override 兜 10% / 默认整搬而非位置蹭 / 压力样本不定默认值）。其余是早于两份主文档的问题模型和过期进度 |
+| `universal-mod-automation-plan.md`（407 行） | 泛用化的四条边界并进了 [`ab-target-rig-architecture.md`](ab-target-rig-architecture.md)「明确不做」（两层分开谈 / 自动兜 90% + 作者 override 兜剩余情况 / 默认信任来源结构 / 压力样本不定默认值）。其余是早于两份主文档的问题模型和过期进度 |
 | `transparent-material-2026-08-18.md`（938 行） | **整份移到分支 `research/transparent-material`**，路线暂停，不进主分支。结论：真 alpha 混合早就做出来了；「压背景时糊」的根因是**景深读的 RT0.z 由一趟全屏 resolve 从深度预 pass 的快照重算，我们的部件写得比快照晚**，在 G-buffer 里只有「变不透明（遮住身体）」或「变白」二选一。可用画面收在兜底档（前向透明 queue 3000）。绕开 G-buffer 的两条路机制已验证成立，卡在同一个具体问题（注入的 `DrawRenderer` 姿势不对）。要继续就 `git switch research/transparent-material` |
 | `inverse-skin/`（4 帧 `compute-emulation.json`） | 3DMigoto 逆蒙皮时期的 GPU 仿真收尾数据：四帧一致，顶点位置 max `2.2~3.0e-05`、法线角 max `≤0.32°` —— 即**离线仿真与 GPU 结果等价**，那条路线的死因从来不是精度（死因见 §1）。数值留在这里就够，不必再取回 |
 | `assetstudio/maps/gakumasassets.json` | 2026-06 的字体资源清单，全仓无人引用，无结论 |
+| `unity-humanoid-avatar-sdk/`（Unity 工程、两套 runtime、量测工具与过程文档） | 路线已证伪，独有的有效结论已并入合并事实文档 §2、§3、§8，主分支不再保留可编译实现或过程记录。取证时先用 `git log --all -- research/unity-humanoid-avatar-sdk` 找删除前提交，再用 `git restore --source=<提交> -- research/unity-humanoid-avatar-sdk` 整体取回 |
 
 **为什么删而不是留着**：目录里躺着一份"已被取代"的文档，下一个人（和我）会先读它、再发现白读。
 `research/` 现在的规矩是**只放现在正在用的**；过时的进 git 历史 + 这张表。

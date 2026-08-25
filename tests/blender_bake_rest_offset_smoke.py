@@ -24,10 +24,16 @@ import gakumas_mi
 from gakumas_mi import core, operators
 
 PROFILE = ROOT / "profiles" / "atbm-cstm-0140"
+REFERENCE_FILES = (PROFILE / "Reference" / "Geo_Body.json",
+                   PROFILE / "Reference" / "Geo_Body.skeleton.json")
 DECOR = "Decor_A"                      # 源专属装饰骨，游戏里没有
 HOST = "Spine1"                        # 它挂在这根身体骨下
 OFFSET = Vector((0.0, 0.0, 0.05))      # 装饰骨的静止偏移：**不该**产生任何静止形变
 POSE = Vector((0.0, 0.0, 0.05))        # 给它摆 5cm 的姿势：这才是要烘进网格的那一下
+
+if not all(path.is_file() for path in REFERENCE_FILES):
+    print("GMI_BAKE_SKIPPED 本机没有 gitignored 的原版 Reference，跳过")
+    raise SystemExit(0)
 
 
 def rest_positions(obj):

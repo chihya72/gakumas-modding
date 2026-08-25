@@ -19,12 +19,12 @@
 产品文档跟产品走：某产品线的设计/使用文档放该产品目录（如
 `3dmigoto_gkms/FLIP-RESIZE-PATCH.md`）；跨产品的研究、抓帧证据、路线记录才进 `research/`。
 
-本地数据目录（gitignored，永不入库）：`.local/`、`dist/`、
+本地数据目录（gitignored，永不入库）：`.local/`、`build/`、`dist/`、
 `gakumas_mi/resources/assetstudio-body-json/`。
 `.local/` 只放**可重建的**本机产物（测试输出、UI 预览、抓帧探针、QA 快照）；
 体积大又难重建的资源库放仓库外的 `..\mod-workspace\libraries\`，见下节。
-根目录 `build/` 禁止使用。作者工作文件（脚本、源文件、中间产物、QA 图、Blend、成品包）
-全部放仓库外的 `..\mod-workspace\mods\work\<项目>\`；测试输出与本机临时产物放 `.local/`；
+`build/` 只允许放可重建的本机构建暂存；作者工作文件（脚本、源文件、中间产物、QA 图、Blend、成品包）
+全部放仓库外的 `..\mod-workspace\mods\work\<项目>\`；测试输出、扫描报告与 QA 产物放 `.local/`；
 Blender 插件 ZIP 和抓帧环境安装包只放 `dist/`。
 
 ### 外层工作区边界
@@ -60,14 +60,14 @@ Blender 插件 ZIP 和抓帧环境安装包只放 `dist/`。
 |---|---|
 | `README.md` | 项目总览、仓库结构、工作流入口 |
 | `CHANGELOG.md` | Blender 插件（gakumas-mi）逐版本变更；release workflow 校验本版版本段存在（notes 正文取自 tag 注解），**不可移动** |
-| `research/ab-target-rig-route-2026-08-17.md` | 路线、批次状态与硬闸门 |
+| `research/ab-target-rig-architecture.md` | 现行 target-rig 架构、流程、硬闸门与非目标 |
 | `research/README.md` | research 目录索引 |
 
 规则：
 
 1. **新文档必须登记**：research 下新增文档，同一提交里登记进 `research/README.md` 索引。
 2. **进度只有一个出处**：同一事实不得在多份文档维护副本；其它地方只放链接。
-   （产品实现进度记录在该产品 README；项目级状态记录在 current-status-and-roadmap。）
+   （产品实现进度记录在该产品 README；项目级现状记录在根 README，架构边界记录在对应架构文档。）
 3. **完成即删除**：计划、会话复盘和重复说明在结论并入权威文档后删除，历史由 Git 保存。
 4. 文档内引用仓库文件用相对路径 Markdown 链接，不写裸路径。
 

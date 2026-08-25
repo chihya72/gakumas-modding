@@ -68,15 +68,17 @@ base/mask/shade 三张贴图，**永不碰 PS hash 或寄存器槽位**——AB 
 **装饰物理的当前边界（1.3.0）**：「跟裙摆」（蹭游戏自带裙摆骨）和「刚性跟父骨」
 可用；「自建摇物链」已于 2026-08-11 用 `hmsz-fuyuko-icu` 取得第一个画面级成功案例，但
 幅度与穿插仍需逐件目视验收。详见
-[target-rig 验证记录](https://github.com/chihya72/gakumas-modding/blob/main/research/ab-target-rig-route-2026-08-17.md)
-的「自建摇物骨打通」。
+[target-rig 现行架构](https://github.com/chihya72/gakumas-modding/blob/main/research/ab-target-rig-architecture.md)
+的「运行时与物理边界」。
 
 成品 `.bundle` + `mod.json` 放进 Mod Runtime 的 `gakumas-mod/mods/<id>/`
 （chinosk6 的 `gkms-localify-dmm` 用的是它自己的 `gakumas-local/local-files/mods/<id>/`）。
 
-已排除的路线、作废的做法和被推翻的结论见
-[已证伪结论](https://github.com/chihya72/gakumas-modding/blob/main/research/lessons-learned.md)；target-rig 的批次验证与历史见
-[target-rig 验证记录](https://github.com/chihya72/gakumas-modding/blob/main/research/ab-target-rig-route-2026-08-17.md)；
+target-rig 当前边界见
+[现行架构](https://github.com/chihya72/gakumas-modding/blob/main/research/ab-target-rig-architecture.md)；
+已排除路线与被推翻结论见
+[已证伪结论](https://github.com/chihya72/gakumas-modding/blob/main/research/lessons-learned.md)；版本历史见
+[CHANGELOG](https://github.com/chihya72/gakumas-modding/blob/main/CHANGELOG.md)；
 运行时机制与新增物理骨规范见 [AB 路线笔记](https://github.com/chihya72/gakumas-modding/blob/main/research/ab-route-notes.md)。
 
 ## 版本与打包

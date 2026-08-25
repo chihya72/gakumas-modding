@@ -182,9 +182,7 @@ def package(output: Path | None = None, include_body_lib: bool = False,
             _add(sanity_script, Path("gakumas_mi") / "simulate_ab_skinning.py")
         if PROFILE_DIR.is_dir():
             for path in _iter_files(PROFILE_DIR):
-                # rebuild_profile.py 是离线重建配置档的开发脚本，跑在仓库里、要 .local/
-                # 资源库，装进用户的插件目录没有意义。
-                if path.name == "rebuild_profile.py":
+                if path.name == "extraction-report.json":
                     continue
                 _add(path, Path("gakumas_mi") / "profiles" / path.relative_to(PROFILE_DIR))
         if include_body_lib:

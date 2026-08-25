@@ -42,8 +42,8 @@
 
 ### target-rig 批次 2–7：参考资产、闸门、打包内置 UnityPy、物理作用域
 
-路线与逐条交代见 [`research/ab-target-rig-route-2026-08-17.md`](research/ab-target-rig-route-2026-08-17.md)
-（闸门清单在批次 3 的表，含实现位置）。批次 1 见下一节。
+现行架构与闸门清单见
+[`research/ab-target-rig-architecture.md`](research/ab-target-rig-architecture.md)。批次 1 见下一节。
 
 **批次 2 — 参考资产（P1）**
 
@@ -109,7 +109,7 @@
 
 ### target-rig 批次 1：两把尺子 + 一行一组
 
-路线见 [`research/ab-target-rig-route-2026-08-17.md`](research/ab-target-rig-route-2026-08-17.md)，
+现行路线见 [`research/ab-target-rig-architecture.md`](research/ab-target-rig-architecture.md)，
 契约见 [`research/ab-target-rig-contract.md`](research/ab-target-rig-contract.md)。
 
 - **新增「对齐体检」按钮（`gmi.report_rig_alignment`）：逐骨报关节位置差 + 静止朝向差。**
