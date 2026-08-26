@@ -30,6 +30,11 @@ import bpy
 from mathutils import Matrix, Vector
 
 FINGERS = ("HandIndex", "HandMiddle", "HandRing", "HandPinky", "HandThumb")
+# MMD 导入器给**每一个**顶点都写 mmd_edge_scale / mmd_vertex_order，权重常年 1.0 —— 按主导
+# 顶点组分区时它会赢下全部 55108 个顶点，于是每个区都是空的、体检整个静默失效（只剩一句
+# "无法评估"）。与 operators.NON_BONE_GROUPS 同一份名单；这个脚本要能独立 blender --python
+# 跑，所以不 import 插件。
+NON_BONE_GROUPS = frozenset({"mmd_edge_scale", "mmd_vertex_order"})
 BEND_DEGREES = 45.0
 # Above this multiple of the reference body's stretch the region is called broken. fuyuko's
 # shredded fingers measured p99 2.99 vs the reference's 1.62 (1.8x) and max 7.12 vs 4.07.
@@ -125,7 +130,11 @@ def region_vertices(mesh_object, tokens, remap):
     for vertex in mesh_object.data.vertices:
         if not vertex.groups:
             continue
-        dominant = max(vertex.groups, key=lambda item: item.weight)
+        bone_groups = [item for item in vertex.groups
+                       if group_names.get(item.group, "") not in NON_BONE_GROUPS]
+        if not bone_groups:
+            continue
+        dominant = max(bone_groups, key=lambda item: item.weight)
         if dominant.weight <= 0.0:
             continue
         name = group_names.get(dominant.group, "")

@@ -319,7 +319,8 @@ def _check_ownership(report, sidecar: dict):
         parent = item.get("parentName")
         if not name or not parent or parent not in known:
             bad_parents.append({"name": name, "parentName": parent})
-        if "swing" not in item:
+        # 挂了原版布料驱动器的骨没有也不该有 swing：一根骨只能有一个求解器（运行时 INV-1）。
+        if "swing" not in item and not item.get("driver"):
             _record(report, "warnings", f"新骨 {name} 未声明 swing 参数")
     # 循环父链：A.parent=B、B.parent=A。运行时 buildBone 有 states 环检测会拒绝整份
     # sidecar，导出侧也不该产出它 —— 而验证器此前只查父名存不存在，环照样放行。
@@ -425,6 +426,8 @@ def _check_swing(report, sidecar: dict):
     for item in extras + news:
         name = item.get("name") or "<unnamed>"
         runtime_created += 1
+        if item.get("driver"):
+            continue          # 走原版布料驱动器，不参与摇物参数检查（见上）
         swing = item.get("swing")
         if not isinstance(swing, dict):
             missing_parameters.append({"name": name, "missing": ["swing"]})

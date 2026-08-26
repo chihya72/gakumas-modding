@@ -707,6 +707,36 @@ def _source_bone_sidecar_records(obj):
     return result
 
 
+# 驱动器系数是从原版量的，而原版链有多长得看**目标那套服装自己的骨架**，不能写死一个数。
+# 这里按名字把游戏侧的衣物骨归到驱动器类型上，数出最长的一条链有几节。
+_DRIVER_KIND_TOKENS = {"Skirt": ("skirt",), "Frill": ("frill",),
+                       "HumanoidSleeve": ("sleeve",)}
+
+
+def _driver_reference_links(skeleton):
+    """{驱动器类型: 原版这类链最长几节} —— 给 core.scale_driver_coefficients 当基准。"""
+    nodes = skeleton.get("nodes") or []
+    names = [str(node.get("name") or "") for node in nodes]
+    parent_of = {}
+    for index, node in enumerate(nodes):
+        parent = int(node.get("parent", -1))
+        parent_of[names[index]] = names[parent] if 0 <= parent < len(names) else None
+    result = {}
+    for kind, tokens in _DRIVER_KIND_TOKENS.items():
+        members = {name for name in names
+                   if name.endswith("_S") and any(t in name.lower() for t in tokens)}
+        if not members:
+            continue
+        best = 0
+        for name in members:
+            depth, current, guard = 1, name, 0
+            while parent_of.get(current) in members and guard < 512:
+                current = parent_of[current]; depth += 1; guard += 1
+            best = max(best, depth)
+        result[kind] = best
+    return result
+
+
 def _target_bone_positions(skeleton):
     positions = {}
     for node in skeleton.get("nodes", []):
@@ -982,9 +1012,25 @@ def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
             dominant_by_name=_dominant_group_counts(obj),
             swing_anchor_bones=_form_swing_anchor_bones(scene),
             tip_offset_by_name=_dominant_group_tip_offsets(obj),
+            driver_reference_links=_driver_reference_links(skeleton),
         )
         # 新骨链的根挂在游戏骨下，local 必须按游戏骨架的静止姿势重算
         _retarget_new_bone_roots(report["newBones"]["newBones"], records, skeleton)
+        # 闸门：点名走原版布料驱动器、却一根都没真的挂上 = 静默退回摇物。build_driver_block
+        # 判不出左右或表里没这型驱动器时返回 None，此前只是无声地留着 swing —— 作者选了
+        # 驱动器、拿到摇物、日志全绿。实测 192 根 MMD 裙骨一根都没挂上就是这么过去的。
+        wanted_drivers = set(_form_driver_bones(scene))
+        if wanted_drivers:
+            got = {item["name"] for item in report["newBones"]["newBones"]
+                   if item.get("driver")}
+            missed = sorted(wanted_drivers - got)
+            if missed:
+                raise ValueError(
+                    f"{len(missed)} 根骨点名走「原版布料驱动器」，但一根都没挂上："
+                    + "、".join(missed[:12]) + ("…" if len(missed) > 12 else "")
+                    + "。它们会静默退回摇物物理 —— 日志全绿、画面却不是你配的那套解算器。"
+                      "常见原因：这型驱动器不在 driver_presets.json 里，或者骨的左右判不出来"
+                      "（参考骨 Left/RightUpLeg 分左右）。")
         report["physicsInheritance"] = physics_report
     report["explicitBones"] = explicit
     report["bones"] = remap
@@ -1659,7 +1705,30 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
         node["name"]: _bind_pose_matrix(node["bindPose"]).inverted()
         for node in skeleton["nodes"] if node.get("weightedIndex") is not None
     }
+    # 闸门 0：面朝里。几何事实，最先查——它一错，画面上什么都对不上，而所有数据尺子全绿。
+    inverted = core.inverted_mesh_error(_mesh_signed_volume(obj))
+    if inverted:
+        raise ValueError(inverted)
+    # 闸门 0.5：一行横跨多个骨族还下了物理指令 —— 结构组装得下两件衣服，误伤看不见。
+    mixed = core.mixed_family_directive_error(core.mixed_family_directive_rows(
+        [(_row_label(item), item.strategy, row_bones(item))
+         for item in getattr(scene, "gmi_bone_map", ())]))
+    if mixed:
+        raise ValueError(mixed)
     remap, remap_report = _resolve_source_bone_remap(obj, bone_map, scene, skeleton)
+    # 闸门 0.8：并进游戏衣物骨、子骨却还留在 mod 骨架里 → 整支子树被外来物理拽走。
+    orphans = core.orphaned_subtree_error(core.orphaned_subtree_merges(
+        (remap_report.get("physicsInheritance") or {}).get("bones") or {},
+        [item["name"] for item
+         in ((remap_report.get("newBones") or {}).get("newBones") or [])],
+        _source_bone_parents(obj)))
+    if orphans:
+        raise ValueError(orphans)
+    # 闸门 6.5:左右反了。排在下面两道之前——脚尖劈不出权重、朝向整片 177°,都是它的症状。
+    if component_id == "body":
+        mirror_error = _mirrored_side_error(obj, skeleton, remap, remap_report)
+        if mirror_error:
+            raise ValueError(mirror_error)
     # 硬闸门:承重关节零权重就别导了。这类错误静止完全看不出、进游戏才炸,
     # 而位置匹配永远能返回一个骨名,所以不拦就是静默出废品。
     coverage_error = core.critical_coverage_error(
@@ -1732,6 +1801,26 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
         vertex_color_mode=scene.gmi_vertex_color_mode,
         color_per_slot=_material_slot_color_map(obj),
     )
+    # 尺子：衣物链的跨节权重过渡带。这次撕裙子的唯一真凶，而 CROSS_JOINT_BANDS 只覆盖
+    # 肩肘腕膝，衣物链一根都没有。有场景里的原版参考体就现算基线，没有就用常数门槛。
+    new_bone_list = (remap_report.get("newBones") or {}).get("newBones") or []
+    if new_bone_list:
+        try:
+            reference = _profile_weight_reference(context)
+        except Exception:
+            reference = None
+        vanilla_ratios = None
+        if reference is not None:
+            vanilla_arm = next((m.object for m in reference.modifiers
+                                if m.type == "ARMATURE" and m.object), None)
+            vanilla_ratios = core.chain_blend_ratio(
+                _vertex_influences(reference), _vanilla_chain_node_map(vanilla_arm))
+        data["chain_blend_note"] = core.chain_blend_note(core.chain_blend_findings(
+            # 不传 remap：新骨用的就是源骨名，而 remap 里新骨的值是 None，
+            # `.get(name, name)` 会把它们全折成 None 这一个键。
+            core.chain_blend_ratio(_vertex_influences(obj),
+                                   _chain_node_map(new_bone_list)),
+            vanilla_ratios))
     data["bundle_extra_skeleton_nodes"] = extra_nodes
     data["bundle_extra_bind_poses"] = extra_bind_poses
     # 这里是模块级函数，报警交给算子统一发（见 export_bundle_source 里的 anchor_only_note）
@@ -2475,15 +2564,23 @@ class GMI_OT_export_bundle_source(Operator):
             # Unity 每顶点只能带 4 个影响，第 5 个起被丢掉再归一化 —— 丢多少以前只在
             # 内部变量里，作者看不到。这是 §8.2 「哪些顶点影响变化较大」的可量化那一半。
             truncated = float(data.get("truncated_weight") or 0.0)
-            if truncated > 0.01 * max(1, len(data.get("skin") or [])):
+            # 每顶点权重和为 1，所以顶点数就是总权重。旧阈值 1% 太松：这个量级的丢失
+            # 已经能让相邻顶点绑到不同骨上、接缝张口。收到 0.1%。
+            total_weight = max(1, len(data.get("skin") or []))
+            if truncated > 0.001 * total_weight:
                 self.report({"WARNING"},
                             f"有顶点的影响骨超过 4 个，被截掉的权重合计 {truncated:.1f}"
-                            f"（顶点 {len(data['skin'])} 个，截掉后会重新归一化）："
+                            f"（占总权重 {truncated / total_weight:.2%}，"
+                            f"顶点 {len(data['skin'])} 个，截掉后会重新归一化）："
                             "那些顶点的形变与你在 Blender 里看到的不完全一致，"
                             "介意就回去把这些顶点的影响骨减到 4 个以内")
             # 坏绑定导出侧补不了，所以只能大声警告并让作者回上游重做 prep。
             if data.get("anchor_only_note"):
                 self.report({"WARNING"}, data["anchor_only_note"])
+            if _orientation_soft_note[0]:
+                self.report({"WARNING"}, _orientation_soft_note[0])
+            if data.get("chain_blend_note"):
+                self.report({"WARNING"}, data["chain_blend_note"])
             sanity = data.get("bind_sanity") or {}
             if sanity.get("failed"):
                 self.report({"WARNING"}, "绑定体检未通过（"
@@ -3144,6 +3241,67 @@ def _collect_rest_alignment(obj, armature, skeleton, remap, body_bones):
     return source_positions, target_positions, children, lengths
 
 
+# 朝向闸门降黄条之后要有地方把话说出去：raise 那条路没了，作者就什么都看不到。
+_orientation_soft_note = [None]
+
+
+def _mesh_signed_volume(obj):
+    """网格的有符号体积（m³）。负 = 面朝里，见 core.inverted_mesh_error。"""
+    mesh = obj.data
+    total = 0.0
+    for polygon in mesh.polygons:
+        loops = polygon.vertices
+        first = mesh.vertices[loops[0]].co
+        for index in range(1, len(loops) - 1):
+            second = mesh.vertices[loops[index]].co
+            third = mesh.vertices[loops[index + 1]].co
+            total += first.dot(second.cross(third))
+    return total / 6.0
+
+
+def _chain_node_map(new_bones):
+    """{骨名: (链号, 节号)} —— 链号取链根骨名，节号 = 到链根的深度。"""
+    parent_of = {item["name"]: item.get("parentName") for item in new_bones or ()}
+    node_of = {}
+    for name in parent_of:
+        depth, current, guard = 0, name, 0
+        while parent_of.get(current) in parent_of and guard < 512:
+            current = parent_of[current]; depth += 1; guard += 1
+        node_of[name] = (current, depth)
+    return node_of
+
+
+def _vanilla_chain_node_map(armature):
+    """原版衣物骨（`*_S`）的 {骨名: (链号, 节号)}，给跨节过渡带当基线。"""
+    if armature is None:
+        return {}
+    members = {bone.name for bone in armature.data.bones if bone.name.endswith("_S")}
+    node_of = {}
+    for bone in armature.data.bones:
+        if bone.name not in members:
+            continue
+        depth, current = 0, bone
+        while current.parent is not None and current.parent.name in members:
+            current = current.parent; depth += 1
+        node_of[bone.name] = (current.name, depth)
+    return node_of
+
+
+def _mirrored_side_error(obj, skeleton, remap, report):
+    """P4 闸门 6.5：左右整个装反了 → 返回报错文案，否则 None。
+
+    必须排在承重关节（闸门 2）和静止朝向（闸门 7）之前：那两道报出来的都是这个的症状，
+    先撞上哪道作者就去修哪道，修的全是错的地方。见 core.mirrored_side_error。
+    """
+    armature = next((modifier.object for modifier in obj.modifiers
+                     if modifier.type == "ARMATURE" and modifier.object), None)
+    if armature is None:
+        return None
+    source_positions, target_positions, _children, _lengths = _collect_rest_alignment(
+        obj, armature, skeleton, remap, report.get("bodyBones") or [])
+    return core.mirrored_side_error(source_positions, target_positions)
+
+
 def _rest_orientation_error(obj, skeleton, remap, report):
     """P4 闸门 7：任何 direct 映射骨的静止朝向差到红档 → 返回报错文案，否则 None。
 
@@ -3156,8 +3314,23 @@ def _rest_orientation_error(obj, skeleton, remap, report):
         return None
     rows = core.rest_alignment(*_collect_rest_alignment(
         obj, armature, skeleton, remap, report.get("bodyBones") or []))
-    bad = [row for row in rows
-           if row["deg"] is not None and row["deg"] >= core.ORIENTATION_FAIL_DEG]
+    # 红只留给**单子骨**链：肩差 172° 那个实机坐实的坏样本就是单子骨，方向没有第二个
+    # 参照可以交叉验证，判错的代价远小于放过。子骨 ≥2 根时中位数已经能自我校验，
+    # 剩下的偏差多半是某一根子骨自己的位置差（拇指那种），降成黄条 + 留痕，不拦导出。
+    over = [row for row in rows
+            if row["deg"] is not None and row["deg"] >= core.ORIENTATION_FAIL_DEG]
+    bad = [row for row in over if int(row.get("children") or 1) < 2]
+    soft = [row for row in over if int(row.get("children") or 1) >= 2]
+    if soft:
+        _orientation_soft_note[0] = (
+            f"{len(soft)} 根骨的静止朝向超阈值但**没有拦**（子骨 ≥2 根，中位数判据）："
+            + "、".join(f"{row['bone']} {row['deg']:.0f}°(对 {row['child']})"
+                        for row in soft[:6])
+            + ("…" if len(soft) > 6 else "")
+            + "。多半是那根子骨自己的位置差，不是本骨转了；真转了的话所有子骨会一起偏。"
+              "进游戏留意这几处，觉得不对再回来摆。")
+    else:
+        _orientation_soft_note[0] = None
     if not bad:
         return None
     detail = "、".join(f"{row['bone']} {row['deg']:.0f}°(对 {row['child']})" for row in bad[:6])
@@ -3463,6 +3636,7 @@ class GMI_OT_report_rig_alignment(Operator):
         collected = _collect_rest_alignment(
             obj, armature, skeleton, remap, report["bodyBones"])
         alignment = core.rest_alignment(*collected)
+        mirrored = core.mirrored_side_pairs(collected[0], collected[1])
 
         # 跨关节带：有参考体就现算原版基线，没有就用扫出来的真值表。
         sides = core.joint_band_sides(_target_parent_names(skeleton))
@@ -3486,7 +3660,7 @@ class GMI_OT_report_rig_alignment(Operator):
                                           dict(_weighted_group_mass(obj)))
         scene.gmi_rig_report = json.dumps({
             "alignment": alignment, "bands": findings, "states": states,
-            "collapsed": collapsed,
+            "collapsed": collapsed, "mirrored": mirrored,
             "measured": len(alignment), "skipped": len(report["bodyBones"]) - len(alignment),
             "baseline": "参考体" if vanilla else "原版真值表",
         }, ensure_ascii=False, separators=(",", ":"))

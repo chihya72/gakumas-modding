@@ -439,3 +439,91 @@ def test_swing_category_is_decided_per_chain_not_per_group():
         list(parents), parents, positions, body_remap={"Hips": "Hips"})
     assert categories["Skirt_0"] == categories["Skirt_1"]
     assert categories["Tail_0"] == categories["Tail_1"]
+
+
+def test_native_driver_builds_new_bones_like_integrate():
+    """「原版布料驱动器」和「自建摇物链」一样都要**新建骨** —— 驱动器只能挂在新骨上。
+
+    漏了它，指令会一路掉到底下的"蹭最近摇物骨"，整条源链被并进原版衣物骨：作者选的是
+    驱动器，拿到的是 follow_skirt，而且没有新骨也就没地方挂驱动器，日志还全绿。
+    实测坏样本：192 根 MMD 裙骨里 182 根被并掉，骨架从 373 根缩到 191 根，driver 0 个。
+    """
+    parents = {"Hips": None, "スカート0": "Hips", "スカート1": "スカート0"}
+    source = [{"name": "スカート0", "position": [-0.2, 0.0, 0.0]},
+              {"name": "スカート1", "position": [-0.2, -0.2, 0.0]}]
+    target = [{"name": "LeftSkirt1_S", "position": [-0.2, 0.0, 0.0]},
+              {"name": "RightSkirt1_S", "position": [0.2, 0.0, 0.0]}]
+    names = ["スカート0", "スカート1"]
+    common = dict(parent_by_name=parents, body_remap={"Hips": "Hips"},
+                  group_by_name={n: "Hips|L1" for n in names})
+    driver = core.build_accessory_physics_remap(
+        source, target, names, overrides={n: "native_driver" for n in names}, **common)
+    integrate = core.build_accessory_physics_remap(
+        source, target, names, overrides={n: "integrate" for n in names}, **common)
+    assert sorted(driver["newBones"]) == sorted(integrate["newBones"]) == names
+    assert driver["bones"] == {}          # 一根都不许并进原版衣物骨
+    assert set(driver["strategies"].values()) == {"new_source_chain"}
+
+
+def test_driver_side_falls_back_to_measured_position():
+    """名字判不出左右就按世界 X 定边，别静默退回摇物。
+
+    Unity 空间角色左侧是 −X。MMD 的 `スカート_0_0` 名字里没有任何左右信号，
+    只按名字判 → build_driver_block 返回 None → 作者选的驱动器变成摇物，日志全绿。
+    """
+    class M:                                  # 只读 .translation[0]，不必拖 mathutils 进来
+        def __init__(self, x): self.translation = (x, 0.9, 0.0)
+    assert core.bone_side("スカート_0_0") is None
+    assert core.side_from_world_x({"worldMatrix": M(-0.2)}) == "Left"
+    assert core.side_from_world_x({"worldMatrix": M(0.2)}) == "Right"
+    assert core.side_from_world_x({}) is None
+    assert core.side_from_world_x({"worldMatrix": object()}) is None
+    # 骑在中线上的裙板也必须拿到一边：留死区会让它退回摇物，同一条裙子上两套解算器
+    assert core.side_from_world_x({"worldMatrix": M(0.0)}) == "Right"
+    assert core.bone_side("左スカート") == "Left"      # 名字里有左右时以名字为准
+
+
+def test_driver_chain_gets_no_swing_chain_and_no_tip():
+    """一根骨只能有一个求解器：挂了驱动器就不建 ActorSwingChain、也不合成带 swing 的链尾。
+
+    运行时 INV-1 撞上会**拒绝挂驱动器**并记日志 —— 作者选了驱动器、拿到摇物、日志全绿。
+    实测坏样本：192 根裙骨都挂上了 Skirt 驱动器，却仍生成 16 条链 + 16 根
+    `スカート_11_*_End`（带 swing），整条裙子被拽回摇物。
+    """
+    bones = [{"name": "スカート_0_0", "parentName": "Hips", "swingRole": "root",
+              "swingCategory": "skirt", "driver": {"type": "Skirt"}},
+             {"name": "スカート_1_0", "parentName": "スカート_0_0", "swingRole": "mid",
+              "swingCategory": "skirt", "driver": {"type": "Skirt"}}]
+    assert core.build_swing_chains(bones, []) == []
+    # 对照：同样的结构没有驱动器时照常建链
+    plain = [{k: v for k, v in b.items() if k != "driver"} for b in bones]
+    plain.append({"name": "スカート_1_0_End", "parentName": "スカート_1_0",
+                  "swingRole": "tip", "swingCategory": "skirt"})
+    assert len(core.build_swing_chains(plain[:2], plain[2:])) == 1
+
+
+def test_driver_coefficients_scale_by_chain_length():
+    """驱动器系数按链节数缩回原版量级 —— 读源码定的性，不是调参。
+
+    `ActorAnimationQuartzDriverSkirtBone.Calc(initialReferenceRotation,
+    currentReferenceRotation, ...)` 入参里没有父骨状态：每根骨都只按参考骨那一个转角
+    delta 算自己的**局部**旋转。骨骼是层级的，一条链串 N 根就累积 N 倍。原版裙链 5 节，
+    MMD 这条 12 节 → 下摆 2.4 倍，表现就是"动一下布料到处乱飞"。
+    """
+    def block():
+        return {"type": "Skirt",
+                "vectors": {"innerCoefficient": [0.0, 0.1, 0.1],
+                            "outerCoefficient": [1.0, 1.0, 1.0],
+                            "limitMax": [180.0, 30.0, 70.0]}}
+    b = block()
+    assert abs(core.scale_driver_coefficients(b, 12, 5) - 5 / 12) < 1e-9
+    assert b["vectors"]["outerCoefficient"] == [5 / 12] * 3
+    assert abs(b["vectors"]["innerCoefficient"][1] - 0.1 * 5 / 12) < 1e-12
+    assert b["vectors"]["limitMax"] == [180.0, 30.0, 70.0]   # 限位是硬边界，不跟着缩
+    assert b["linkScale"] == round(5 / 12, 6)
+    # 链比原版短 / 没给基准 / 数据缺失 → 原样不动（老包重导逐字节不变）
+    for args in ((3, 5), (12, None), (12, 0), (0, 5), ("x", 5)):
+        b2 = block()
+        assert core.scale_driver_coefficients(b2, *args) == 1.0
+        assert b2["vectors"]["outerCoefficient"] == [1.0, 1.0, 1.0]
+        assert "linkScale" not in b2

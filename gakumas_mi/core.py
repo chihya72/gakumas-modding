@@ -2861,6 +2861,17 @@ def weight_sum_errors(sums, tolerance=1e-3):
 # 阈值有实测背书：烘对了的包 39 根人形骨残差全 0.0°；坏样本 52°~172°，而"腿/躯干看着正常"
 # 那一档是 7°。
 ORIENTATION_WARN_DEG, ORIENTATION_FAIL_DEG = 5.0, 15.0
+# 参考向量退化的子骨不量朝向。MMD 有 44 根源骨映射到 Hips（腰/下半身/一堆 IK/裙飘带），
+# `_collect_rest_alignment` 按目标骨建字典是后写覆盖，赢的那根离 Spine 源骨只有 3.5mm，
+# 游戏侧 75.1mm —— 3.5mm 的向量量出来的方向是噪声，判出 35° 是假阳性（模型没毛病）。
+# 阈值有量：同一副骨架 49 对参考里退化的那对是 0.047，其余最小 0.695，中间是空的。
+ORIENTATION_MIN_REF_RATIO = 0.25
+# 子骨够多时按中位数、不按最差判父骨朝向。手有五个人形子骨，实测四个 0.3~3.3°、拇指 20°
+# （MMD 的拇指根比游戏往外 15mm）—— 取最差等于把子骨自己的**位置**差记到父骨的**朝向**上，
+# 把一只量得好好的手判红，作者只能去搬拇指迁就一个量错的数。父骨真转了的话所有子骨会一起
+# 偏，中位数照样报红；1~2 个子骨没有"多数"可言，保持取最差（肩差 172° 那条实测坏样本就是
+# 单子骨，走的还是老路）。
+ORIENTATION_MEDIAN_MIN_CHILDREN = 3
 # 位置按**骨节长度的比例**判：手指骨节 20~25mm、四肢 150~300mm，同一个绝对毫米数两头都判错。
 # 位置**最高只判黄**：lossless 蒙皮把静止位置差当重定向吸收（"免的是位置"），对齐更好但差了
 # 不等于会炸。会炸的是朝向。
@@ -2874,10 +2885,13 @@ def _worse(*grades):
     return min(grades, key=lambda grade: _GRADE_ORDER[grade])
 
 
+def _length(vector):
+    return math.sqrt(sum(value * value for value in vector))
+
+
 def _angle_between(a, b):
     """两个向量的夹角（度），零向量返回 None。恒在 [0,180]。"""
-    length_a = math.sqrt(sum(value * value for value in a))
-    length_b = math.sqrt(sum(value * value for value in b))
+    length_a, length_b = _length(a), _length(b)
     if length_a < 1e-9 or length_b < 1e-9:
         return None
     cosine = sum(a[i] * b[i] for i in range(3)) / (length_a * length_b)
@@ -2892,6 +2906,19 @@ def _position_grade(millimetres, length_mm=0.0):
     return "yellow" if millimetres >= warn else "green"
 
 
+def _representative_angle(angles):
+    """逐骨朝向报哪个子骨的值：子骨少于 3 个取最差，够多取中位数（见上面那段）。
+
+    `angles` [(角度, 子骨名)]，空列表返回 (None, None) —— 末节骨量不了，不冤枉它。
+    """
+    if not angles:
+        return None, None
+    ordered = sorted(angles)
+    if len(ordered) < ORIENTATION_MEDIAN_MIN_CHILDREN:
+        return ordered[-1]
+    return ordered[len(ordered) // 2]
+
+
 def _orientation_grade(degrees):
     if degrees is None:
         return "green"                       # 末节骨没有人形子骨，量不了朝向，不冤枉它
@@ -2902,6 +2929,152 @@ def _orientation_grade(degrees):
 def format_degrees(degrees):
     """朝向差的显示：末节骨没有人形子骨，量不了 —— 说"量不了"，别显示成 0°。"""
     return "量不了" if degrees is None else f"{degrees:.1f}°"
+
+
+# 左右反了：源模型没做镜像就按名字映射（MMD 的 .L 在 +X，游戏的 Left 在 −X），于是每根
+# L/R 骨都绑到对侧游戏骨上。它躲得过现有的每一把尺子 —— 身体左右对称，位置差照样是中位
+# 20mm 的正常值，静止截图也完全正常，一动起来四肢交叉。而且它会把下游两道闸门带偏，让作者
+# 去修症状：脚尖劈权重一个顶点都动不了（原版那点是 LeftFoot/LeftToeBase，作者那点是
+# RightFoot，没有共同捐赠骨），静止朝向整片报 175~177°。所以要在那两道之前拦，并且报根因。
+MIRROR_CHECK_PAIRS = (
+    ("LeftShoulder", "RightShoulder"), ("LeftArm", "RightArm"),
+    ("LeftHand", "RightHand"), ("LeftUpLeg", "RightUpLeg"),
+    ("LeftFoot", "RightFoot"),
+)
+MIRROR_MIN_SEPARATION_M = 0.01   # 两侧离得比这还近就不判：那是噪声，不是左右
+
+
+# 面朝里：镜像（`S X -1` + 应用缩放）会反转全部面的绕序。作者只点了「重算外侧」的话，
+# 带自定义拆分法线的模型（MMD 几乎都带）修不干净；一个顶点都没动，游戏里却是背面剔除后
+# 看到衣服内壁 —— 表现成带尖角的破碎片、能看穿。实测这个模型 signed volume = -0.41 m³，
+# 而它烧掉了两轮进游戏才被发现，离线一次散度定理积分就够。
+def inverted_mesh_error(volume, threshold=1e-6):
+    """网格有符号体积为负 → 返回报错文案，正常返回 None。"""
+    try:
+        value = float(volume)
+    except (TypeError, ValueError):
+        return None
+    if value >= -abs(threshold):
+        return None
+    return (f"网格的面朝向反了（有符号体积 {value:+.4f} m³，正常应为正）。"
+            "沿 X 镜像后应用缩放会反转全部面的绕序，进游戏被背面剔除，看到的是衣服内壁 —— "
+            "带尖角的破碎片、能看穿。修法：编辑模式全选 → **Alt+N → 翻转**。"
+            "注意不是 Shift+N「重算外侧」：这个模型带自定义拆分法线，重算只修绕序、"
+            "不动自定义法线，着色仍然是错的。")
+
+
+def orphaned_subtree_merges(mapping, new_bones, parent_of):
+    """并到游戏骨、却还有子骨留在 mod 骨架里的源骨 → [(源骨, 留下的子骨)]。
+
+    并进游戏骨 = 这根骨从 mod 骨架里消失，它的子树被重挂到那根游戏骨下面。那根骨长在
+    原版服装的位置、由原版物理驱动，跟这件衣服毫无关系 —— 整支子树被外来物理拽走。
+    实测：4 根裙骨被并掉，连带第 2/13 列从上到下挂在原版裙骨上，三分之一的裙面飞出去。
+    现有闸门一个都抓不到：骨有目标、权重归一、静止画面完全正常。
+    """
+    merged = {str(k) for k, v in (mapping or {}).items() if v}
+    survivors = {str(n) for n in (new_bones or ())}
+    orphans = []
+    for child in sorted(survivors):
+        parent = (parent_of or {}).get(child)
+        if parent and str(parent) in merged:
+            orphans.append((str(parent), child))
+    return orphans
+
+
+def orphaned_subtree_error(orphans, limit=8):
+    if not orphans:
+        return None
+    detail = "、".join(f"{parent}→{child}" for parent, child in orphans[:limit])
+    return (f"{len(orphans)} 处：源骨被并进游戏的衣物骨，但它的子骨还留在 mod 骨架里"
+            f"（{detail}" + ("…" if len(orphans) > limit else "") + "）。"
+            "并进去等于这根骨从骨架里消失、整支子树被重挂到那根游戏骨下面 —— 那根骨长在"
+            "原版服装的位置、由原版物理驱动，一动就把这支几何拽走，而静止画面完全正常。"
+            "两条出路：把这几根骨改成和它子骨同一种处理（自建摇物链 / 原版布料驱动器），"
+            "或者把整条链一起并过去（连子骨也并）。")
+
+
+# 结构组是按骨架拓扑分的，一组能装下**互不相干的两件衣服**：实测一行 177 根，同时装着
+# 大半条裙子和全部经文；另一行 37 根，混了第 2/13 列裙骨和裙带。作者在这种行上点一次
+# 「跟裙摆」，误伤 4 根裙骨、炸掉三分之一的裙子，而他以为自己只点了一条链。
+#
+# **按行有多大判是错的**：整条裙子 192 根同族骨下一个指令完全正常，按大小拦等于误伤。
+# 判据是这一行**横跨了几个骨族**——族名 = 骨名去掉尾部的编号段。实测六个样本全部分对：
+#   坏：{经文, スカート}(177)、{经文, スカート, 裙带}(37)
+#   好：{スカート}(192)、{裙飘带}(21)、{3袖子}(5)
+_FAMILY_TAIL = re.compile(r"(?:[._\-]?\d+)+$")
+
+
+def bone_family(name):
+    """骨族名：去掉尾部所有编号段。`スカート_0_0`→`スカート`，`经文3_3_1`→`经文`。"""
+    text = str(name or "")
+    while True:
+        stripped = _FAMILY_TAIL.sub("", text)
+        if stripped == text or not stripped:
+            return text
+        text = stripped
+
+
+def mixed_family_directive_rows(rows):
+    """下了物理指令、却横跨多个骨族的行 → [(行名, [族名…])]。`rows` = [(行名, 策略, [骨名…])]。"""
+    directives = {"integrate", "native_driver", "follow_skirt", "follow_nearest", "bake"}
+    out = []
+    for name, strategy, bones in rows or ():
+        if strategy not in directives:
+            continue
+        families = sorted({bone_family(b) for b in bones or ()})
+        if len(families) > 1:
+            out.append((name, families))
+    return out
+
+
+def mixed_family_directive_error(mixed, show=4):
+    if not mixed:
+        return None
+    detail = "；".join(f"{name} 横跨 {len(families)} 族（{'、'.join(families[:4])}"
+                       + ("…" if len(families) > 4 else "") + "）"
+                       for name, families in mixed[:show])
+    return (f"{len(mixed)} 行给**互不相干的几件衣服**一次性下了物理指令：{detail}"
+            + ("…" if len(mixed) > show else "")
+            + "。结构组是按骨架拓扑分的，一组装得下两件衣服（实测一行 177 根 = 大半条裙子 + "
+              "全部经文）。在这种行上点一次策略，误伤的骨你看不见，画面上却是整片衣服飞出去。"
+              "先点「拆成逐根处理」看清这行到底管哪些骨，再分别下指令。")
+
+
+def mirrored_side_pairs(source_positions, target_positions):
+    """左右装反了的骨对 [(左骨名, 右骨名)]：源骨的左右顺序与游戏骨相反。
+
+    两个入参都以**目标骨名**为键、都在 Unity 空间，和 `rest_alignment` 同一份数据。
+    只看 X 的符号——镜像不改 Y/Z，量别的轴都是白量。
+    """
+    flipped = []
+    for left, right in MIRROR_CHECK_PAIRS:
+        source, target = source_positions, target_positions
+        if not (left in source and right in source
+                and left in target and right in target):
+            continue
+        source_dx = source[left][0] - source[right][0]
+        target_dx = target[left][0] - target[right][0]
+        if (abs(source_dx) < MIRROR_MIN_SEPARATION_M
+                or abs(target_dx) < MIRROR_MIN_SEPARATION_M):
+            continue
+        if source_dx * target_dx < 0.0:
+            flipped.append((left, right))
+    return flipped
+
+
+def mirrored_side_error(source_positions, target_positions):
+    """左右反了 → 返回报错文案，正常返回 None。两条出路都要给（整副没镜像 / 个别映射反）。"""
+    flipped = mirrored_side_pairs(source_positions, target_positions)
+    if not flipped:
+        return None
+    detail = "、".join(f"{left}/{right}" for left, right in flipped)
+    return (f"{len(flipped)} 对左右骨装反了：{detail}。源骨的左右顺序和游戏骨相反——几何在 "
+            "+X，绑的却是 −X 那根骨。位置差和静止截图都看不出来（身体左右对称），进游戏一动"
+            "四肢就交叉。两种情形两条出路：\n"
+            "  · **整副模型没做镜像**（MMD 常见，左右骨对会全部报出来）→ 物体模式里同时选中"
+            "作者网格和骨架，沿 X 镜像后应用缩放、重算法线外侧（见建模准备清单第一条），"
+            "再回来重跑；\n"
+            "  · **只有个别骨对反了** → 「骨骼映射表」里把这几根改成对侧的游戏骨。")
 
 
 def rest_alignment(source_positions, target_positions, children=None, lengths=None):
@@ -2924,18 +3097,25 @@ def rest_alignment(source_positions, target_positions, children=None, lengths=No
             continue
         millimetres = math.sqrt(sum((source[i] - target[i]) ** 2
                                     for i in range(3))) * 1000.0
-        worst_angle, worst_child = None, None
+        angles = []
         for child in (children or {}).get(name, ()):
             child_source, child_target = source_positions.get(child), target_positions.get(child)
             if child_source is None or child_target is None:
                 continue
-            angle = _angle_between([child_source[i] - source[i] for i in range(3)],
-                                   [child_target[i] - target[i] for i in range(3)])
-            if angle is not None and (worst_angle is None or angle > worst_angle):
-                worst_angle, worst_child = angle, child
+            source_vector = [child_source[i] - source[i] for i in range(3)]
+            target_vector = [child_target[i] - target[i] for i in range(3)]
+            # 源侧参考向量塌了就跳过这个子骨（见 ORIENTATION_MIN_REF_RATIO）。全部子骨
+            # 都塌了 → 角度留 None，走"量不了朝向，不冤枉它"那条，不判红。
+            if _length(source_vector) < _length(target_vector) * ORIENTATION_MIN_REF_RATIO:
+                continue
+            angle = _angle_between(source_vector, target_vector)
+            if angle is not None:
+                angles.append((angle, child))
+        worst_angle, worst_child = _representative_angle(angles)
         length_mm = float((lengths or {}).get(name) or 0.0) * 1000.0
         rows.append({
             "bone": name, "mm": millimetres, "deg": worst_angle, "child": worst_child,
+            "children": len(angles),
             "grade": _worse(_position_grade(millimetres, length_mm),
                             _orientation_grade(worst_angle)),
         })
@@ -3442,7 +3622,12 @@ def build_accessory_physics_remap(
 
     for names, directive, kind in plan:
 
-        if directive == "integrate":
+        # native_driver 和 integrate 在这里是同一件事：**都要新建骨**。区别只在新骨上挂
+        # 摇物还是挂原版布料驱动器，那是 new_bone_records 里按 driver_bones 决定的。
+        # 漏了 native_driver 的话它会一路掉到底下的"蹭最近摇物骨"，把整条源链并进原版
+        # 衣物骨 —— 既没新骨也就没地方挂驱动器，作者选了驱动器却拿到 follow_skirt 的结果，
+        # 而日志全绿。这条策略一直没人用得起来就是卡在这里。
+        if directive in ("integrate", "native_driver"):
             new_bones.extend(names)
             for name in names:
                 strategies[name] = "new_source_chain"
@@ -3521,6 +3706,72 @@ def build_accessory_physics_remap(
         "unmapped": [name for name in accessory if name not in mapping and name not in rigid],
         "maxDistance": float(max_distance),
     }
+
+
+# 衣物链的跨节权重过渡带。**这次撕裙子的唯一真凶，而且现有尺子全看不见它**：
+# `CROSS_JOINT_BANDS` 只列了肩肘腕膝四个身体关节，衣物链一个都没有。
+# 实测 MMD 裙 1.2%、原版同部位 79.4%（差 66 倍）—— MMD 是一根骨一条硬边带，靠 MMD 自己的
+# 刚体+关节把相邻裙板拴住；搬到摇物链/驱动器上，接缝没有任何权重拉着，一动就撕开。
+# 静止画面看不出来是**结构性**的：静止时每根骨的当前变换×bindPose=单位阵，再烂的权重都
+# 精确复原。所以只能靠量。
+CHAIN_BLEND_FLOOR = 0.25        # 低于这个数就提醒；原版量级是 0.79
+
+
+def chain_blend_ratio(influences, node_of):
+    """{链: (顶点数, 跨节共享比例)}。
+
+    `influences` 每顶点 {骨名: 权重}；`node_of` {骨名: (链号, 节号)}。
+    比例 = 权重跨越同一条链上 ≥2 个节的顶点占比。
+    """
+    stat = {}
+    for weights in influences or ():
+        nodes = {}
+        for name, weight in (weights or {}).items():
+            if float(weight) <= 0.0:
+                continue
+            entry = (node_of or {}).get(name)
+            if entry:
+                nodes.setdefault(entry[0], set()).add(entry[1])
+        for chain, seen in nodes.items():
+            row = stat.setdefault(chain, [0, 0])
+            row[0] += 1
+            if len(seen) > 1:
+                row[1] += 1
+    return {chain: (total, (multi / total) if total else 0.0)
+            for chain, (total, multi) in stat.items()}
+
+
+def chain_blend_findings(mod_ratios, vanilla_ratios=None, floor=CHAIN_BLEND_FLOOR):
+    """过渡带太薄的链 → [{chain, verts, ratio, baseline}]，最差的排前面。
+
+    有原版基线就用基线的 60% 当门槛（同一件事两把尺子量出来的量级要对得上），
+    没有基线才退回常数 `floor`。
+    """
+    baseline = None
+    if vanilla_ratios:
+        values = [ratio for _total, ratio in vanilla_ratios.values() if ratio > 0.0]
+        if values:
+            baseline = sorted(values)[len(values) // 2]
+    limit = baseline * 0.6 if baseline else floor
+    rows = [{"chain": chain, "verts": total, "ratio": ratio, "baseline": baseline}
+            for chain, (total, ratio) in (mod_ratios or {}).items()
+            if total >= 50 and ratio < limit]
+    rows.sort(key=lambda row: (row["ratio"], -row["verts"]))
+    return rows
+
+
+def chain_blend_note(findings, limit=6):
+    if not findings:
+        return None
+    baseline = findings[0].get("baseline")
+    detail = "、".join(f"{row['chain']} {row['ratio']:.0%}({row['verts']} 顶点)"
+                       for row in findings[:limit])
+    tail = f"，原版同部位 {baseline:.0%}" if baseline else ""
+    return (f"{len(findings)} 条衣物链的跨节权重过渡带过薄：{detail}"
+            + ("…" if len(findings) > limit else "") + tail
+            + "。这种权重一根骨一条硬边带、节与节之间没有过渡，静止完全正常（静止时蒙皮"
+              "恒等，权重再烂也精确复原），一动起来每个节界都会张口撕开。"
+              "修法在 Blender 侧：对这些链的顶点组做权重平滑，把过渡带做出来。")
 
 
 def load_swing_presets(path=None):
@@ -3693,6 +3944,39 @@ def load_driver_presets(path=None):
         return {}
 
 
+def scale_driver_coefficients(block, links, reference_links=None):
+    """按链节数把驱动器系数缩回原版量级；就地改 `block`，返回用掉的倍率。
+
+    **读源码定的性，不是调参**：`ActorAnimationQuartzDriverSkirtBone.Calc(
+    initialReferenceRotation, currentReferenceRotation, rotationOrder,
+    innerCoefficient, outerCoefficient, limitMin, limitMax, connectionAxis)`
+    —— 入参里**没有父骨状态**，每根骨都只拿参考骨（Left/RightUpLeg）那一个转角
+    delta 算自己的局部旋转。而骨骼是层级的，于是一条链上串几根骨，末端就累积几倍。
+
+    `driver_presets.json` 的系数是从 530 套原版量的中位数，原版裙链每列 5 节。把这套数
+    原样按到 12 节的 MMD 裙上，下摆累积到 12/5 = 2.4 倍 —— 表现就是"动一下布料到处乱飞"。
+    所以按 `reference_links / links` 缩系数，让累积总量对回原版。
+
+    只缩不放（倍率封顶 1.0）：链比原版短的时候原样用原版数，不去放大。
+    `reference_links` 给 None（默认）= 完全不缩，老包重导逐字节不变。
+    """
+    try:
+        links = int(links)
+        reference = int(reference_links) if reference_links else 0
+    except (TypeError, ValueError):
+        return 1.0
+    if not block or links <= 0 or reference <= 0 or links <= reference:
+        return 1.0
+    ratio = reference / float(links)
+    vectors = block.get("vectors") or {}
+    for key in ("innerCoefficient", "outerCoefficient"):
+        values = vectors.get(key)
+        if values:
+            vectors[key] = [float(v) * ratio for v in values]
+    block["linkScale"] = round(ratio, 6)      # 留痕：包里看得出缩过、缩了多少
+    return ratio
+
+
 def build_driver_block(category, side, presets=None):
     """一根衣物骨的 `driver` 块；类别没有对应驱动器就返回 None。
 
@@ -3715,6 +3999,27 @@ def build_driver_block(category, side, presets=None):
         "vectors": {k: list(v) for k, v in (setting.get("vectors") or {}).items()},
         "bones": bones,
     }
+
+
+def side_from_world_x(record):
+    """名字判不出左右时，按骨的世界 X 定边。判不出返回 None。
+
+    外语命名的裙摆（MMD 的 `スカート_0_0`）名字里根本没有左右信号，只按名字判就永远拿不到
+    驱动器，而 `build_driver_block` 判不出边会**静默**返回 None、退回摇物 —— 作者选了驱动器
+    却拿到摇物，日志全绿。位置是量出来的，不是猜的：Unity 空间里角色左侧是 −X（原版
+    LeftFoot x=-0.0757 / RightFoot +0.0757）。
+    不留死区：一圈裙板正中间那两列本来就骑在中线上，原版自己也是从中线切成左右两半的
+    （8 列 = Left/Right × Front/FrontSide/BackSide/Back）。留死区会让这两列拿不到驱动器、
+    退回摇物 —— 同一条裙子上两套解算器并存，正是撕开的那种配法。
+    """
+    matrix = (record or {}).get("worldMatrix")
+    if matrix is None:
+        return None
+    try:
+        x = float(matrix.translation[0])
+    except (AttributeError, TypeError, IndexError):
+        return None
+    return "Left" if x < 0.0 else "Right"
 
 
 _SIDE_SUFFIX = re.compile(r"[._](l|r)(?=$|[._\d])", re.IGNORECASE)
@@ -3744,7 +4049,7 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
                              body_remap=None, default_swing=None, categories=None,
                              presets=None, driver_bones=None, weight_by_name=None,
                              dominant_by_name=None, swing_anchor_bones=None,
-                             tip_offset_by_name=None):
+                             tip_offset_by_name=None, driver_reference_links=None):
     """Build runtime-created source bones plus a synthetic tip per leaf.
 
     每根骨的摆动参数按 **部件类别 × 链上角色** 从原版基准表取（`swing_presets.json`，
@@ -3911,6 +4216,25 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
                 param_role[name] = "mid"
                 anchor_applied.append(name)
 
+    driven_children = {}
+    for child in wanted:
+        parent = parents.get(child)
+        if parent in wanted:
+            driven_children.setdefault(parent, []).append(child)
+
+    def driven_chain_links(name):
+        """这根骨所在链上**串联了几根新骨**（含它自己），从链根数到最深的叶子。"""
+        root = name
+        guard = 0
+        while parents.get(root) in wanted and guard < 512:
+            root = parents[root]; guard += 1
+        best, stack = 0, [(root, 1)]
+        while stack:
+            current, depth_ = stack.pop()
+            best = max(best, depth_)
+            stack.extend((child, depth_ + 1) for child in driven_children.get(current, ()))
+        return best
+
     result = []
     pending = set(wanted)
     while pending:
@@ -3939,17 +4263,26 @@ def build_source_extra_bones(source_bones, extra_names, parent_by_name=None,
             # 驱动器和摇物二选一（运行时也这么执行），所以挂上驱动器就把 swing 去掉。
             if name in driver_bones:
                 block = build_driver_block(driver_bones[name] or category,
-                                           bone_side(name), driver_presets)
+                                           bone_side(name) or side_from_world_x(item),
+                                           driver_presets)
                 if block:
+                    scale_driver_coefficients(
+                        block, driven_chain_links(name),
+                        (driver_reference_links or {}).get(block.get("type")))
                     result[-1]["driver"] = block
                     result[-1].pop("swing", None)
             if item.get("bindPose") is not None:
                 result[-1]["bindPose"] = item["bindPose"]
             pending.remove(name)
 
+    # 挂了驱动器的骨不再需要合成链尾：链尾是给摇物链定义末节朝向、补最后一层用的，
+    # 而驱动器链上根本没有链。给它建一个带 swing 的链尾 = 在同一条链上放第二种求解器，
+    # 运行时的 INV-1（一根骨只能有一个写它的求解器）会拒绝挂驱动器并记日志，作者拿到的
+    # 又是摇物 —— 实测 16 根 `スカート_11_*_End` 就是这么把整条裙子拽回摇物的。
+    driver_named = {item["name"] for item in result if item.get("driver")}
     extra_tips = []
     for name in sorted(wanted):
-        if not is_leaf[name]:
+        if not is_leaf[name] or name in driver_named:
             continue
         length = float(records[name].get("length") or 0.0)
         # 链尾位置按几何来（该骨主导顶点的质心，见 `operators._dominant_group_tip_offsets`）。
@@ -4027,6 +4360,10 @@ def build_swing_chains(new_bones, extra_tips, presets=None):
     groups = {}
     for item in new_bones:
         if item["swingRole"] != "root":
+            continue
+        # 驱动器和摇物链二选一：这根骨已经挂了原版布料驱动器，再给它建 ActorSwingChain
+        # 就是两个求解器写同一根骨（运行时 INV-1 会拒绝驱动器）。
+        if item.get("driver"):
             continue
         category = category_of.get(item["name"]) or "ribbon"
         if not presets.get(category, {}).get("useChain"):

@@ -517,6 +517,13 @@ def draw_rig_report(layout, scene, context=None, show_action=True):
     except ValueError:
         return
     icons = {"yellow": "ERROR", "red": "CANCEL"}
+    # 左右反了要排在逐骨清单**前面**：底下那串 175~177° 全是它的症状，先看到清单的作者
+    # 会跑去逐骨摆朝向，摆的是错的东西。
+    mirrored = data.get("mirrored") or []
+    if mirrored:
+        box.label(text=f"左右装反 {len(mirrored)} 对："
+                       + "、".join(f"{pair[0]}/{pair[1]}" for pair in mirrored[:4])
+                       + "　→ 先沿 X 镜像整副模型，别逐骨摆朝向", icon="CANCEL")
     rows = data.get("alignment") or []
     bad = [row for row in rows if row.get("grade") != "green"]
     box.label(text=f"逐骨对齐：量了 {data.get('measured', 0)} 根，"

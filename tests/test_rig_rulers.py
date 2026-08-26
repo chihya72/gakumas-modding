@@ -145,3 +145,165 @@ def test_vanilla_reference_bands_beat_the_table():
     row = core.cross_joint_band_findings(mod, vanilla)[0]
     assert abs(row["vanilla"] - 0.11) < 1e-9
     assert row["grade"] == "yellow"       # 按真值表 13.3% 也是黄，但基线得是参考体那个数
+
+
+def test_collapsed_reference_child_is_not_measured():
+    """参考向量塌了就别量朝向 —— MMD 的 腰/下半身 都映射到 Hips，赢的那根离 Spine 源骨
+    只有 3.5mm（游戏侧 75.1mm），量出来 35° 是假阳性，模型没毛病。实机 blend 上坐实过。
+    """
+    game = {"Hips": (0.0, 0.90, 0.0), "Spine": (0.0, 0.9751, 0.0)}
+    children, lengths = {"Hips": ["Spine"]}, {"Hips": 0.075}
+    # 源的 Hips 落在 Spine 源骨下方 3.5mm，方向随便偏一点 —— 3.5mm 的向量没有方向可言
+    source = {"Hips": (0.002, 0.9751 - 0.0029, 0.0), "Spine": (0.0, 0.9751, 0.0)}
+    row = core.rest_alignment(source, game, children, lengths)[0]
+    assert row["deg"] is None and row["child"] is None   # 量不了，不是 0°
+    assert row["grade"] != "red"
+    # 同样的角度、参考向量不退化 → 照样报红，别把闸门放漏了
+    healthy = dict(source)
+    healthy["Hips"] = (0.043, 0.9751 - 0.0617, 0.0)      # 离 Spine 75mm，偏 35°
+    row = core.rest_alignment(healthy, game, children, lengths)[0]
+    assert row["deg"] is not None and row["deg"] >= core.ORIENTATION_FAIL_DEG
+
+
+MIRROR_GAME = {
+    "LeftShoulder": (-0.05, 1.40, 0.0), "RightShoulder": (0.05, 1.40, 0.0),
+    "LeftArm": (-0.15, 1.40, 0.0), "RightArm": (0.15, 1.40, 0.0),
+    "LeftHand": (-0.62, 1.40, 0.0), "RightHand": (0.62, 1.40, 0.0),
+    "LeftUpLeg": (-0.09, 0.85, 0.0), "RightUpLeg": (0.09, 0.85, 0.0),
+    "LeftFoot": (-0.08, 0.11, 0.0), "RightFoot": (0.08, 0.11, 0.0),
+}
+
+
+def test_unmirrored_source_is_caught():
+    """MMD 的 .L 在 +X、游戏的 Left 在 −X。整副没镜像 = 五对全反，而位置差照样很小
+    （身体左右对称），所以只有符号这一把尺子看得见它。
+    """
+    source = {name: (-x, y, z) for name, (x, y, z) in MIRROR_GAME.items()}
+    assert core.mirrored_side_pairs(source, MIRROR_GAME) == list(core.MIRROR_CHECK_PAIRS)
+    message = core.mirrored_side_error(source, MIRROR_GAME)
+    assert message and "镜像" in message and "骨骼映射表" in message
+
+
+def test_aligned_and_partial_and_degenerate_sides():
+    assert core.mirrored_side_pairs(dict(MIRROR_GAME), MIRROR_GAME) == []
+    assert core.mirrored_side_error(dict(MIRROR_GAME), MIRROR_GAME) is None
+    # 只有一对反 = 那两根的映射写反了，不是整副镜像；也要报出来
+    partial = dict(MIRROR_GAME)
+    partial["LeftHand"], partial["RightHand"] = MIRROR_GAME["RightHand"], MIRROR_GAME["LeftHand"]
+    assert core.mirrored_side_pairs(partial, MIRROR_GAME) == [("LeftHand", "RightHand")]
+    # 左右挤在一起（局部骨架 / 没摆开的骨）不判：那是噪声不是左右
+    squashed = dict(MIRROR_GAME)
+    squashed["LeftFoot"] = squashed["RightFoot"] = (0.0, 0.11, 0.0)
+    assert ("LeftFoot", "RightFoot") not in core.mirrored_side_pairs(squashed, MIRROR_GAME)
+
+
+HAND = {
+    "LeftHand": (0.62, 1.40, 0.0),
+    "LeftHandIndex1": (0.70, 1.40, 0.02), "LeftHandMiddle1": (0.706, 1.40, 0.0),
+    "LeftHandRing1": (0.70, 1.40, -0.02), "LeftHandPinky1": (0.69, 1.40, -0.04),
+    "LeftHandThumb1": (0.647, 1.387, 0.023),
+}
+HAND_CHILDREN = {"LeftHand": ["LeftHandIndex1", "LeftHandMiddle1", "LeftHandRing1",
+                              "LeftHandPinky1", "LeftHandThumb1"]}
+
+
+def test_one_outlier_child_does_not_redden_the_parent():
+    """手有五个人形子骨。MMD 的拇指根比游戏往外 15mm —— 四个子骨 0.3~3.3°、拇指 20°。
+    那 20° 是**拇指自己的位置**差（已有位置行在报），不是手的朝向差，不许把手判红。
+    """
+    source = dict(HAND)
+    source["LeftHandThumb1"] = (0.66, 1.395, 0.026)      # 拇指根往外挪，方向偏 ~20°
+    row = {r["bone"]: r for r in
+           core.rest_alignment(source, HAND, HAND_CHILDREN, {"LeftHand": 0.08})}["LeftHand"]
+    assert row["deg"] < core.ORIENTATION_FAIL_DEG
+    assert row["grade"] != "red"
+
+
+def test_whole_hand_rotated_is_still_red():
+    """反过来：手真的转了，五个子骨会一起偏，中位数照样报红——别为了放过拇指把闸门放漏。"""
+    def spun(point):                                      # 绕手腕在 xz 平面转 40°
+        dx, dz = point[0] - 0.62, point[2]
+        angle = math.radians(40.0)
+        return (0.62 + dx * math.cos(angle) - dz * math.sin(angle), point[1],
+                dx * math.sin(angle) + dz * math.cos(angle))
+    source = {name: (point if name == "LeftHand" else spun(point))
+              for name, point in HAND.items()}
+    row = {r["bone"]: r for r in
+           core.rest_alignment(source, HAND, HAND_CHILDREN, {"LeftHand": 0.08})}["LeftHand"]
+    assert row["grade"] == "red" and abs(row["deg"] - 40.0) < 3.0
+
+
+def test_two_children_still_take_the_worst():
+    """子骨只有 1~2 个时没有"多数"可言，保持取最差——肩差 172° 那条实测坏样本就是单子骨。"""
+    two = {"LeftHand": ["LeftHandThumb1", "LeftHandMiddle1"]}
+    source = dict(HAND)
+    source["LeftHandThumb1"] = (0.66, 1.395, 0.026)
+    row = {r["bone"]: r for r in
+           core.rest_alignment(source, HAND, two, {"LeftHand": 0.08})}["LeftHand"]
+    assert row["deg"] > core.ORIENTATION_FAIL_DEG and row["child"] == "LeftHandThumb1"
+
+
+def test_inverted_mesh_is_caught():
+    """镜像后没翻回来 = 全部面朝里。实测这个模型 signed volume = -0.41 m³，
+    烧掉两轮进游戏才发现，而离线一次散度定理积分就够。"""
+    assert core.inverted_mesh_error(-0.4118) is not None
+    assert "Alt+N" in core.inverted_mesh_error(-0.4118)
+    assert core.inverted_mesh_error(0.4118) is None
+    assert core.inverted_mesh_error(0.0) is None          # 平面/开放面片不冤枉
+    assert core.inverted_mesh_error(None) is None
+
+
+def test_orphaned_subtree_merge_is_caught():
+    """并进游戏衣物骨、子骨却留在 mod 骨架里 → 整支子树被外来物理拽走。
+
+    实测坏样本：`スカート_1_2` 并进 `LeftFrontSideSkirt1_S`，第 2 列从 `スカート_2_2`
+    往下整支重挂到那根原版骨上，三分之一的裙面飞出去，而所有现有闸门全绿。
+    """
+    mapping = {"スカート_1_2": "LeftFrontSideSkirt1_S", "スカート_0_2": "LeftFrontSkirt1_S"}
+    parents = {"スカート_2_2": "スカート_1_2", "スカート_3_2": "スカート_2_2"}
+    orphans = core.orphaned_subtree_merges(mapping, ["スカート_2_2", "スカート_3_2"], parents)
+    assert orphans == [("スカート_1_2", "スカート_2_2")]
+    assert core.orphaned_subtree_error(orphans) is not None
+    # 整条链一起并过去 = 没有孤儿，不该报
+    assert core.orphaned_subtree_merges(mapping, [], parents) == []
+    assert core.orphaned_subtree_error([]) is None
+
+
+def test_mixed_family_directive_row_is_caught():
+    """结构组装得下互不相干的两件衣服：实测一行 177 根 = 大半条裙子 + 全部经文。
+
+    判据是**横跨几个骨族**，不是行有多大 —— 整条裙子 192 根同族骨下一个指令完全正常，
+    按大小拦就会误伤它（这正是"闸门瞄错地方"的典型）。
+    """
+    assert core.bone_family("スカート_0_0") == "スカート"
+    assert core.bone_family("经文3_3_1") == "经文"
+    assert core.bone_family("裙飘带1_6_2") == "裙飘带"
+    assert core.bone_family("3袖子_0_1") == "3袖子"      # 前导数字不是编号段
+    rows = [
+        ("经文3_3_1 等", "integrate", ["经文3_3_1", "经文2_1_1", "スカート_0_14"]),
+        ("经文1_7_1 等", "integrate", ["经文1_7_1", "スカート_3_2", "裙带_0_1"]),
+        ("スカート_0_0 等", "native_driver",
+         ["スカート_%d_%d" % (r, c) for r in range(12) for c in range(16)]),  # 192 根同族
+        ("裙飘带1_6_2 等", "follow_nearest", ["裙飘带1_6_2", "裙飘带1_0_0"]),
+        ("混族但没下指令", "auto", ["スカート_0_0", "经文1_0_1"]),
+    ]
+    mixed = core.mixed_family_directive_rows(rows)
+    assert [name for name, _f in mixed] == ["经文3_3_1 等", "经文1_7_1 等"]
+    assert core.mixed_family_directive_error(mixed) is not None
+    assert core.mixed_family_directive_error([]) is None
+
+
+def test_chain_blend_ruler_flags_hard_edged_weights():
+    """跨节权重过渡带：MMD 裙 1.2% vs 原版 79.4%，差 66 倍，而现有尺子一个都看不见。"""
+    node_of = {"A0": ("A", 0), "A1": ("A", 1), "A2": ("A", 2)}
+    hard = [{"A0": 1.0}] * 60 + [{"A1": 1.0}] * 60      # 每个顶点只沾一节
+    soft = [{"A0": 0.6, "A1": 0.4}] * 60 + [{"A1": 0.5, "A2": 0.5}] * 60
+    assert core.chain_blend_ratio(hard, node_of)["A"][1] == 0.0
+    assert core.chain_blend_ratio(soft, node_of)["A"][1] == 1.0
+    findings = core.chain_blend_findings(core.chain_blend_ratio(hard, node_of),
+                                         core.chain_blend_ratio(soft, node_of))
+    assert findings and findings[0]["chain"] == "A"
+    assert core.chain_blend_note(findings) is not None
+    # 过渡带够厚就不报；顶点太少的链也不报（噪声）
+    assert core.chain_blend_findings(core.chain_blend_ratio(soft, node_of)) == []
+    assert core.chain_blend_findings(core.chain_blend_ratio(hard[:10], node_of)) == []
