@@ -2788,8 +2788,8 @@ def critical_coverage_error(source_names, remap, target_bones):
     if not missing:
         return None
     return ("以下承重关节没有拿到任何权重：" + "、".join(missing)
-            + f"（共 {len(missing)} 个）。这样导出进游戏，那块几何会跟着别的骨乱跑"
-              "（实测：整只手 100% 钉在 Spine1）。" + _coverage_outs(missing))
+            + f"（共 {len(missing)} 个）。那块几何在游戏里会跟着别的骨走。"
+            + _coverage_outs(missing))
 
 
 def critical_coverage_note(source_names, remap, target_bones):
@@ -2798,11 +2798,9 @@ def critical_coverage_note(source_names, remap, target_bones):
                if name in CRITICAL_SOFT_BONES]
     if not missing:
         return None
-    return ("以下关节没有权重，**没有拦**你导出：" + "、".join(missing)
-            + "。body 网格通常不含头（头是独立部件），MMD 的脚尖也一律不刷权重，"
-              "这两处缺权重多半没有几何要跟，不影响画面。"
-              "只有当这块几何确实该跟着它动时才需要处理（比如身体网格里带了帽子或头发）："
-            + _coverage_outs(missing))
+    return ("以下关节没有权重（未拦截）：" + "、".join(missing)
+            + "。body 网格通常不含头，MMD 的脚尖也不刷权重，这两处一般没有几何要跟。"
+              "身体网格里带了帽子或头发才需要处理，用「从相邻骨劈权重」。")
 
 
 def redistribute_family_weight(author, vanilla, missing):
@@ -3022,10 +3020,9 @@ def inverted_mesh_error(volume, threshold=1e-6):
     if value >= -abs(threshold):
         return None
     return (f"网格的面朝向反了（有符号体积 {value:+.4f} m³，正常应为正）。"
-            "沿 X 镜像后应用缩放会反转全部面的绕序，进游戏被背面剔除，看到的是衣服内壁 —— "
-            "带尖角的破碎片、能看穿。修法：编辑模式全选 → **Alt+N → 翻转**。"
-            "注意不是 Shift+N「重算外侧」：这个模型带自定义拆分法线，重算只修绕序、"
-            "不动自定义法线，着色仍然是错的。")
+            "进游戏会被背面剔除，看到的是衣服内壁。"
+            "修法：编辑模式全选 → Alt+N → 翻转（不是 Shift+N「重算外侧」，"
+            "带自定义拆分法线的模型重算修不干净）。")
 
 
 def orphaned_subtree_merges(mapping, new_bones, parent_of):
@@ -3050,22 +3047,12 @@ def orphaned_subtree_error(orphans, limit=8):
     if not orphans:
         return None
     detail = "、".join(f"{parent}→{child}" for parent, child in orphans[:limit])
-    return (f"{len(orphans)} 处：源骨被并进游戏的衣物骨，但它的子骨还留在 mod 骨架里"
+    return (f"{len(orphans)} 根源骨被并进游戏的衣物骨，但它们的子骨还留在 mod 骨架里"
             f"（{detail}" + ("…" if len(orphans) > limit else "") + "）。"
-            "并进去等于这根骨从骨架里消失、整支子树被重挂到那根游戏骨下面 —— 那根骨长在"
-            "原版服装的位置、由原版物理驱动，一动就把这支几何拽走，而静止画面完全正常。"
-            "两条出路：把这几根骨改成和它子骨同一种处理（自建摇物链 / 原版布料驱动器），"
-            "或者把整条链一起并过去（连子骨也并）。")
+            "整支子树会被重挂到那根游戏骨下面，由原版物理驱动，一动就被拽走。"
+            "改法：把这几根骨改成和它子骨同一种处理，或者把整条链一起并过去。")
 
 
-# 结构组是按骨架拓扑分的，一组能装下**互不相干的两件衣服**：实测一行 177 根，同时装着
-# 大半条裙子和全部经文；另一行 37 根，混了第 2/13 列裙骨和裙带。作者在这种行上点一次
-# 「跟裙摆」，误伤 4 根裙骨、炸掉三分之一的裙子，而他以为自己只点了一条链。
-#
-# **按行有多大判是错的**：整条裙子 192 根同族骨下一个指令完全正常，按大小拦等于误伤。
-# 判据是这一行**横跨了几个骨族**——族名 = 骨名去掉尾部的编号段。实测六个样本全部分对：
-#   坏：{经文, スカート}(177)、{经文, スカート, 裙带}(37)
-#   好：{スカート}(192)、{裙飘带}(21)、{3袖子}(5)
 _FAMILY_TAIL = re.compile(r"(?:[._\-]?\d+)+$")
 # 左右后缀不是"另一件衣服"。第一版漏了这条，`蝴蝶结 / 蝴蝶结.R / 蝴蝶结.L / 蝴蝶结带.L /
 # 蝴蝶结带.R` 被判成横跨 5 族，硬拦住一个完全正常的蝴蝶结 —— 典型的闸门瞄错。
@@ -3124,11 +3111,10 @@ def mixed_family_directive_error(mixed, show=4):
     detail = "；".join(f"{name} 横跨 {len(families)} 族（{'、'.join(families[:4])}"
                        + ("…" if len(families) > 4 else "") + "）"
                        for name, families in mixed[:show])
-    return (f"{len(mixed)} 行给**互不相干的几件衣服**一次性下了物理指令：{detail}"
+    return (f"{len(mixed)} 行的物理指令覆盖了多个骨族：{detail}"
             + ("…" if len(mixed) > show else "")
-            + "。结构组是按骨架拓扑分的，一组装得下两件衣服（实测一行 177 根 = 大半条裙子 + "
-              "全部经文）。在这种行上点一次策略，误伤的骨你看不见，画面上却是整片衣服飞出去。"
-              "先点「拆成逐根处理」看清这行到底管哪些骨，再分别下指令。")
+            + "。结构组按骨架拓扑分，一组可能装着两件不相干的衣服。"
+              "确认这是你要的；不是的话点「拆成逐根处理」分开下指令。")
 
 
 def mirrored_side_pairs(source_positions, target_positions):
@@ -3159,15 +3145,12 @@ def mirrored_side_error(source_positions, target_positions):
     if not flipped:
         return None
     detail = "、".join(f"{left}/{right}" for left, right in flipped)
-    return (f"{len(flipped)} 对左右骨装反了：{detail}。源骨的左右顺序和游戏骨相反——几何在 "
-            "+X，绑的却是 −X 那根骨。位置差和静止截图都看不出来（身体左右对称），进游戏一动"
-            "四肢就交叉。两种情形两条出路：\n"
-            "  · **这个文件是 v1.4.0 之前做的**（当初按旧坐标约定手动镜像过一次）→ 旧约定漏了"
-            "左右手系那次反射，现在补上了，那次手动镜像就成了多余的。回到未镜像的源模型重做，"
-            "并回阶段 1 重新导入参照体（旧参照体的左右也和现在相反）；\n"
-            "  · **只有个别骨对反了** → 「骨骼映射表」里把这几根改成对侧的游戏骨。\n"
-            "注意：从 mmd_tools / FBX 等标准导入器进来的模型**不需要任何镜像**，"
-            "直接就能对上。还报这条就说明这个文件带着旧约定的痕迹。")
+    return (f"{len(flipped)} 对左右骨装反了：{detail}。源骨的左右顺序和游戏骨相反，"
+            "进游戏一动四肢就交叉（静止截图和位置差都看不出来）。\n"
+            "  · 这个文件是 v1.4.0 之前做的、当初手动镜像过一次 → 回到未镜像的源模型重做，"
+            "并回阶段 1 重新导入参照体；\n"
+            "  · 只有个别骨对反了 → 「骨骼映射表」里改成对侧的游戏骨。\n"
+            "从 mmd_tools / FBX 进来的模型不需要任何镜像。")
 
 
 def rest_alignment(source_positions, target_positions, children=None, lengths=None):
@@ -3862,9 +3845,8 @@ def chain_blend_note(findings, limit=6):
     tail = f"，原版同部位 {baseline:.0%}" if baseline else ""
     return (f"{len(findings)} 条衣物链的跨节权重过渡带过薄：{detail}"
             + ("…" if len(findings) > limit else "") + tail
-            + "。这种权重一根骨一条硬边带、节与节之间没有过渡，静止完全正常（静止时蒙皮"
-              "恒等，权重再烂也精确复原），一动起来每个节界都会张口撕开。"
-              "修法在 Blender 侧：对这些链的顶点组做权重平滑，把过渡带做出来。")
+            + "。节与节之间没有权重过渡，一动起来接缝会张开。"
+              "修法：对这些链的顶点组做权重平滑。")
 
 
 def load_swing_presets(path=None):

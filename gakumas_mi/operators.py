@@ -1031,12 +1031,9 @@ def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
                    if item.get("driver")}
             missed = sorted(wanted_drivers - got)
             if missed:
-                raise ValueError(
-                    f"{len(missed)} 根骨点名走「原版布料驱动器」，但一根都没挂上："
-                    + "、".join(missed[:12]) + ("…" if len(missed) > 12 else "")
-                    + "。它们会静默退回摇物物理 —— 日志全绿、画面却不是你配的那套解算器。"
-                      "常见原因：这型驱动器不在 driver_presets.json 里，或者骨的左右判不出来"
-                      "（参考骨 Left/RightUpLeg 分左右）。")
+                _driver_note[0] = (
+                    f"{len(missed)} 根骨选了「原版布料驱动器」但没挂上，会退回摇物物理："
+                    + "、".join(missed[:12]) + ("…" if len(missed) > 12 else "") + "。")
         report["physicsInheritance"] = physics_report
     report["explicitBones"] = explicit
     report["bones"] = remap
@@ -1717,12 +1714,12 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
     inverted = core.inverted_mesh_error(_mesh_signed_volume(obj))
     if inverted:
         raise ValueError(inverted)
-    # 闸门 0.5：一行横跨多个骨族还下了物理指令 —— 结构组装得下两件衣服，误伤看不见。
-    mixed = core.mixed_family_directive_error(core.mixed_family_directive_rows(
-        [(_row_label(item), item.strategy, row_bones(item))
-         for item in getattr(scene, "gmi_bone_map", ())]))
-    if mixed:
-        raise ValueError(mixed)
+    # 一行横跨多个骨族还下了物理指令。**只提醒不拦**：这是对作者意图的猜测，不是确定的
+    # 缺陷 —— 作者可能真想让这一组一起动。误报过一次（一个蝴蝶结被判成横跨 5 族）。
+    _mixed_family_note[0] = core.mixed_family_directive_error(
+        core.mixed_family_directive_rows(
+            [(_row_label(item), item.strategy, row_bones(item))
+             for item in getattr(scene, "gmi_bone_map", ())]))
     remap, remap_report = _resolve_source_bone_remap(obj, bone_map, scene, skeleton)
     # 闸门 0.8：并进游戏衣物骨、子骨却还留在 mod 骨架里 → 整支子树被外来物理拽走。
     orphans = core.orphaned_subtree_error(core.orphaned_subtree_merges(
@@ -1776,7 +1773,7 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
     new_bone_report = (remap_report.get("newBones") or {}) if isinstance(remap_report, dict) else {}
     empty_error = core.empty_swing_chain_error(new_bone_report.get("emptyChains"))
     if empty_error:
-        raise ValueError(empty_error)
+        _empty_chain_note[0] = empty_error      # 空链只是白建，不损坏包，不拦
     pending_bake = [name for item in getattr(scene, "gmi_bone_map", ())
                     if item.strategy == "bake" for name in row_bones(item)]
     if pending_bake and not obj.get("gmi_baked_rest_offset"):
@@ -1788,7 +1785,8 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
     driver_gaps = _form_driver_gaps(scene)
     if driver_gaps:
         sample = "、".join(f"{name}（{category}）" for name, category in driver_gaps[:8])
-        raise ValueError(
+        # 只提醒不拦：后果是"这几根骨不会动"，可见、可恢复，不是废包
+        _driver_note[0] = (
             f"{len(driver_gaps)} 根骨选了「原版布料驱动器」，但它们的部件类型没有对应的驱动器："
             + sample + ("…" if len(driver_gaps) > 8 else "")
             + f"。运行时只实现了 {'/'.join(core.DRIVER_CATEGORIES)} 三类"
@@ -2608,6 +2606,9 @@ class GMI_OT_export_bundle_source(Operator):
             # 坏绑定导出侧补不了，所以只能大声警告并让作者回上游重做 prep。
             if data.get("anchor_only_note"):
                 self.report({"WARNING"}, data["anchor_only_note"])
+            for note in (_mixed_family_note[0], _empty_chain_note[0], _driver_note[0]):
+                if note:
+                    self.report({"WARNING"}, note)
             if _coverage_soft_note[0]:
                 self.report({"WARNING"}, _coverage_soft_note[0])
             if _orientation_soft_note[0]:
@@ -3279,6 +3280,9 @@ def _collect_rest_alignment(obj, armature, skeleton, remap, body_bones):
 # 朝向闸门降黄条之后要有地方把话说出去：raise 那条路没了，作者就什么都看不到。
 _orientation_soft_note = [None]
 _coverage_soft_note = [None]
+_mixed_family_note = [None]
+_empty_chain_note = [None]
+_driver_note = [None]
 
 
 def _error_text(exc):
@@ -3371,13 +3375,11 @@ def _rest_orientation_error(obj, skeleton, remap, report):
     soft = [row for row in over if row["deg"] < core.ORIENTATION_BLOCK_DEG]
     if soft:
         _orientation_soft_note[0] = (
-            f"{len(soft)} 根骨的静止朝向在 {core.ORIENTATION_FAIL_DEG:.0f}°~"
-            f"{core.ORIENTATION_BLOCK_DEG:.0f}° 之间，**没有拦**你导出："
+            f"{len(soft)} 根骨的静止朝向差 {core.ORIENTATION_FAIL_DEG:.0f}°~"
+            f"{core.ORIENTATION_BLOCK_DEG:.0f}°（未拦截）："
             + "、".join(f"{row['bone']} {row['deg']:.0f}°(对 {row['child']})"
                         for row in soft[:6])
-            + ("…" if len(soft) > 6 else "")
-            + "。这一段没有实测背书：验过的坏样本是 52°~172°，验过的正常样本是 0°~7°，"
-              "中间这段谁也没验过。进游戏转身看看这几处，觉得不对再回来摆。")
+            + ("…" if len(soft) > 6 else "") + "。")
     else:
         _orientation_soft_note[0] = None
     if not bad:
