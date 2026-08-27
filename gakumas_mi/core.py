@@ -3716,11 +3716,25 @@ def build_accessory_physics_remap(
             continue
 
         if directive == "follow_nearest":
-            candidate, distance_sq = nearest(centroid(names))
-            if candidate is not None and distance_sq <= max_distance_sq:
-                for name in names:
-                    mapping[name] = candidate
-                    strategies[name] = "override_nearest"
+            # 和裙摆那条路径同一个规矩：一组里有多条链（一圈裙板、左右成对的挂件）就**逐骨**
+            # 蹭自己最近的；整组只有一条链才按质心蹭（一条飘带逐节各找各的会被扯断）。
+            # 拿质心去蹭一整组，左右对称时质心落在中线，整组会一起绑到同一侧
+            # —— 胸骨那条就是这么把左胸绑到 RightBust1_S 上的。
+            parcels = ([(name, source[name]) for name in names] if kind == "segment"
+                       else [(list(names), centroid(names))])
+            resolved = []
+            for owner, position in parcels:
+                batch = [owner] if isinstance(owner, str) else owner
+                candidate, distance_sq = nearest(position)
+                if candidate is None or distance_sq > max_distance_sq:
+                    resolved = None
+                    break
+                resolved.append((batch, candidate))
+            if resolved:
+                for batch, candidate in resolved:
+                    for name in batch:
+                        mapping[name] = candidate
+                        strategies[name] = "override_nearest"
                 continue
             directive = "rigid"
 
@@ -3733,9 +3747,15 @@ def build_accessory_physics_remap(
         if directive is None and any(
                 any(token in name.lower() for token in ("胸", "bust", "chest"))
                 for name in names):
-            candidate = bust_target(centroid(names))
-            if candidate is not None:
-                for name in names:
+            # **逐骨蹭自己最近的那根，不能用整组质心。** 一个结构组里通常左右胸都在
+            # （实测 `上半身2|L1` 一组 17 根，含 胸上.L/胸下.L/胸上.R/胸下.R），
+            # 左右对称的质心落在 x≈0，`nearest` 只能靠浮点尾数二选一，于是整组——
+            # 左胸也在内——全绑到同一侧的 Bust 骨上。裙摆那条路径早就改成逐骨了，
+            # 这里漏了（实测 胸上2.L 离 LeftBust1_S 74.5mm、离 RightBust1_S 135.0mm，
+            # 逐骨判一点都不含糊，按质心判就翻到了右边）。
+            picked = {name: bust_target(source[name]) for name in names}
+            if all(picked.values()):
+                for name, candidate in picked.items():
                     mapping[name] = candidate
                     strategies[name] = "name_bust"
                 continue

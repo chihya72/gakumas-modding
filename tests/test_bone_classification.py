@@ -527,3 +527,54 @@ def test_driver_coefficients_scale_by_chain_length():
         assert core.scale_driver_coefficients(b2, *args) == 1.0
         assert b2["vectors"]["outerCoefficient"] == [1.0, 1.0, 1.0]
         assert "linkScale" not in b2
+
+
+def test_bust_matches_per_bone_not_group_centroid():
+    """胸骨逐骨蹭自己最近的那根，不能用整组质心。
+
+    一个结构组里通常左右胸都在（实测 `上半身2|L1` 一组 17 根，含 胸上.L/.R、胸下.L/.R）。
+    左右对称的质心落在 x≈0，只能靠浮点尾数二选一 —— 于是左胸也被绑到 RightBust1_S。
+    逐骨判一点都不含糊：胸上2.L 离 LeftBust1_S 74.5mm、离 RightBust1_S 135.0mm。
+    """
+    parents = {"上半身2": None, "胸上2.L": "上半身2", "胸上2.R": "上半身2"}
+    source = [{"name": "胸上2.L", "position": [-0.0551, 1.2875, 0.0795]},
+              {"name": "胸上2.R", "position": [0.0555, 1.2875, 0.0796]}]
+    target = [{"name": "LeftBust1_S", "position": [-0.0575, 1.2815, 0.0053]},
+              {"name": "RightBust1_S", "position": [0.0575, 1.2815, 0.0053]}]
+    report = core.build_accessory_physics_remap(
+        source, target, ["胸上2.L", "胸上2.R"], parent_by_name=parents,
+        body_remap={"上半身2": "Spine1"},
+        group_by_name={"胸上2.L": "上半身2|L1", "胸上2.R": "上半身2|L1"})  # 同一组
+    assert report["bones"]["胸上2.L"] == "LeftBust1_S", report["bones"]
+    assert report["bones"]["胸上2.R"] == "RightBust1_S", report["bones"]
+    assert set(report["strategies"].values()) == {"name_bust"}
+
+
+def test_follow_nearest_matches_per_bone_when_group_has_several_chains():
+    """「跟随最近骨骼」也要按链分档：一组多条链逐骨蹭，单链才按质心蹭。
+
+    整组一个质心的话，左右成对的挂件会一起绑到同一侧（胸骨那条就是这么翻的）；
+    而一条飘带逐节各找各的又会被扯断 —— 所以判据是组里有几条链，不是骨有几根。
+    """
+    target = [{"name": "LeftSkirt1_S", "position": [-0.2, 0.9, 0.0]},
+              {"name": "RightSkirt1_S", "position": [0.2, 0.9, 0.0]}]
+    # 两条独立的链（各自的父都不在组里）→ 逐骨
+    pair_parents = {"Hips": None, "挂件.L": "Hips", "挂件.R": "Hips"}
+    pair = core.build_accessory_physics_remap(
+        [{"name": "挂件.L", "position": [-0.19, 0.9, 0.0]},
+         {"name": "挂件.R", "position": [0.19, 0.9, 0.0]}],
+        target, ["挂件.L", "挂件.R"], parent_by_name=pair_parents,
+        body_remap={"Hips": "Hips"},
+        group_by_name={"挂件.L": "Hips|L1", "挂件.R": "Hips|L1"},
+        overrides={"挂件.L": "follow_nearest", "挂件.R": "follow_nearest"})
+    assert pair["bones"] == {"挂件.L": "LeftSkirt1_S", "挂件.R": "RightSkirt1_S"}, pair["bones"]
+    # 整组只有一条链 → 仍按质心，整条链绑同一根（飘带不该被扯断）
+    chain_parents = {"Hips": None, "带0": "Hips", "带1": "带0"}
+    chain = core.build_accessory_physics_remap(
+        [{"name": "带0", "position": [-0.20, 0.91, 0.0]},
+         {"name": "带1", "position": [-0.20, 0.89, 0.0]}],
+        target, ["带0", "带1"], parent_by_name=chain_parents,
+        body_remap={"Hips": "Hips"},
+        group_by_name={"带0": "Hips|L2", "带1": "Hips|L2"},
+        overrides={"带0": "follow_nearest"})
+    assert len(set(chain["bones"].values())) == 1, chain["bones"]
