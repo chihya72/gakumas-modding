@@ -3391,96 +3391,6 @@ def _rest_orientation_error(obj, skeleton, remap, report):
               "摆到游戏骨的朝向上（点「量对齐 / 跨关节带」逐骨看差多少），再导出。")
 
 
-def mirror_mesh_x(mesh):
-    """把一个网格沿 X 镜像：顶点、全部形态键、绕序、自定义拆分法线。
-
-    **自定义法线必须按 `(面号, 顶点号)` 对号，不能按 loop 顺序。** `flip_normals()` 反转
-    绕序时会把每个面内部的 loop 顺序也反过来；拿反转前的 loop 顺序写回，等于把每个角的
-    法线安到别的角上 —— 静止画面看着"法线还是朝外的"，实际是 90% 的共享顶点法线分裂，
-    进游戏就是整片三角面阴影。这个坑实测踩过一次（91092 个共享顶点全裂）。
-    """
-    pre = None
-    if mesh.has_custom_normals:
-        pre = {(polygon.index, mesh.loops[loop].vertex_index): tuple(mesh.loops[loop].normal)
-               for polygon in mesh.polygons for loop in polygon.loop_indices}
-    for vertex in mesh.vertices:
-        vertex.co.x = -vertex.co.x
-    if mesh.shape_keys:
-        for block in mesh.shape_keys.key_blocks:
-            for point in block.data:
-                point.co.x = -point.co.x
-    mesh.flip_normals()          # 镜像翻了面朝向，反转绕序翻回来
-    if pre is not None:
-        normals = [None] * len(mesh.loops)
-        for polygon in mesh.polygons:
-            for loop in polygon.loop_indices:
-                n = pre[(polygon.index, mesh.loops[loop].vertex_index)]
-                normals[loop] = (-n[0], n[1], n[2])
-        mesh.normals_split_custom_set(normals)
-    mesh.update()
-
-
-def mirror_armature_x(armature_object):
-    """把骨架沿 X 镜像：编辑模式直接改 head/tail/roll，不碰物体变换。
-
-    **不能用「选中物体 → S X -1 → 应用缩放」**：作者网格通常是骨架的子物体，父子变换
-    互相抵消，做偶数次等于没做。实测作者手动做了三次，净效果为零。
-    """
-    previous = bpy.context.view_layer.objects.active
-    bpy.context.view_layer.objects.active = armature_object
-    bpy.ops.object.mode_set(mode="EDIT")
-    try:
-        for bone in armature_object.data.edit_bones:
-            head, tail, roll = bone.head.copy(), bone.tail.copy(), bone.roll
-            bone.head = (-head.x, head.y, head.z)
-            bone.tail = (-tail.x, tail.y, tail.z)
-            bone.roll = -roll
-    finally:
-        bpy.ops.object.mode_set(mode="OBJECT")
-        bpy.context.view_layer.objects.active = previous
-
-
-class GMI_OT_mirror_model(Operator):
-    bl_idname = "gmi.mirror_model"
-    bl_label = "沿 X 镜像整个模型"
-    bl_options = {"REGISTER", "UNDO"}
-    bl_description = ("把作者网格和它的骨架一起沿 X 镜像。走标准导入器进来的源（MMD / FBX /"
-                      "各种 rip）左右都和游戏参照骨架相反，必须镜像一次。"
-                      "直接改数据，不用物体缩放——网格是骨架的子物体时，"
-                      "「选中两个 → S X -1 → 应用缩放」父子会互相抵消，做几次都等于没做")
-
-    def execute(self, context):
-        scene = context.scene
-        obj = _author_mesh(context)
-        if not obj or obj.type != "MESH":
-            self.report({"ERROR"}, "请先在阶段 2 选好作者网格")
-            return {"CANCELLED"}
-        armature = next((modifier.object for modifier in obj.modifiers
-                         if modifier.type == "ARMATURE" and modifier.object), None)
-        if armature is None:
-            self.report({"ERROR"}, "作者网格没有骨架修改器，镜像了骨架也跟不上")
-            return {"CANCELLED"}
-        # 同一副骨架驱动的网格要一起镜像（发型 + 发饰这种），否则剩下的那个就分家了
-        meshes = [item for item in bpy.data.objects
-                  if item.type == "MESH" and any(
-                      modifier.type == "ARMATURE" and modifier.object is armature
-                      for modifier in item.modifiers)]
-        try:
-            for item in meshes:
-                mirror_mesh_x(item.data)
-            mirror_armature_x(armature)
-        except Exception as exc:
-            self.report({"ERROR"}, _error_text(exc))
-            return {"CANCELLED"}
-        names = "、".join(item.name for item in meshes[:3])
-        self.report({"INFO"},
-                    f"已沿 X 镜像：骨架 {armature.name}，网格 {len(meshes)} 个（{names}"
-                    + ("…" if len(meshes) > 3 else "")
-                    + "）。顶点、形态键、绕序、自定义法线都处理了；"
-                      "再点一次就镜像回去。回到导出页重跑闸门确认")
-        return {"FINISHED"}
-
-
 class GMI_OT_split_weight_from_neighbours(Operator):
     bl_idname = "gmi.split_weight_from_neighbours"
     bl_label = "从相邻骨劈权重"
@@ -3939,7 +3849,6 @@ CLASSES = (
     GMI_OT_build_bone_map,
     GMI_OT_split_bone_group,
     GMI_OT_report_rig_alignment,
-    GMI_OT_mirror_model,
     GMI_OT_split_weight_from_neighbours,
     GMI_OT_bake_rest_offset,
     GMI_OT_show_bone_weights,
