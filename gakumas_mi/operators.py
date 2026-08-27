@@ -1731,10 +1731,12 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
             raise ValueError(mirror_error)
     # 硬闸门:承重关节零权重就别导了。这类错误静止完全看不出、进游戏才炸,
     # 而位置匹配永远能返回一个骨名,所以不拦就是静默出废品。
-    coverage_error = core.critical_coverage_error(
-        [name for name, _mass in _weighted_group_mass(obj)], remap, bone_map)
+    weighted_names = [name for name, _mass in _weighted_group_mass(obj)]
+    coverage_error = core.critical_coverage_error(weighted_names, remap, bone_map)
     if coverage_error:
         raise ValueError(coverage_error)
+    # Head / 脚尖只提醒不拦：body 网格通常没有几何要跟它们（见 core.CRITICAL_SOFT_BONES）
+    _coverage_soft_note[0] = core.critical_coverage_note(weighted_names, remap, bone_map)
     # 闸门 9（五档）：`reject` = 作者说这根骨处理不了 → 禁止导出；`bake` 没烘就导出等于
     # 把"会跳位"的几何原样出包，所以也拦。两条都点名具体的骨，不给"哪里错了自己找"。
     rejected = [name for item in getattr(scene, "gmi_bone_map", ())
@@ -2577,6 +2579,8 @@ class GMI_OT_export_bundle_source(Operator):
             # 坏绑定导出侧补不了，所以只能大声警告并让作者回上游重做 prep。
             if data.get("anchor_only_note"):
                 self.report({"WARNING"}, data["anchor_only_note"])
+            if _coverage_soft_note[0]:
+                self.report({"WARNING"}, _coverage_soft_note[0])
             if _orientation_soft_note[0]:
                 self.report({"WARNING"}, _orientation_soft_note[0])
             if data.get("chain_blend_note"):
@@ -3243,6 +3247,7 @@ def _collect_rest_alignment(obj, armature, skeleton, remap, body_bones):
 
 # 朝向闸门降黄条之后要有地方把话说出去：raise 那条路没了，作者就什么都看不到。
 _orientation_soft_note = [None]
+_coverage_soft_note = [None]
 
 
 def _mesh_signed_volume(obj):
@@ -3314,21 +3319,21 @@ def _rest_orientation_error(obj, skeleton, remap, report):
         return None
     rows = core.rest_alignment(*_collect_rest_alignment(
         obj, armature, skeleton, remap, report.get("bodyBones") or []))
-    # 红只留给**单子骨**链：肩差 172° 那个实机坐实的坏样本就是单子骨，方向没有第二个
-    # 参照可以交叉验证，判错的代价远小于放过。子骨 ≥2 根时中位数已经能自我校验，
-    # 剩下的偏差多半是某一根子骨自己的位置差（拇指那种），降成黄条 + 留痕，不拦导出。
+    # 只拦有实测背书的那一段（≥45°，坏样本实测 52°~172°）。15°~45° 是 7° 与 52° 之间
+    # 那个从没验证过的空档，报黄条 + 留痕，不拦 —— 见 core.ORIENTATION_BLOCK_DEG。
     over = [row for row in rows
             if row["deg"] is not None and row["deg"] >= core.ORIENTATION_FAIL_DEG]
-    bad = [row for row in over if int(row.get("children") or 1) < 2]
-    soft = [row for row in over if int(row.get("children") or 1) >= 2]
+    bad = [row for row in over if row["deg"] >= core.ORIENTATION_BLOCK_DEG]
+    soft = [row for row in over if row["deg"] < core.ORIENTATION_BLOCK_DEG]
     if soft:
         _orientation_soft_note[0] = (
-            f"{len(soft)} 根骨的静止朝向超阈值但**没有拦**（子骨 ≥2 根，中位数判据）："
+            f"{len(soft)} 根骨的静止朝向在 {core.ORIENTATION_FAIL_DEG:.0f}°~"
+            f"{core.ORIENTATION_BLOCK_DEG:.0f}° 之间，**没有拦**你导出："
             + "、".join(f"{row['bone']} {row['deg']:.0f}°(对 {row['child']})"
                         for row in soft[:6])
             + ("…" if len(soft) > 6 else "")
-            + "。多半是那根子骨自己的位置差，不是本骨转了；真转了的话所有子骨会一起偏。"
-              "进游戏留意这几处，觉得不对再回来摆。")
+            + "。这一段没有实测背书：验过的坏样本是 52°~172°，验过的正常样本是 0°~7°，"
+              "中间这段谁也没验过。进游戏转身看看这几处，觉得不对再回来摆。")
     else:
         _orientation_soft_note[0] = None
     if not bad:

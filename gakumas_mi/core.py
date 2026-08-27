@@ -2717,6 +2717,15 @@ CRITICAL_TARGET_BONES = (
     "RightShoulder", "RightArm", "RightForeArm", "RightHand",
     "RightUpLeg", "RightLeg", "RightFoot", "RightToeBase",
 )
+# 这三根**不硬拦**，只提醒。闸门的前提是"那块几何会跟着别的骨乱跑"，而它成立要有
+# **那块几何**——这三根在 body 网格上通常根本没有几何要跟：
+#   Head      body 网格不含头（头是独立部件）。实测两个 MMD 源：一个颈线以上 0 顶点；
+#             一个有 3456 个顶点，但全是立领和领带（材质「服」「领带」），主导骨是
+#             上半身2 和 首 —— 领子本来就该跟脖子和胸，不该跟头。
+#   *ToeBase  MMD 的 つま先 一律不刷权重，脚全压在 足首 上。缺了脚尖不会弯，
+#             原版 ToeBase 占 2.07% —— 是观感损失，不是"几何乱飞"。
+# 硬拦留给四肢和脊椎：那里缺权重才真的是整条胳膊钉在 Spine1 上（实机坐实过的那个）。
+CRITICAL_SOFT_BONES = frozenset({"Head", "LeftToeBase", "RightToeBase"})
 
 
 def missing_critical_bones(source_names, remap, target_bones):
@@ -2727,25 +2736,41 @@ def missing_critical_bones(source_names, remap, target_bones):
             if name in target and name not in hit]
 
 
+def _coverage_outs(missing):
+    return ("两种情形两条出路：\n"
+            "  · 源模型**有**这根骨、只是名字没认出来 → 导出面板「骨骼映射表」里指定；\n"
+            "  · 源模型**根本没有**这根骨（MMD/Biped 常见）→ 点「从相邻骨劈权重」，"
+            "按原版身体的权重分布从旁边那圈骨里劈出来。")
+
+
 def critical_coverage_error(source_names, remap, target_bones):
-    """承重关节零权重 → 返回报错文案，正常返回 None。
+    """**四肢/脊椎**的承重关节零权重 → 返回报错文案，正常返回 None。
 
     不猜源骨语义，只查游戏侧的胳膊腿有没有拿到权重，所以对任何命名规范都适用；
     与目标骨架取交集，骨很少的测试/局部骨架不会误报。位置匹配永远能返回一个骨名，
     不拦就是静默出废品——这是唯一便宜且可靠的拦法。
+    Head / 脚尖走 `critical_coverage_note`，只提醒不拦（见 CRITICAL_SOFT_BONES）。
     """
-    missing = missing_critical_bones(source_names, remap, target_bones)
+    missing = [name for name in missing_critical_bones(source_names, remap, target_bones)
+               if name not in CRITICAL_SOFT_BONES]
     if not missing:
         return None
-    # 两条出路必须都给：**骨存在但没认出来**去表单指定；**骨压根不存在**（MMD/Biped 没有
-    # 锁骨、Head 直接挂 Spine2）在表单里永远找不到，那种只能从相邻骨劈权重。
-    # 只写前一条的话，作者按提示去找一个不存在的东西，卡死。
     return ("以下承重关节没有拿到任何权重：" + "、".join(missing)
             + f"（共 {len(missing)} 个）。这样导出进游戏，那块几何会跟着别的骨乱跑"
-              "（实测：整只手 100% 钉在 Spine1）。两种情形两条出路：\n"
-              "  · 源模型**有**这根骨、只是名字没认出来 → 导出面板「骨骼映射表」里指定；\n"
-              "  · 源模型**根本没有**这根骨（MMD/Biped 常见）→ 点「从相邻骨劈权重」，"
-              "按原版身体的权重分布从旁边那圈骨里劈出来。")
+              "（实测：整只手 100% 钉在 Spine1）。" + _coverage_outs(missing))
+
+
+def critical_coverage_note(source_names, remap, target_bones):
+    """Head / 脚尖零权重 → 返回提醒文案（不拦导出），正常返回 None。"""
+    missing = [name for name in missing_critical_bones(source_names, remap, target_bones)
+               if name in CRITICAL_SOFT_BONES]
+    if not missing:
+        return None
+    return ("以下关节没有权重，**没有拦**你导出：" + "、".join(missing)
+            + "。body 网格通常不含头（头是独立部件），MMD 的脚尖也一律不刷权重，"
+              "这两处缺权重多半没有几何要跟，不影响画面。"
+              "只有当这块几何确实该跟着它动时才需要处理（比如身体网格里带了帽子或头发）："
+            + _coverage_outs(missing))
 
 
 def redistribute_family_weight(author, vanilla, missing):
@@ -2861,6 +2886,14 @@ def weight_sum_errors(sums, tolerance=1e-3):
 # 阈值有实测背书：烘对了的包 39 根人形骨残差全 0.0°；坏样本 52°~172°，而"腿/躯干看着正常"
 # 那一档是 7°。
 ORIENTATION_WARN_DEG, ORIENTATION_FAIL_DEG = 5.0, 15.0
+# **硬拦**的门槛比判红高得多，因为 15° 那个数没有数据背书：
+#   实测烘对了的包 39 根人形骨残差全 0.0°；"腿/躯干看着正常"那一档是 7°；
+#   实测坏样本是 52°~172°（肩 172° → 手臂转到身后、手指拉成面条）。
+#   7° 和 52° 之间**从来没有人验证过**，15° 是当初在空档里挑的一个中间数。
+# 拿一个没验证过的数去硬拦，代价是作者被卡在一个谁也不知道要不要修的问题上
+# （实测：拇指 26°、肩 21° —— 正好落在空档里）。所以：拦只拦有实测背书的那一段，
+# 空档里报黄条 + 留痕，让作者自己看画面决定。
+ORIENTATION_BLOCK_DEG = 45.0
 # 参考向量退化的子骨不量朝向。MMD 有 44 根源骨映射到 Hips（腰/下半身/一堆 IK/裙飘带），
 # `_collect_rest_alignment` 按目标骨建字典是后写覆盖，赢的那根离 Spine 源骨只有 3.5mm，
 # 游戏侧 75.1mm —— 3.5mm 的向量量出来的方向是噪声，判出 35° 是假阳性（模型没毛病）。
