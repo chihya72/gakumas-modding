@@ -273,24 +273,37 @@ def test_mixed_family_directive_row_is_caught():
     """结构组装得下互不相干的两件衣服：实测一行 177 根 = 大半条裙子 + 全部经文。
 
     判据是**横跨几个骨族**，不是行有多大 —— 整条裙子 192 根同族骨下一个指令完全正常，
-    按大小拦就会误伤它（这正是"闸门瞄错地方"的典型）。
+    按大小拦就会误伤它。族名去掉尾部编号段和左右后缀；互为前缀的族并成一组。
     """
     assert core.bone_family("スカート_0_0") == "スカート"
     assert core.bone_family("经文3_3_1") == "经文"
-    assert core.bone_family("裙飘带1_6_2") == "裙飘带"
-    assert core.bone_family("3袖子_0_1") == "3袖子"      # 前导数字不是编号段
+    assert core.bone_family("3袖子_0_1") == "3袖子"          # 前导数字不是编号段
+    assert core.bone_family("蝴蝶结带.L") == "蝴蝶结带"        # 左右后缀不是另一件衣服
+    assert core.bone_family("左腕") == core.bone_family("右腕") == "腕"
+    # `蝴蝶结` 与 `蝴蝶结带` 互为前缀 = 同一件饰品；`裙带` 与 `裙飘带` 只是共享 `裙`，不是
+    assert core.family_groups(["蝴蝶结", "蝴蝶结带"]) == ["蝴蝶结"]
+    assert sorted(core.family_groups(["裙带", "裙飘带"])) == ["裙带", "裙飘带"]
+
+    skirt = ["スカート_%d_%d" % (r, c) for r in range(12) for c in range(16)]
     rows = [
-        ("经文3_3_1 等", "integrate", ["经文3_3_1", "经文2_1_1", "スカート_0_14"]),
-        ("经文1_7_1 等", "integrate", ["经文1_7_1", "スカート_3_2", "裙带_0_1"]),
-        ("スカート_0_0 等", "native_driver",
-         ["スカート_%d_%d" % (r, c) for r in range(12) for c in range(16)]),  # 192 根同族
-        ("裙飘带1_6_2 等", "follow_nearest", ["裙飘带1_6_2", "裙飘带1_0_0"]),
-        ("混族但没下指令", "auto", ["スカート_0_0", "经文1_0_1"]),
+        ("经文3_3_1 等", "integrate", ["经文3_%d_1" % i for i in range(12)] + skirt[:165]),
+        ("经文1_7_1 等", "integrate",
+         ["经文1_%d_1" % i for i in range(11)] + ["裙带_0_1"] + skirt[:25]),
+        ("スカート_0_0 等", "native_driver", skirt),          # 192 根同族，必须放行
+        ("裙飘带1_6_2 等", "follow_nearest",
+         ["裙飘带1_%d_%d" % (a, b) for a in range(7) for b in range(3)]),
+        ("混族但没下指令", "auto", ["スカート_0_0", "经文1_0_1"] * 8),
+        # 实测误报：一个蝴蝶结 5 根骨被判成横跨 5 族，硬拦住一个完全正常的饰品
+        ("蝴蝶结 等", "integrate",
+         ["蝴蝶结", "蝴蝶结.R", "蝴蝶结.L", "蝴蝶结带.L", "蝴蝶结带.R"]),
     ]
     mixed = core.mixed_family_directive_rows(rows)
     assert [name for name, _f in mixed] == ["经文3_3_1 等", "经文1_7_1 等"]
     assert core.mixed_family_directive_error(mixed) is not None
     assert core.mixed_family_directive_error([]) is None
+    # 骨太少的行一律不拦：成员在面板里一眼看得完，硬拦的代价大于收益
+    tiny = [("小混族", "integrate", ["スカート_0_0", "经文1_0_1", "裙带_0_1"])]
+    assert core.mixed_family_directive_rows(tiny) == []
 
 
 def test_chain_blend_ruler_flags_hard_edged_weights():

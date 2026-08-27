@@ -3002,28 +3002,54 @@ def orphaned_subtree_error(orphans, limit=8):
 #   坏：{经文, スカート}(177)、{经文, スカート, 裙带}(37)
 #   好：{スカート}(192)、{裙飘带}(21)、{3袖子}(5)
 _FAMILY_TAIL = re.compile(r"(?:[._\-]?\d+)+$")
+# 左右后缀不是"另一件衣服"。第一版漏了这条，`蝴蝶结 / 蝴蝶结.R / 蝴蝶结.L / 蝴蝶结带.L /
+# 蝴蝶结带.R` 被判成横跨 5 族，硬拦住一个完全正常的蝴蝶结 —— 典型的闸门瞄错。
+_FAMILY_SIDE = re.compile(r"[._\-](?:l|r)$", re.IGNORECASE)
+# 一行少于这么多骨就不判：作者在面板里能把成员一眼看完，误配是看得见的。
+# 实测有害的两行是 177 根和 37 根；蝴蝶结那行只有 5 根。硬拦要给足余量。
+MIXED_FAMILY_MIN_BONES = 8
 
 
 def bone_family(name):
-    """骨族名：去掉尾部所有编号段。`スカート_0_0`→`スカート`，`经文3_3_1`→`经文`。"""
+    """骨族名：去掉尾部编号段和左右后缀。`スカート_0_0`→`スカート`，`蝴蝶结带.L`→`蝴蝶结带`。"""
     text = str(name or "")
     while True:
-        stripped = _FAMILY_TAIL.sub("", text)
+        stripped = _FAMILY_SIDE.sub("", _FAMILY_TAIL.sub("", text))
+        if stripped.startswith(("左", "右")) and len(stripped) > 1:
+            stripped = stripped[1:]
+        elif stripped.endswith(("左", "右")) and len(stripped) > 1:
+            stripped = stripped[:-1]
         if stripped == text or not stripped:
             return text
         text = stripped
 
 
-def mixed_family_directive_rows(rows):
+def family_groups(families):
+    """把"一个是另一个前缀"的族并到一起 → [代表族名]。
+
+    `蝴蝶结` 与 `蝴蝶结带` 是同一件饰品的两截，不是两件衣服；而 `スカート` 与 `经文`
+    互不为前缀，是真的两件。注意判的是**互为前缀**不是"共同前缀"：`裙带` 与 `裙飘带`
+    共享 `裙` 但互不为前缀，仍算两族（实测它们确实是两件东西）。
+    """
+    ordered = sorted({str(f) for f in families or ()}, key=len)
+    roots = []
+    for family in ordered:
+        if not any(family.startswith(root) for root in roots):
+            roots.append(family)
+    return roots
+
+
+def mixed_family_directive_rows(rows, min_bones=MIXED_FAMILY_MIN_BONES):
     """下了物理指令、却横跨多个骨族的行 → [(行名, [族名…])]。`rows` = [(行名, 策略, [骨名…])]。"""
     directives = {"integrate", "native_driver", "follow_skirt", "follow_nearest", "bake"}
     out = []
     for name, strategy, bones in rows or ():
-        if strategy not in directives:
+        bones = list(bones or ())
+        if strategy not in directives or len(bones) < min_bones:
             continue
-        families = sorted({bone_family(b) for b in bones or ()})
-        if len(families) > 1:
-            out.append((name, families))
+        roots = family_groups(bone_family(b) for b in bones)
+        if len(roots) > 1:
+            out.append((name, roots))
     return out
 
 
