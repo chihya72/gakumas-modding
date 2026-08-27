@@ -399,9 +399,15 @@ def draw_rig_step(layout, scene, context):
         problem = _bone_problem(item)
         if problem:
             _draw_problems(detail, [problem])
-        detail.prop_search(item, "target", scene, "gmi_bone_targets", text="映射到游戏骨")
+        auto = item.auto_target.strip()
+        row = detail.row()
+        row.enabled = False
+        row.label(text=f"自动判定：{auto or '（无，需要你指定）'}"
+                       + ("　来自预设" if item.origin == "preset" and not item.target
+                          else "　按位置匹配" if auto and not item.target else ""))
+        detail.prop_search(item, "target", scene, "gmi_bone_targets", text="覆盖为")
         if item.target:
-            _note(detail, "已映射到身体骨；装饰处理选项已隐藏")
+            _note(detail, "手填的覆盖压过自动判定，装饰处理选项已隐藏；点右边 ✕ 回到自动判定")
         else:
             _note(detail, "不属于身体骨时，在下面选择一种装饰骨处理")
             detail.prop(item, "strategy", text="装饰处理")

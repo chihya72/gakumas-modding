@@ -848,9 +848,14 @@ def row_bones(item):
     return members or ([item.source] if item.source else [])
 
 
+def row_effective_target(item):
+    """这一行**实际生效**的目标骨：作者覆盖优先，没覆盖就用扫描时算出的自动判定。"""
+    return item.target.strip() or item.auto_target.strip()
+
+
 def _row_state(item):
     """一行（= 一组）的五档状态。一组多根骨指同一根目标骨 = 合并，不是 direct。"""
-    return core.row_state(item.target, item.strategy,
+    return core.row_state(row_effective_target(item), item.strategy,
                           shared_target=len(row_bones(item)) > 1)
 
 
@@ -3033,11 +3038,25 @@ class GMI_bone_map_item(bpy.types.PropertyGroup):
     # 一行 = 一组（结构分组的成员，换行分隔）。留空 = 这行只管 source 那一根骨。
     # 作者在一行上做的决定落到这一组的每一根骨；要逐根不同就按「拆开这一组」。
     members: bpy.props.StringProperty(options={"HIDDEN"})
+    # **表单只存作者的覆盖，不存自动判定的结果。**
+    #
+    # 以前 target 一个字段装三种东西：预设认出来的、位置匹配猜出来的、作者手填的。
+    # 三者混在一起带来两个不可修的毛病：
+    #   · 面板显示的不是导出用的 —— 位置匹配只在导出那一刻算，从来不进表单；
+    #   · 「重新扫描」按设计保住已填的行，于是**任何填错的值都永远修不掉**
+    #     （实测：一个按旧代码填错的 RightBust1_S，扫多少次都在，压住修好的算法）。
+    # 现在 target 只在作者亲手填过时才有值（`origin == "manual"`，由下面的回调打标），
+    # 自动判定的结果单独放 auto_target，只显示、不参与优先级、每次扫描重算。
     target: bpy.props.StringProperty(
-        name="目标骨",
-        description="填了就以此为准（优先级最高）；留空=交给自动判断（预设/装饰骨物理）",
+        name="覆盖为",
+        description="只在你要推翻自动判定时才填。留空 = 用自动判定的结果",
+        update=lambda self, context: setattr(
+            self, "origin", "manual" if self.target.strip() else ""),
     )
-    origin: bpy.props.StringProperty()          # preset / auto / ""
+    # 扫描时按「表单全空」算出来的结果，只读展示。它不进导出优先级 —— 导出永远现算，
+    # 所以这里就算过期也只影响显示，不会让包和面板对不上。
+    auto_target: bpy.props.StringProperty(options={"HIDDEN"})
+    origin: bpy.props.StringProperty()          # manual / preset / ""
     mass: bpy.props.FloatProperty()             # 该骨的权重占比 %
     # 几何全绑在链根、子骨是空的那种链（实测 Lace_R_A0 主导 97 顶点、Lace_R_Aend 0 个）：
     # 链根按原版是惰性锚，照拓扑出参数 = 装了摇物也不会动。勾上让链根按链中段的参数自己摆。
@@ -3134,7 +3153,11 @@ class GMI_OT_build_bone_map(Operator):
         except Exception as exc:
             self.report({"ERROR"}, _error_text(exc))
             return {"CANCELLED"}
-        kept = dict(_form_bone_map(scene))          # 保住作者已经填过的
+        # 只保住**作者亲手填过**的覆盖（origin == "manual"）。自动判定的值不再进 target，
+        # 所以扫描天然就能把算法改好后的结果带出来 —— 以前那些填错的值永远压在上面。
+        kept = {name: item.target.strip()
+                for item in scene.gmi_bone_map if item.origin == "manual"
+                for name in row_bones(item) if item.target.strip()}
         kept_strategy = dict(_form_physics_overrides(scene))
         kept_category = dict(_form_swing_categories(scene))
         scene.gmi_bone_targets.clear()
@@ -3154,6 +3177,20 @@ class GMI_OT_build_bone_map(Operator):
                   if members else 0.0)
 
         scene.gmi_bone_map.clear()
+        # 表单已清空 → 这一次解析没有任何覆盖，出来的就是纯自动判定（预设 + 位置匹配）。
+        # 拿它填 auto_target，面板上看到的才是导出真正会用的那个值。
+        # 必须把 skeleton 传进去：装饰骨的位置匹配要拿游戏骨的位置算，不传就只剩预设，
+        # 面板上装饰骨那一栏会全是空的。
+        try:
+            resolved_paths = _resolve_body_json_library(
+                scene, _object_component_id(obj, scene))
+            skeleton = core.load_json(Path(resolved_paths["skeletonJson"]))
+        except Exception:
+            skeleton = None
+        try:
+            auto_targets = _resolve_source_bone_remap(obj, bone_map, scene, skeleton)[0]
+        except Exception:
+            auto_targets = {}
         listed = 0
         for members in rows:
             autos = {preset["bones"].get(name) for name in members}
@@ -3164,8 +3201,14 @@ class GMI_OT_build_bone_map(Operator):
             item = scene.gmi_bone_map.add()
             item.source = max(members, key=lambda name: mass_by_name.get(name, 0.0))
             item.members = "\n".join(members)
-            item.target = next((kept[name] for name in members if name in kept), auto or "")
-            item.origin = "preset" if auto else ""
+            override = next((kept[name] for name in members if name in kept), "")
+            item.target = override
+            # 一行 = 一组，组里各骨的自动判定可能不同（左右成对的骨就是）。
+            # 显示成同一个值会骗人，如实标出来。
+            resolved = {auto_targets.get(name) for name in members if auto_targets.get(name)}
+            item.auto_target = (resolved.pop() if len(resolved) == 1
+                                else "逐骨不同" if resolved else (auto or ""))
+            item.origin = "manual" if override else ("preset" if auto else "")
             item.mass = sum(mass_by_name.get(name, 0.0) for name in members)
             item.anchor_only = bool(core.anchor_only_roots(
                 members, _source_bone_parents(obj), dominant_counts))
@@ -3180,7 +3223,8 @@ class GMI_OT_build_bone_map(Operator):
             listed += 1
         scene.gmi_bone_map_index = 0
         undecided = sum(1 for item in scene.gmi_bone_map
-                        if core.row_state(item.target, item.strategy) == "undecided")
+                        if core.row_state(row_effective_target(item),
+                                          item.strategy) == "undecided")
         scope = "未被预设识别的" if self.only_unmapped else "全部"
         self.report({"INFO"}, f"已列出 {listed} 行{scope}骨（{len(weighted)} 根骨并成 "
                               f"{len(rows)} 行；预设识别 {len(preset['bones'])} 根，"
@@ -3206,7 +3250,8 @@ class GMI_OT_split_bone_group(Operator):
         if len(members) < 2:
             self.report({"INFO"}, "这行只有一根骨，不用拆")
             return {"CANCELLED"}
-        kept = (item.target, item.strategy, item.swing_category, item.origin)
+        kept = (item.target, item.strategy, item.swing_category, item.origin,
+                item.auto_target)
         kept_anchor = bool(item.swing_anchor)
         # remove() 之后 item 是野指针，用到的值必须先取出来
         fallback_mass = item.mass / len(members)
@@ -3223,7 +3268,9 @@ class GMI_OT_split_bone_group(Operator):
             new = scene.gmi_bone_map.add()
             new.source = name
             new.members = name
-            new.target, new.strategy, new.swing_category, new.origin = kept
+            # target 的 update 回调会改写 origin，所以 origin 必须**在 target 之后**赋
+            (new.target, new.strategy, new.swing_category,
+             new.origin, new.auto_target) = kept
             new.swing_anchor = kept_anchor
             new.anchor_only = name in anchor_only_roots
             new.mass = mass_by_name.get(name, fallback_mass)
