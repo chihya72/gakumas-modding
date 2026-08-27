@@ -421,6 +421,9 @@ def draw_rig_step(layout, scene, context):
 
     body = _section(layout, "GMI_rig_repairs", "修复工具（会改模型）")
     if body:
+        body.operator("gmi.mirror_model", text="沿 X 镜像整个模型", icon="MOD_MIRROR")
+        _note(body, "走标准导入器进来的源（MMD / FBX / rip）左右都和游戏参照骨架相反，"
+                    "要镜像一次；别用「S X -1 + 应用缩放」，网格是骨架子物体时父子会抵消")
         body.operator("gmi.split_weight_from_neighbours", text="从相邻骨劈权重",
                       icon="MOD_VERTEX_WEIGHT")
         _note(body, "只在源模型缺少锁骨、脖子、脚尖等承重关节时使用")
