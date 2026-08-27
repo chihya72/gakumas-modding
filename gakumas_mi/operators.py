@@ -1,4 +1,5 @@
 import json
+import traceback
 import shutil
 import subprocess
 import sys
@@ -1947,9 +1948,14 @@ def _export_bundle_png(source, destination):
             image = non_color(bpy.data.images.new(
                 source.stem, width=width, height=height, alpha=True
             ))
-            pixels = [channel / 255.0 for row in range(height - 1, -1, -1)
-                      for channel in rgba[row * width * 4:(row + 1) * width * 4]]
-            image.pixels.foreach_set(pixels)
+            # 必须走 numpy。列表推导会给每个通道造一个 Python float 对象：8192² RGBA
+            # = 2.68 亿个，约 8.6 GB → MemoryError，而且异常本身没有消息，作者只看到
+            # 一个空的红叉。4096² 也要 2.1 GB，本来就在悬崖边上。
+            # numpy 版同一张图只占 1.07 GB（float32），且没有逐元素的 Python 开销。
+            import numpy as np
+            rows = np.frombuffer(rgba, dtype=np.uint8).reshape(height, width * 4)
+            flat = rows[::-1].reshape(-1)          # DDS 顶行在前，Blender 底行在前
+            image.pixels.foreach_set(flat.astype(np.float32) / np.float32(255.0))
         else:
             image = non_color(bpy.data.images.load(str(source), check_existing=False))
     except RuntimeError as exc:
@@ -2115,7 +2121,7 @@ class GMI_OT_import_profile_object(Operator):
             )
             return {"FINISHED"}
         except Exception as exc:
-            self.report({"ERROR"}, str(exc))
+            self.report({"ERROR"}, _error_text(exc))
             return {"CANCELLED"}
 
 
@@ -2136,7 +2142,7 @@ class GMI_OT_resolve_body_json_library(Operator):
             )
             return {"FINISHED"}
         except Exception as exc:
-            self.report({"ERROR"}, str(exc))
+            self.report({"ERROR"}, _error_text(exc))
             return {"CANCELLED"}
 
 
@@ -2190,7 +2196,7 @@ class GMI_OT_extract_profile_from_frame_dump(Operator):
             )
             return {"FINISHED"}
         except Exception as exc:
-            self.report({"ERROR"}, str(exc))
+            self.report({"ERROR"}, _error_text(exc))
             return {"CANCELLED"}
 
 
@@ -2268,7 +2274,7 @@ class GMI_OT_build_full_profile(Operator):
             )
             return {"FINISHED"}
         except Exception as exc:
-            self.report({"ERROR"}, str(exc))
+            self.report({"ERROR"}, _error_text(exc))
             return {"CANCELLED"}
 
 
@@ -2300,7 +2306,7 @@ class GMI_OT_update_profile_from_frame_dump(Operator):
                 )
             return {"FINISHED"}
         except Exception as exc:
-            self.report({"ERROR"}, str(exc))
+            self.report({"ERROR"}, _error_text(exc))
             return {"CANCELLED"}
 
 
@@ -2327,7 +2333,7 @@ class GMI_OT_import_reference(Operator):
             self.report({"INFO"}, f"已导入 {len(data['vertices'])} 个顶点 / {len(data['faces'])} 个三角面")
             return {"FINISHED"}
         except Exception as exc:
-            self.report({"ERROR"}, str(exc))
+            self.report({"ERROR"}, _error_text(exc))
             return {"CANCELLED"}
 
 
@@ -2376,7 +2382,7 @@ class GMI_OT_import_weighted_reference(Operator):
             )
             return {"FINISHED"}
         except Exception as exc:
-            self.report({"ERROR"}, str(exc))
+            self.report({"ERROR"}, _error_text(exc))
             return {"CANCELLED"}
 
 
@@ -2606,7 +2612,7 @@ class GMI_OT_export_bundle_source(Operator):
             )
             return {"FINISHED"}
         except Exception as exc:
-            self.report({"ERROR"}, str(exc))
+            self.report({"ERROR"}, _error_text(exc))
             return {"CANCELLED"}
 
 
@@ -2784,7 +2790,7 @@ class GMI_OT_bake_material_maps(Operator):
         try:
             base8, width, height = _load_base_texture(base_color_file, f"{target_name}基础色 t0")
         except Exception as exc:
-            self.report({"ERROR"}, str(exc))
+            self.report({"ERROR"}, _error_text(exc))
             return {"CANCELLED"}
 
         mesh.calc_loop_triangles()
@@ -2909,7 +2915,7 @@ class GMI_OT_bake_material_maps(Operator):
                     scene.gmi_opacity_texture_file, "co 基础色 t0 / m_bdyco"
                 )
             except Exception as exc:
-                self.report({"ERROR"}, str(exc))
+                self.report({"ERROR"}, _error_text(exc))
                 return {"CANCELLED"}
             co_id_map = _slot_id_map(native_co_slots, co_width)
             co_form_map = None
@@ -3100,7 +3106,7 @@ class GMI_OT_build_bone_map(Operator):
         try:
             obj, bone_map, preset = _bone_map_context(context)
         except Exception as exc:
-            self.report({"ERROR"}, str(exc))
+            self.report({"ERROR"}, _error_text(exc))
             return {"CANCELLED"}
         kept = dict(_form_bone_map(scene))          # 保住作者已经填过的
         kept_strategy = dict(_form_physics_overrides(scene))
@@ -3250,6 +3256,19 @@ _orientation_soft_note = [None]
 _coverage_soft_note = [None]
 
 
+def _error_text(exc):
+    """给作者看的异常文案。`str(exc)` 可能是空的（`KeyError()`、`IndexError()` 之类），
+    直接 report 出去就是一个**空的红叉** —— 作者什么线索都没有，只能来问。
+    空的时候退回异常类型名，并把完整 traceback 打到系统控制台。
+    """
+    traceback.print_exc()
+    text = str(exc).strip()
+    if text:
+        return text
+    return (f"{type(exc).__name__}（异常没有附带消息，完整调用栈见系统控制台："
+            "Window ▸ Toggle System Console）")
+
+
 def _mesh_signed_volume(obj):
     """网格的有符号体积（m³）。负 = 面朝里，见 core.inverted_mesh_error。"""
     mesh = obj.data
@@ -3367,7 +3386,7 @@ class GMI_OT_split_weight_from_neighbours(Operator):
             reference = _profile_weight_reference(context, "body")
             remap, report = _resolve_source_bone_remap(obj, bone_map, scene)
         except Exception as exc:
-            self.report({"ERROR"}, str(exc))
+            self.report({"ERROR"}, _error_text(exc))
             return {"CANCELLED"}
         weighted = [name for name, _mass in _weighted_group_mass(obj)]
         missing = core.missing_critical_bones(weighted, remap, bone_map)
@@ -3564,7 +3583,7 @@ class GMI_OT_bake_rest_offset(Operator):
             skeleton = core.load_json(Path(resolved["skeletonJson"]))
             remap, _report = _resolve_source_bone_remap(obj, bone_map, scene)
         except Exception as exc:
-            self.report({"ERROR"}, str(exc))
+            self.report({"ERROR"}, _error_text(exc))
             return {"CANCELLED"}
         armature = next((modifier.object for modifier in obj.modifiers
                          if modifier.type == "ARMATURE" and modifier.object), None)
@@ -3625,7 +3644,7 @@ class GMI_OT_report_rig_alignment(Operator):
             resolved = _resolve_body_json_library(scene, _object_component_id(obj, scene))
             skeleton = core.load_json(Path(resolved["skeletonJson"]))
         except Exception as exc:
-            self.report({"ERROR"}, str(exc))
+            self.report({"ERROR"}, _error_text(exc))
             return {"CANCELLED"}
         armature = next((modifier.object for modifier in obj.modifiers
                          if modifier.type == "ARMATURE" and modifier.object), None)
