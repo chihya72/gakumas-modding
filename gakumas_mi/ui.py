@@ -114,9 +114,10 @@ def _bone_problem(item):
         return "这组骨还没决定：映射到游戏骨，或选择一种装饰骨处理。"
     if state == "reject":
         return "这组骨被标记为拒绝导出：删除相关权重或改成可执行的处理方式。"
-    if not item.target and item.strategy == "integrate" and item.anchor_only and not item.swing_anchor:
+    if (not _row_effective_target(item) and item.strategy == "integrate"
+            and item.anchor_only and not item.swing_anchor):
         return "权重全在链根但链根不会摆：打开“链根参与摆动”，否则游戏里不会动。"
-    if not item.target and item.strategy == "native_driver":
+    if not _row_effective_target(item) and item.strategy == "native_driver":
         resolved = item.swing_category if item.swing_category != "auto" else core.swing_category(item.source)
         if resolved not in core.DRIVER_CATEGORIES:
             return "所选部件类型没有原版布料驱动器：改为裙、披挂或袖，或换一种处理。"
@@ -501,10 +502,18 @@ def _row_bones(item):
     return members or ([item.source] if item.source else [])
 
 
+def _row_effective_target(item):
+    """这一行**实际生效**的目标骨：作者覆盖优先，没覆盖就用扫描时算出的自动判定。
+    面板判档必须用它 —— 只看覆盖的话，自动判定已经给出结果的行会全被标成「未决定」。
+    """
+    return item.target.strip() or item.auto_target.strip()
+
+
 def _row_state(item):
     members = _row_bones(item)
     # 一组多根骨指到同一根目标骨,那就是多对一=合并,不是 direct
-    return core.row_state(item.target, item.strategy, shared_target=len(members) > 1)
+    return core.row_state(_row_effective_target(item), item.strategy,
+                          shared_target=len(members) > 1)
 
 
 def draw_rig_report(layout, scene, context=None, show_action=True):
