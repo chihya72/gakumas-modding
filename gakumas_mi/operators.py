@@ -381,6 +381,8 @@ def _resolve_body_json_library(scene, component_id=None):
 
 
 def _create_mesh(context, name, data):
+    # 打上坐标约定版本：约定改了以后，老 blend 里那份参照体的左右和现在相反，
+    # 拿它当基线的东西（劈权重、跨节过渡带）会全错。导出时按这个戳提醒作者重新导入。
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata(data["vertices"], [], data["faces"])
     mesh.update()
@@ -409,6 +411,7 @@ def _create_mesh(context, name, data):
         selected.select_set(False)
     obj.select_set(True)
     context.view_layer.objects.active = obj
+    obj["gmi_coordinate_convention"] = core.COORDINATE_CONVENTION
     return obj
 
 
@@ -655,8 +658,10 @@ def _source_bone_positions(obj):
     }
 
 
-# Blender(Z-up, -Y forward) → Unity(Y-up, Z forward)
-C_UNITY = Matrix(((1, 0, 0, 0), (0, 0, 1, 0), (0, -1, 0, 0), (0, 0, 0, 1)))
+# Blender(Z-up, -Y forward, 右手系) → Unity(Y-up, Z forward, 左手系)。X 取反 = 那次
+# 必须有的反射，与 core._to_unity 同一个矩阵（行列式 -1，理由见那里的注释）。
+# 用它做**共轭**（C @ M @ C⁻¹）时行列式抵消，旋转仍是正常旋转，四元数照常取。
+C_UNITY = Matrix(((-1, 0, 0, 0), (0, 0, 1, 0), (0, -1, 0, 0), (0, 0, 0, 1)))
 
 
 def _quaternion_xyzw(quaternion):
@@ -1638,7 +1643,9 @@ def _inverse_skin_export_data(
                 int(polygon.material_index),
             )
             tangent_groups.setdefault(key, []).append(expanded_index)
-        faces.append(tuple(face))
+        # 反射翻了绕序（见 core._to_unity），导出的三角形索引要反过来，否则整个模型
+        # 在游戏里面朝里 —— 背面剔除后看到的是内壁，带尖角的破碎片、能看穿。
+        faces.append(tuple(reversed(face)))
     if unresolved and not fallback_bone:
         # P4 闸门 2/10：带权重的源骨没有对应的游戏骨。两条出路都要给（见
         # core.critical_coverage_error 里的同一段理由）。
@@ -1804,6 +1811,21 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
         vertex_color_mode=scene.gmi_vertex_color_mode,
         color_per_slot=_material_slot_color_map(obj),
     )
+    # 老 blend 迁移：参照体是按旧坐标约定导进来的话，它的左右和现在相反，
+    # 劈权重和跨节过渡带都拿它当基线，会全错。提醒重新导入（不拦，作者可能不用这些功能）。
+    try:
+        stale_reference = _profile_weight_reference(context)
+    except Exception:
+        stale_reference = None
+    if stale_reference is not None and int(
+            stale_reference.get("gmi_coordinate_convention") or 1) < core.COORDINATE_CONVENTION:
+        data_convention_note = (
+            f"场景里的带权重参照体「{stale_reference.name}」是按旧坐标约定（v1）导入的，"
+            f"当前是 v{core.COORDINATE_CONVENTION} —— 旧约定漏了左右手系那次反射，"
+            "那份参照体的左右和现在相反。「从相邻骨劈权重」和跨节权重过渡带都拿它当基线，"
+            "结果会全错。请回阶段 1 重新导入参照。")
+    else:
+        data_convention_note = None
     # 尺子：衣物链的跨节权重过渡带。这次撕裙子的唯一真凶，而 CROSS_JOINT_BANDS 只覆盖
     # 肩肘腕膝，衣物链一根都没有。有场景里的原版参考体就现算基线，没有就用常数门槛。
     new_bone_list = (remap_report.get("newBones") or {}).get("newBones") or []
@@ -1824,6 +1846,7 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
             core.chain_blend_ratio(_vertex_influences(obj),
                                    _chain_node_map(new_bone_list)),
             vanilla_ratios))
+    data["convention_note"] = data_convention_note
     data["bundle_extra_skeleton_nodes"] = extra_nodes
     data["bundle_extra_bind_poses"] = extra_bind_poses
     # 这里是模块级函数，报警交给算子统一发（见 export_bundle_source 里的 anchor_only_note）
@@ -2589,6 +2612,8 @@ class GMI_OT_export_bundle_source(Operator):
                 self.report({"WARNING"}, _coverage_soft_note[0])
             if _orientation_soft_note[0]:
                 self.report({"WARNING"}, _orientation_soft_note[0])
+            if data.get("convention_note"):
+                self.report({"WARNING"}, data["convention_note"])
             if data.get("chain_blend_note"):
                 self.report({"WARNING"}, data["chain_blend_note"])
             sanity = data.get("bind_sanity") or {}

@@ -320,3 +320,35 @@ def test_chain_blend_ruler_flags_hard_edged_weights():
     # 过渡带够厚就不报；顶点太少的链也不报（噪声）
     assert core.chain_blend_findings(core.chain_blend_ratio(soft, node_of)) == []
     assert core.chain_blend_findings(core.chain_blend_ratio(hard[:10], node_of)) == []
+
+
+def test_coordinate_conversion_flips_handedness():
+    """Unity 左手系 ↔ Blender 右手系的转换**必须含一次反射**（行列式 -1）。
+
+    约定 1（2026-06-23 ~ 1.4.0）只换了 Y/Z 两轴，是纯旋转 —— 数值对得上、手性没转过来，
+    于是游戏骨架进 Blender 后左右是反的，作者每个外部模型都得手动镜像一次。
+    这条测试钉死三件事：往返是恒等、行列式为负、解剖学左右落在正确一侧。
+    """
+    import itertools
+    # 往返恒等
+    for point in itertools.product((0.0, 1.0, -2.5), repeat=3):
+        back = core._from_unity(core._to_unity(point))
+        assert all(abs(a - b) < 1e-9 for a, b in zip(point, back)), point
+    # 行列式为负 = 含反射
+    basis = [core._to_unity(v) for v in ((1, 0, 0), (0, 1, 0), (0, 0, 1))]
+    (a, b, c), (d, e, f), (g, h, i) = basis
+    det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
+    assert det < 0, f"转换没有翻手性，行列式 = {det}"
+    # Blender 里朝 -Y 的角色，解剖学左侧是 +X；到了 Unity（朝 +Z 左手系）左侧必须是 -X
+    assert core._to_unity((0.0, -1.0, 0.0))[2] > 0, "角色朝向没落在 Unity +Z"
+    assert core._to_unity((0.3, 0.0, 0.0))[0] < 0, "Blender 的解剖学左侧没落到 Unity -X"
+    assert core._to_unity((0.0, 0.0, 1.0))[1] > 0, "上方向没落在 Unity +Y"
+
+
+def test_reflection_flips_face_winding():
+    """含反射就必须反绕序，否则整个模型面朝里（背面剔除后看到内壁 = 带尖角的破碎片）。"""
+    assert core.flip_winding([(0, 1, 2), (3, 4, 5)]) == [(2, 1, 0), (5, 4, 3)]
+    assert core.flip_winding([]) == []
+    # 反两次回到原样
+    once = core.flip_winding([(0, 1, 2, 3)])
+    assert core.flip_winding(once) == [(0, 1, 2, 3)]

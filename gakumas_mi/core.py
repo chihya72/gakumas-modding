@@ -2328,9 +2328,10 @@ def _read_vb0(path, stride):
             "<3f3f4f", data, offset
         )
         # Unity Y-up/Z-forward to Blender Z-up/-Y-forward.
-        vertices.append((x, -z, y))
-        normals.append((nx, -nz, ny))
-        tangents.append((tx, -tz, ty, tw))
+        # 见 core._to_unity：Unity 左手系 → Blender 右手系必须含反射，X 取反
+        vertices.append((-x, -z, y))
+        normals.append((-nx, -nz, ny))
+        tangents.append((-tx, -tz, ty, tw))
     return vertices, normals, tangents
 
 
@@ -2354,7 +2355,8 @@ def _read_indices(path):
     if len(data) % 6:
         raise ValueError("R16 triangle-list IB size must be divisible by 6")
     values = struct.unpack(f"<{len(data) // 2}H", data)
-    return [tuple(values[i : i + 3]) for i in range(0, len(values), 3)]
+    # 反射翻了绕序（见 core._to_unity），抓帧 IB 也要反过来
+    return flip_winding(tuple(values[i : i + 3]) for i in range(0, len(values), 3))
 
 
 def read_reference(profile_dir, component_id="body", capture_dir=None):
@@ -2406,9 +2408,10 @@ def read_weighted_reference(mesh_json, skeleton_json):
     mesh = load_json(Path(mesh_json))
     skeleton = load_json(Path(skeleton_json))
     vertex_count = mesh["m_VertexCount"]
-    vertices = [(x, -z, y) for x, y, z in _group(mesh["m_Vertices"], 3)]
-    normals = [(x, -z, y) for x, y, z in _group(mesh["m_Normals"], 3)]
-    tangents = [(x, -z, y, w) for x, y, z, w in _group(mesh["m_Tangents"], 4)]
+    # 见 core._to_unity：X 取反才是正确的左右手系转换
+    vertices = [(-x, -z, y) for x, y, z in _group(mesh["m_Vertices"], 3)]
+    normals = [(-x, -z, y) for x, y, z in _group(mesh["m_Normals"], 3)]
+    tangents = [(-x, -z, y, w) for x, y, z, w in _group(mesh["m_Tangents"], 4)]
     colors = _group(mesh["m_Colors"], 4)
     if colors and max(colors[0]) > 1.0:
         colors = [tuple(channel / 255.0 for channel in color) for color in colors]
@@ -2420,7 +2423,8 @@ def read_weighted_reference(mesh_json, skeleton_json):
     uv0 = list(_group(mesh["m_UV0"], 2))
     uv1 = list(_group(mesh["m_UV1"], 2))
     indices = mesh["m_Indices"]
-    faces = [tuple(indices[i : i + 3]) for i in range(0, len(indices), 3)]
+    # 反射翻了绕序，索引要反过来，否则导进来的参照体面朝里
+    faces = flip_winding(tuple(indices[i : i + 3]) for i in range(0, len(indices), 3))
     if len(vertices) != vertex_count or len(mesh["m_Skin"]) != vertex_count:
         raise ValueError("Weighted Mesh arrays do not match m_VertexCount")
     if skeleton["weightedBoneCount"] != len(mesh["m_BindPose"]):
@@ -2507,9 +2511,37 @@ def _write_json(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+# 坐标约定版本。改了这个数 = 参照骨架在 Blender 里的左右会变，老 .blend 必须重新导入
+# 参照、并把作者模型镜像一次。导出闸门（左右装反）会替你抓到没迁移的文件。
+COORDINATE_CONVENTION = 2
+
+
 def _to_unity(vector):
-    """Blender Z-up/-Y-forward to Unity Y-up/Z-forward."""
-    return float(vector[0]), float(vector[2]), float(-vector[1])
+    """Blender(Z-up, -Y forward, **右手系**) → Unity(Y-up, Z forward, **左手系**)。
+
+    X 必须取反。Unity 是左手系、Blender 是右手系，两者之间的转换**必须含一次反射**
+    （行列式 -1）；只换 Y/Z 两轴是纯旋转（行列式 +1），数值对得上但手性没转过来 ——
+    结果是游戏骨架进 Blender 后左右是反的（实测 LeftFoot 落在 -X，而 Blender 里
+    朝 -Y 的角色解剖学左侧是 +X）。
+
+    约定 1（2026-06-23 ~ 1.4.0）漏了这次反射。因为导入导出用同一个矩阵，round trip
+    自洽，两个月没暴露；只有从**外部标准导入器**（mmd_tools / FBX / rip）进来的模型
+    才会和它对不上 —— 那些导入器是对的。作者被迫每个模型手动镜像一次，就是这么来的。
+
+    含反射意味着**面绕序会翻**，所以导入和导出两侧都要把三角形索引反过来
+    （见 `flip_winding`）。
+    """
+    return float(-vector[0]), float(vector[2]), float(-vector[1])
+
+
+def _from_unity(vector):
+    """`_to_unity` 的逆：Unity(Y-up, Z forward) → Blender(Z-up, -Y forward)。"""
+    return float(-vector[0]), float(-vector[2]), float(vector[1])
+
+
+def flip_winding(faces):
+    """反转每个多边形的顶点顺序。坐标转换含反射时必须做，否则整个模型面朝里。"""
+    return [tuple(reversed(tuple(face))) for face in faces]
 
 
 def inverse_skin_bone_map(profile_dir, skeleton_json=None, component_id="body"):
@@ -3133,7 +3165,10 @@ def mirrored_side_error(source_positions, target_positions):
             "  · **整副模型没做镜像**（MMD 常见，左右骨对会全部报出来）→ 物体模式里同时选中"
             "作者网格和骨架，沿 X 镜像后应用缩放、重算法线外侧（见建模准备清单第一条），"
             "再回来重跑；\n"
-            "  · **只有个别骨对反了** → 「骨骼映射表」里把这几根改成对侧的游戏骨。")
+            "  · **只有个别骨对反了** → 「骨骼映射表」里把这几根改成对侧的游戏骨。\n"
+            "注意：v1.4.0 起坐标约定改了（补上了左右手系那次反射），"
+            "**外部导入器进来的模型不再需要手动镜像**。如果这个文件是更早以前做的、"
+            "当初手动镜像过一次，现在要用「沿 X 镜像整个模型」把它镜像回去，并重新导入参照体。")
 
 
 def rest_alignment(source_positions, target_positions, children=None, lengths=None):
