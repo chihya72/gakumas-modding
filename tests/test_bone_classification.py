@@ -578,3 +578,32 @@ def test_follow_nearest_matches_per_bone_when_group_has_several_chains():
         group_by_name={"带0": "Hips|L2", "带1": "Hips|L2"},
         overrides={"带0": "follow_nearest"})
     assert len(set(chain["bones"].values())) == 1, chain["bones"]
+
+
+# ==========================================================================
+# 结构识别兜底（topology_map）在映射阶梯里的位置。
+#
+# 八张预设表只认得出名字落在那八家里的骨架，认不出来不会报错，只会让所有按游戏骨名
+# 索引的尺子和闸门一根都匹配不上、然后安静地报全绿。兜底堵的是这个假绿灯，但它必须
+# **排在最后**：结构是推的，名字是有据的。
+
+def test_structural_only_fills_what_the_names_missed():
+    target = ["Hips", "Spine", "Spine1", "LeftArm"]
+    report = core.build_bone_remap(
+        ["Hips", "weird_01", "weird_02"], target,
+        structural={
+            "Hips": "Spine",         # 名字已经认出 Hips → 结构猜测抢不走
+            "weird_01": "LeftArm",   # 名字认不出来 → 结构补上
+            "weird_02": "NotABone",  # 目标骨架里根本没有 → 丢掉，不许凭空造骨
+        })
+    assert report["bones"]["Hips"] == "Hips"
+    assert report["methods"]["Hips"] == "direct"
+    assert report["bones"]["weird_01"] == "LeftArm"
+    assert report["methods"]["weird_01"] == "topology"
+    assert "weird_02" in report["unmapped"]
+
+
+def test_structural_absent_changes_nothing():
+    """不传 structural 时逐字段等于老行为 —— 兜底是加法，不许动已有结果。"""
+    args = (["Hips", "weird_01"], ["Hips", "Spine"])
+    assert core.build_bone_remap(*args) == core.build_bone_remap(*args, structural={})

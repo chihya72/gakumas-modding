@@ -403,9 +403,14 @@ def draw_rig_step(layout, scene, context):
         auto = item.auto_target.strip()
         row = detail.row()
         row.enabled = False
+        origin = "" if item.target else item.origin      # 填了覆盖就不必再说自动判定的来路
         row.label(text=f"自动判定：{auto or '（无，需要你指定）'}"
-                       + ("　来自预设" if item.origin == "preset" and not item.target
+                       + ("　来自预设" if origin == "preset"
+                          else "　按骨架结构推断（骨名不认识）" if origin == "topology"
                           else "　按位置匹配" if auto and not item.target else ""))
+        if origin == "topology":
+            _note(detail, "这一行的骨名不在已知骨架预设里，目标骨是按骨架形状推出来的——"
+                          "请核对一遍，不对就在下面填覆盖")
         detail.prop_search(item, "target", scene, "gmi_bone_targets", text="覆盖为")
         if item.target:
             _note(detail, "手填的覆盖压过自动判定，装饰处理选项已隐藏；点右边 ✕ 回到自动判定")

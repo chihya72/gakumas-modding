@@ -312,7 +312,7 @@ from mathutils import Matrix, Quaternion, Vector
 from mathutils.bvhtree import BVHTree
 from mathutils.kdtree import KDTree
 
-from . import core
+from . import core, topology_map
 
 
 # COLOR.b low nibble drives outline extrusion width. 0xFF keeps the neutral
@@ -632,11 +632,14 @@ def _profile_weight_reference(context, component_id=None):
     return references[0]
 
 
+def _armature_of(obj):
+    """作者网格的骨架对象，没有就 None。"""
+    return next((modifier.object for modifier in obj.modifiers
+                 if modifier.type == "ARMATURE" and modifier.object), None)
+
+
 def _source_bone_parents(obj):
-    armature = next(
-        (modifier.object for modifier in obj.modifiers
-         if modifier.type == "ARMATURE" and modifier.object), None
-    )
+    armature = _armature_of(obj)
     if not armature:
         return {}
     return {
@@ -646,10 +649,7 @@ def _source_bone_parents(obj):
 
 
 def _source_bone_positions(obj):
-    armature = next(
-        (modifier.object for modifier in obj.modifiers
-         if modifier.type == "ARMATURE" and modifier.object), None
-    )
+    armature = _armature_of(obj)
     if not armature:
         return {}
     return {
@@ -944,6 +944,46 @@ def _form_driver_gaps(scene):
     return gaps
 
 
+def _preset_bone_remap(obj, bone_map, scene):
+    """预设表 + 结构识别兜底。扫描和导出**共用这一个**，免得一边接了另一边没接。
+
+    先跑预设；只有当它没盖住 Humanoid 必需骨时才走结构识别，再整体重算一次。
+    第二遍不是浪费：结构识别补上的骨会改变 body/accessory 的分类、父骨兜底和
+    unmapped 清单，让 core 在一处重算比在这里逐项补丁小得多。
+    """
+    source_names = [
+        group.name for group in obj.vertex_groups if _is_bone_group(group.name)
+    ]
+    parents = _source_bone_parents(obj)
+    preset_name = getattr(scene, "gmi_source_rig", "auto")
+    report = core.build_bone_remap(source_names, bone_map, parent_by_name=parents,
+                                   preset_name=preset_name)
+    structural = _topology_bone_remap(obj, report, bone_map)
+    if not structural:
+        return report
+    return core.build_bone_remap(source_names, bone_map, parent_by_name=parents,
+                                 preset_name=preset_name, structural=structural)
+
+
+def _topology_bone_remap(obj, report, bone_map):
+    """预设表漏了 Humanoid 必需骨时，按骨架**结构**补一张人形骨表；否则返回空。
+
+    认不出骨名不会报错，只会让所有按游戏骨名索引的尺子和闸门一根都匹配不上、然后安静地
+    报全绿——这条兜底堵的就是这个假绿灯。`topology_map.build` 自己是全有或全无
+    （15 根必需骨缺一根就返回空表），这里再挡两样：预设已经认出来的源骨不动，
+    已经被占用的目标骨不抢——结构识别是兜底，不是主路。
+    """
+    covered = set(report["bones"].values())
+    if all(name in covered for name in topology_map.REQUIRED):
+        return {}
+    armature = _armature_of(obj)
+    if armature is None:
+        return {}
+    return {source: target for source, target in topology_map.build(armature).items()
+            if source not in report["bones"] and target in bone_map
+            and target not in covered}
+
+
 def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
     explicit = {}
     if scene.gmi_bone_remap_file:
@@ -951,15 +991,7 @@ def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
         explicit = dict(remap_data.get("bones", remap_data))
     # 面板表单比外部 JSON 更"手边",冲突时以表单为准
     explicit.update(_form_bone_map(scene))
-    source_names = [
-        group.name for group in obj.vertex_groups if _is_bone_group(group.name)
-    ]
-    report = core.build_bone_remap(
-        source_names,
-        bone_map,
-        parent_by_name=_source_bone_parents(obj),
-        preset_name=getattr(scene, "gmi_source_rig", "auto"),
-    )
+    report = _preset_bone_remap(obj, bone_map, scene)
     remap = dict(report["bones"])
     remap.update(explicit)
     if skeleton is not None:
@@ -1042,7 +1074,9 @@ def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
         report["physicsInheritance"] = physics_report
     report["explicitBones"] = explicit
     report["bones"] = remap
-    report["unmapped"] = [name for name in source_names if name not in remap]
+    report["unmapped"] = [
+        group.name for group in obj.vertex_groups
+        if _is_bone_group(group.name) and group.name not in remap]
     return remap, report
 
 
@@ -3056,7 +3090,7 @@ class GMI_bone_map_item(bpy.types.PropertyGroup):
     # 扫描时按「表单全空」算出来的结果，只读展示。它不进导出优先级 —— 导出永远现算，
     # 所以这里就算过期也只影响显示，不会让包和面板对不上。
     auto_target: bpy.props.StringProperty(options={"HIDDEN"})
-    origin: bpy.props.StringProperty()          # manual / preset / ""
+    origin: bpy.props.StringProperty()          # manual / preset / topology / ""
     mass: bpy.props.FloatProperty()             # 该骨的权重占比 %
     # 几何全绑在链根、子骨是空的那种链（实测 Lace_R_A0 主导 97 顶点、Lace_R_Aend 0 个）：
     # 链根按原版是惰性锚，照拓扑出参数 = 装了摇物也不会动。勾上让链根按链中段的参数自己摆。
@@ -3118,7 +3152,7 @@ class GMI_bone_map_item(bpy.types.PropertyGroup):
 
 
 def _bone_map_context(context):
-    """表单要用的三样：作者网格、目标骨名表、预设映射结果。"""
+    """表单要用的三样：作者网格、目标骨名表、自动映射结果（预设 + 结构识别兜底）。"""
     obj = _author_mesh(context)
     scene = context.scene
     if not obj or obj.type != "MESH" or not obj.vertex_groups:
@@ -3130,12 +3164,7 @@ def _bone_map_context(context):
         raise ValueError("缺少带骨架的 Mesh JSON；请先完成步骤①的配置档")
     bone_map = core.inverse_skin_bone_map(
         bpy.path.abspath(scene.gmi_profile_dir), skeleton_path, component_id)
-    source_names = [g.name for g in obj.vertex_groups if _is_bone_group(g.name)]
-    preset = core.build_bone_remap(
-        source_names, bone_map, parent_by_name=_source_bone_parents(obj),
-        preset_name=getattr(scene, "gmi_source_rig", "auto"),
-    )
-    return obj, bone_map, preset
+    return obj, bone_map, _preset_bone_remap(obj, bone_map, scene)
 
 
 class GMI_OT_build_bone_map(Operator):
@@ -3195,8 +3224,11 @@ class GMI_OT_build_bone_map(Operator):
         for members in rows:
             autos = {preset["bones"].get(name) for name in members}
             auto = autos.pop() if len(autos) == 1 else None
+            # 结构识别（预设认不出骨名时的兜底）猜出来的骨**永远列出来**：它是按骨架形状
+            # 推的，正是作者最该亲眼扫一遍的那批；藏进"已自动决定"里等于又回到静默。
+            guessed = any(preset["methods"].get(name) == "topology" for name in members)
             touched = any(name in kept or name in kept_strategy for name in members)
-            if self.only_unmapped and auto and not touched:
+            if self.only_unmapped and auto and not touched and not guessed:
                 continue                            # 预设已认出且作者没改过 → 不占屏
             item = scene.gmi_bone_map.add()
             item.source = max(members, key=lambda name: mass_by_name.get(name, 0.0))
@@ -3208,7 +3240,9 @@ class GMI_OT_build_bone_map(Operator):
             resolved = {auto_targets.get(name) for name in members if auto_targets.get(name)}
             item.auto_target = (resolved.pop() if len(resolved) == 1
                                 else "逐骨不同" if resolved else (auto or ""))
-            item.origin = "manual" if override else ("preset" if auto else "")
+            item.origin = ("manual" if override
+                           else "topology" if guessed
+                           else "preset" if auto else "")
             item.mass = sum(mass_by_name.get(name, 0.0) for name in members)
             item.anchor_only = bool(core.anchor_only_roots(
                 members, _source_bone_parents(obj), dominant_counts))

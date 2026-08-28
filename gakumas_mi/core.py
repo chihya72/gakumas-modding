@@ -2672,12 +2672,17 @@ def classify_source_bones(source_bones, target_bones, remap=None, accessory_pref
 
 
 def build_bone_remap(source_bones, target_bones, parent_by_name=None,
-                     preset_name="auto", presets=None):
+                     preset_name="auto", presets=None, structural=None):
     """Build deterministic Track A mappings and diagnose Track B bones.
 
     Direct names, ``_1`` cleanup, and the selected preset are safe weight-label
     translations. Parent fallback is reported separately for accessory grafting;
     it is deliberately not added to ``bones``.
+
+    ``structural`` = ``{源骨名: 目标骨名}``，**排在预设之后**的最后一档：八张预设表
+    只认得出名字落在那八家里的骨架，而「骨名混乱、骨架也混乱」恰恰最需要自动化。
+    这一档不读名字、按骨架结构认（`topology_map.build`，需要 Blender 所以由调用方算好传进来）。
+    逐骨让位给预设：预设命中的骨根本走不到这里，所以它只能补空缺、抢不走已认出的骨。
     """
     source = list(dict.fromkeys(str(name) for name in source_bones if str(name)))
     target = {str(name) for name in target_bones if str(name)}
@@ -2698,6 +2703,9 @@ def build_bone_remap(source_bones, target_bones, parent_by_name=None,
         candidate = _resolve_preset_value(_preset_lookup(name, preset_bones), target)
         if candidate:
             return candidate, "preset"
+        candidate = (structural or {}).get(name)
+        if candidate in target:
+            return candidate, "topology"
         return None, None
 
     for name in source:
