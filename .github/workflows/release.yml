@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0  # 需要全部 tag 来算 Full Changelog 的上一个版本
+          fetch-depth: 0  # 需要读取 annotated tag 里的本版变动
 
       - uses: actions/setup-python@v6
         with:
@@ -154,25 +154,47 @@ jobs:
           python - "${{ steps.ver.outputs.version }}" "$GITHUB_REF_NAME" > release_notes.md <<'PY'
           import subprocess, sys
 
+          sys.stdout.reconfigure(encoding="utf-8")
           version, tag = sys.argv[1:]
           body = subprocess.check_output(
-              ["git", "tag", "-l", "--format=%(contents)", tag], text=True).strip()
+              ["git", "tag", "-l", "--format=%(contents)", tag],
+              text=True, encoding="utf-8").strip()
           lines = body.splitlines()
           theme = lines[0].strip() if lines else ""
-          changes = "\n".join(lines[1:]).strip()
-          if not theme or not changes or not any(
-                  line.lstrip().startswith("- ") for line in changes.splitlines()):
+          changes = []
+          current = []
+          for raw in lines[1:]:
+              line = raw.strip()
+              if not line:
+                  continue
+              if line.startswith("- "):
+                  if current:
+                      changes.append(" ".join(current))
+                  current = [line[2:].strip()]
+              elif current:
+                  current.append(line)
+              else:
+                  raise SystemExit("tag 注解的变动必须以 '- ' 开头")
+          if current:
+              changes.append(" ".join(current))
+          if not theme or not changes:
               raise SystemExit(
                   "tag 注解必须是：首行版本主题，空行后写面向用户的 '- ' 变更列表")
-          print(f"Gakumas Mod 制作工具 **{version}** — {theme}\n")
-          print("本版变动：")
-          print(changes)
-          print("""
+          if len(changes) > 5:
+              raise SystemExit(
+                  f"变动列表 {len(changes)} 条，上限 5 条（CONTRIBUTING 第 5 节）；"
+                  "能合并就合并，完整细节留在 CHANGELOG")
+          print(f"{version}，本版变动：")
+          for change in changes:
+              print(f"·{change}")
+          # 「包里有什么」每版一模一样，写死在这里：它讲的是**这个 zip 怎么用**，
+          # 与本版改了什么无关，作者第一次下载全靠它。不要挪进 tag 注解。
+          print(f"""
           ## 包里有什么
 
-          解开 `gakumas-mod-toolkit-%s.zip`：
+          解开 `gakumas-mod-toolkit-{version}.zip`：
 
-          - `blender-addon/gakumas_mi-%s.zip` —— Blender 插件，「从磁盘安装」选它。
+          - `blender-addon/gakumas_mi-{version}.zip` —— Blender 插件，「从磁盘安装」选它。
             另需自装 Python 3.10+ 并 `pip install UnityPy Pillow`（导出时打包 bundle 用，
             不能用 Blender 自带的那个）；
           - `3dmigoto_gkms/` —— 抓帧环境，整个拷进游戏根目录，进游戏按 F8 抓帧做配置档。
@@ -180,7 +202,7 @@ jobs:
           - `LICENSE` / `third-party-notices.md` —— 项目与第三方许可；重新分发时一并保留。
 
           换模运行时 `xinput1_3.dll`（内含游戏内 Mod 管理 UI）是独立项目，不在本包内。
-          详细步骤见仓库 `docs/wiki/`。""" % (version, version))
+          详细步骤见仓库 `docs/wiki/`。""")
           PY
           # 上一个版本 → Full Changelog 比较链接（兼容合并前的 gakumas-mi-v* 旧线）
           prev=$(git tag -l 'v*' --sort=-version:refname \
