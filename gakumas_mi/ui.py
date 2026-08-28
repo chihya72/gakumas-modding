@@ -173,7 +173,7 @@ def _stage_problems(scene, context, stage):
     if not str(scene.gmi_package_id or "").strip():
         problems.append("没有模组标识：填写只含字母、数字、点和横线的唯一 ID。")
     if not str(scene.gmi_bundle_template or "").strip():
-        problems.append("没有 R32 模板 bundle：选择与目标资源对应的模板。")
+        problems.append("没有模板目录：选择网盘素材包里的 templates 目录。")
     for item in scene.gmi_bone_map:
         problem = _bone_problem(item)
         if problem and not (scene.gmi_allow_undecided and _row_state(item) == "undecided"):
@@ -465,7 +465,7 @@ def draw_export_step(layout, scene, context):
 
     column = _group(layout, "成品位置与模板")
     _need(column, scene, "gmi_output_dir")
-    _need(column, scene, "gmi_bundle_template", text="R32 模板 bundle")
+    _need(column, scene, "gmi_bundle_template", text="模板目录")
     if _is_hair_package(scene):
         column.prop(scene, "gmi_hairprop_object")
     from . import operators

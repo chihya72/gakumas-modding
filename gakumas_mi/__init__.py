@@ -127,9 +127,11 @@ def register():
         description="导出的 mod 包写到这里；把整个包文件夹放进游戏的 gakumas-mod\\mods 目录即可安装",
     )
     bpy.types.Scene.gmi_bundle_template = StringProperty(
-        name="R32 模板 bundle", subtype="FILE_PATH",
-        description="AB 路线一键打包用：目标 body 的 R32 模板 .bundle（工具作者一次性产）。"
-                    "填了「导出并打包 bundle」才可用；留空则只导出 bundle 源",
+        name="模板目录", subtype="DIR_PATH",
+        description="网盘素材包里的 templates 目录。用哪个模板由配置档的目标资源名决定，"
+                    "插件自己找，不用你从几百个文件里挑。"
+                    "只拿到单个模板文件时，也可以直接把那个 .bundle 填进来。"
+                    "留空则只导出 bundle 源",
     )
     bpy.types.Scene.gmi_bundle_python = StringProperty(
         name="外部 Python", default="python",

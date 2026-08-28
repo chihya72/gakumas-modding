@@ -182,11 +182,39 @@ def _run_bundle_patch_in_process(template, mod_root, output_bundle):
     return output_bundle
 
 
-def _run_bundle_patch(scene, mod_root, output_bundle):
+def _resolve_bundle_template(scene, asset_id):
+    """模板 .bundle 的路径。填目录就按目标资源名找，填文件就直接用。
+
+    模板文件名是**算出来的**不是猜的：`build_phase3_templates.py` 固定按
+    `template_<目标资源名>.bundle` 命名，而目标资源名（`mdl_chr_ttmr-cstm-0111_body`）
+    已经在配置档里。以前让作者自己从 908 个文件里挑一个 —— 他多半不知道抓帧抓到的
+    那套衣服叫什么编号，挑错了导出照样跑，出来的是坏包。
+
+    仍然接受直接填文件：老 .blend 里存的是文件路径，别人单发一个模板给你也是这种情况。
+    """
+    raw = bpy.path.abspath(str(scene.gmi_bundle_template or "").strip())
+    if not raw:
+        raise ValueError("请先选择模板 bundle 所在目录（网盘素材包里的 templates）")
+    path = Path(raw)
+    if path.is_file():
+        return str(path)
+    if not path.is_dir():
+        raise ValueError(f"模板路径不存在：{path}")
+    if not asset_id:
+        raise ValueError(
+            "配置档里没有目标资源名，无法自动找模板。请回阶段 1 重新生成配置档，"
+            "或直接把模板 .bundle 文件填到这里")
+    wanted = path / f"template_{asset_id}.bundle"
+    if not wanted.is_file():
+        raise ValueError(
+            f"这个目录里没有 {wanted.name}：目标资源是 {asset_id}，模板必须是同名的那一个。"
+            "确认选的是网盘素材包的 templates 目录；只下载了部分模板时，按这个文件名去补")
+    return str(wanted)
+
+
+def _run_bundle_patch(scene, mod_root, output_bundle, asset_id=""):
     """把 bundle 源灌进 R32 模板：优先用插件自带的 UnityPy，没有才起外部 Python。"""
-    template = bpy.path.abspath(scene.gmi_bundle_template)
-    if not template or not Path(template).is_file():
-        raise ValueError("请先选择有效的 R32 模板 bundle")
+    template = _resolve_bundle_template(scene, asset_id)
     if vendored_unitypy():
         return _run_bundle_patch_in_process(template, mod_root, output_bundle)
     python_exe = (scene.gmi_bundle_python or "python").strip()
@@ -2669,7 +2697,8 @@ class GMI_OT_export_bundle_source(Operator):
                 self.report({"INFO"}, f"已导出 bundle 源 {package}")
                 return {"FINISHED"}
             output_bundle = Path(output_root) / package_id / f"{package_id}.bundle"
-            _run_bundle_patch(scene, bundle_dir, output_bundle)
+            _run_bundle_patch(scene, bundle_dir, output_bundle,
+                              asset_id=str(resolved.get("body") or ""))
             output_manifest = _publish_runtime_manifest(bundle_dir, output_bundle)
             self.report(
                 {"INFO"},

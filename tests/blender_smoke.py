@@ -213,8 +213,11 @@ with tempfile.TemporaryDirectory(prefix="gmi-blender-e2e-") as tmp:
 
         # 一键打包成功后，游戏要读取的 mod.json 必须和成品 bundle 并排，
         # bundle-src 内仍保留一份供 patch 脚本和排错使用。
-        def fake_bundle_patch(_scene, mod_root, output_bundle):
+        def fake_bundle_patch(_scene, mod_root, output_bundle, asset_id=""):
             assert Path(mod_root) == bundle_src
+            # 模板要按目标资源名去找，所以导出器必须把资源名传下来 —— 传空就等于
+            # 又退回让作者自己挑文件
+            assert asset_id, "导出器没有把目标资源名传给模板查找"
             Path(output_bundle).write_bytes(b"test-bundle")
             return output_bundle
 
@@ -324,3 +327,47 @@ with tempfile.TemporaryDirectory(prefix="gmi-blender-e2e-") as tmp:
         print("GMI_BLENDER_E2E_OK", bpy.app.version_string)
     finally:
         gakumas_mi.unregister()
+
+
+# ── 模板按目标资源名自动查找 ────────────────────────────────────────────
+# 作者多半不知道抓帧抓到的那套衣服叫 ttmr-cstm-0111 —— 让他从几百个模板里挑一个，
+# 挑错了导出照样跑，出来的是坏包。文件名是**算出来的**（`template_<资源名>.bundle`，
+# 由 build_phase3_templates 固定这么命名），不是猜的。
+with tempfile.TemporaryDirectory() as _tmp:
+    _templates = Path(_tmp) / "templates"
+    _templates.mkdir()
+    _wanted = _templates / "template_mdl_chr_ttmr-cstm-0111_body.bundle"
+    _wanted.write_bytes(b"stub")
+    (_templates / "template_mdl_chr_atbm-cstm-0140_body.bundle").write_bytes(b"stub")
+
+    class _Scene:
+        gmi_bundle_template = str(_templates)
+
+    # 目录 + 资源名 → 唯一确定的那一个
+    assert Path(operators._resolve_bundle_template(
+        _Scene(), "mdl_chr_ttmr-cstm-0111_body")) == _wanted
+
+    # 直接给文件也认（老 .blend 存的是文件路径；别人单发一个模板也是这种）
+    _Scene.gmi_bundle_template = str(_wanted)
+    assert Path(operators._resolve_bundle_template(_Scene(), "")) == _wanted
+
+    # 目录里没有对应模板：报错必须点出**缺哪个文件名**，作者拿它去素材包补
+    _Scene.gmi_bundle_template = str(_templates)
+    try:
+        operators._resolve_bundle_template(_Scene(), "mdl_chr_hski-cstm-0000_body")
+    except ValueError as exc:
+        assert "template_mdl_chr_hski-cstm-0000_body.bundle" in str(exc), exc
+    else:
+        raise AssertionError("模板不存在却没报错")
+
+    # 留空、路径不存在：两种都要报错，不能默默往下走
+    for _bad in ("", str(Path(_tmp) / "nope")):
+        _Scene.gmi_bundle_template = _bad
+        try:
+            operators._resolve_bundle_template(_Scene(), "mdl_chr_ttmr-cstm-0111_body")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"无效模板路径没报错：{_bad!r}")
+
+print(f"GMI_TEMPLATE_LOOKUP_OK {bpy.app.version_string}")
