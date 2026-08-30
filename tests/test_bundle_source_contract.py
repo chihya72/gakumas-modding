@@ -232,6 +232,37 @@ def test_common_presets_cover_finger_bones():
         assert not result["unmapped"]
 
 
+def test_cygames_style_fingers_are_mapped_only_below_a_recognized_hand():
+    """`Thumb_01_L` 一类不是整张新预设：手腕结构和指型命名必须同时成立。"""
+    source = ["Wrist_L", "Thumb_01_L", "Thumb_02_L", "Thumb_03_L",
+              "Iindex_01_L", "Index_02_L", "Index_03_L",
+              "Middle_01_L", "Middle_02_L", "Middle_03_L",
+              "Ring_01_L", "Ring_02_L", "Ring_03_L",
+              "Pinky_01_L", "Pinky_02_L", "Pinky_03_L"]
+    parents = {"Wrist_L": "ForeArm_L"}
+    for finger, root in (("Thumb", "Thumb"), ("Index", "Iindex"),
+                         ("Middle", "Middle"), ("Ring", "Ring"), ("Pinky", "Pinky")):
+        parents[f"{root}_01_L"] = "Wrist_L"
+        parents[f"{finger}_02_L"] = f"{root}_01_L"
+        parents[f"{finger}_03_L"] = f"{finger}_02_L"
+    targets = {"LeftHand"}
+    targets.update(f"LeftHand{finger}{joint}"
+                   for finger in ("Thumb", "Index", "Middle", "Ring", "Pinky")
+                   for joint in range(1, 4))
+    report = core.build_bone_remap(
+        source, targets, parent_by_name=parents, preset_name="custom",
+        structural={"Wrist_L": "LeftHand"})
+    assert report["bones"]["Iindex_01_L"] == "LeftHandIndex1"
+    assert report["bones"]["Index_03_L"] == "LeftHandIndex3"
+    assert report["bones"]["Ring_01_L"] == "LeftHandRing1"
+    assert all(report["methods"][name] == "finger_chain" for name in source[1:])
+
+    false_positive = core.build_bone_remap(
+        ["Hips", "Ring_01_L"], {"Hips", "LeftHandRing1"},
+        parent_by_name={"Ring_01_L": "Hips"}, preset_name="custom")
+    assert "Ring_01_L" not in false_positive["bones"]
+
+
 def test_bone_remap_resolution_rules():
     result = core.build_bone_remap(
         ["Hips", "Spine_1", "左腕", "hair_ctrl"],

@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from uuid import uuid4
 
 import bpy
 from bpy.types import Operator
@@ -876,15 +877,91 @@ def row_bones(item):
     return members or ([item.source] if item.source else [])
 
 
+def _mapping_rows(scene):
+    """真实映射行。展开时插入的子行只负责显示/编辑，不能重复参与导出与闸门。"""
+    return [item for item in getattr(scene, "gmi_bone_map", ())
+            if not getattr(item, "is_group_child", False)]
+
+
+def _member_auto_targets(item):
+    try:
+        data = json.loads(getattr(item, "member_auto_targets", "") or "{}")
+    except (TypeError, ValueError):
+        data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def _member_overrides(item):
+    try:
+        data = json.loads(getattr(item, "member_overrides", "") or "{}")
+    except (TypeError, ValueError):
+        data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def _override_active(data):
+    return bool(
+        str(data.get("target") or "").strip()
+        or str(data.get("strategy") or "auto") != "auto"
+    )
+
+
+def _row_member_decisions(item):
+    """逐成员返回真正的表单决定；子覆盖为空/auto 时继承父组。"""
+    members = row_bones(item)
+    autos = _member_auto_targets(item)
+    overrides = _member_overrides(item)
+    out = {}
+    for name in members:
+        override = overrides.get(name) if isinstance(overrides.get(name), dict) else {}
+        active = _override_active(override)
+        out[name] = {
+            "target": (str(override.get("target") or "").strip()
+                       if active else item.target.strip()),
+            "strategy": (str(override.get("strategy") or "auto")
+                         if active else item.strategy),
+            "category": (str(override.get("category") or "auto")
+                         if active else item.swing_category),
+            "swing_anchor": (bool(override.get("swing_anchor"))
+                             if active else bool(item.swing_anchor)),
+            "auto_target": str(autos.get(name) or ""),
+            "override": active,
+        }
+    return out
+
+
 def row_effective_target(item):
     """这一行**实际生效**的目标骨：作者覆盖优先，没覆盖就用扫描时算出的自动判定。"""
-    return item.target.strip() or item.auto_target.strip()
+    manual = item.target.strip()
+    automatic = item.auto_target.strip()
+    if manual:
+        return manual
+    # 这是“组内成员的自动结果互不相同”的 UI 标记，不是目标骨名。把它当目标会让
+    # row_state 误判为已解决，随后“只看未决定”把真正需要拆组的这一行藏掉。
+    return "" if automatic == "逐骨不同" else automatic
 
 
 def _row_state(item):
-    """一行（= 一组）的五档状态。一组多根骨指同一根目标骨 = 合并，不是 direct。"""
-    return core.row_state(row_effective_target(item), item.strategy,
-                          shared_target=len(row_bones(item)) > 1)
+    """父组按逐成员有效决定判档；所有子骨都解决后，父组不能继续误报“未决定”。"""
+    decisions = _row_member_decisions(item)
+    if not decisions:
+        return "undecided"
+    states = []
+    targets = []
+    for decision in decisions.values():
+        target = decision["target"] or decision["auto_target"]
+        targets.append(target)
+        states.append(core.row_state(target, decision["strategy"]))
+    if "reject" in states:
+        return "reject"
+    if "undecided" in states:
+        return "undecided"
+    if any(state == "helper" for state in states):
+        return "helper"
+    nonempty = [target for target in targets if target]
+    if len(decisions) > 1 and nonempty and len(set(nonempty)) == 1:
+        return "merge"
+    return "direct"
 
 
 def _row_label(item):
@@ -892,15 +969,17 @@ def _row_label(item):
     members = row_bones(item)
     if not members:
         return "(空组)"
+    if getattr(item, "group_label", ""):
+        return f"{item.group_label}（{len(members)} 根）"
     return members[0] if len(members) == 1 else f"{members[0]} 等 {len(members)} 根"
 
 
 def _form_bone_map(scene):
     """骨骼映射表单里作者填过的行。空目标=不干预,交给自动判断。"""
-    return {name: item.target.strip()
-            for item in getattr(scene, "gmi_bone_map", ())
-            if item.target.strip()
-            for name in row_bones(item)}
+    return {name: decision["target"]
+            for item in _mapping_rows(scene)
+            for name, decision in _row_member_decisions(item).items()
+            if decision["target"]}
 
 
 def _form_physics_overrides(scene):
@@ -910,26 +989,26 @@ def _form_physics_overrides(scene):
     不翻译的话它们会掉进"按位置蹭最近摇物骨"那条兜底路径，静态装饰骨反而被绑上物理。
     """
     physical = {"bake": "rigid", "reject": "rigid"}
-    return {name: physical.get(item.strategy, item.strategy)
-            for item in getattr(scene, "gmi_bone_map", ())
-            if item.strategy != "auto" and not item.target.strip()
-            for name in row_bones(item)}
+    return {name: physical.get(decision["strategy"], decision["strategy"])
+            for item in _mapping_rows(scene)
+            for name, decision in _row_member_decisions(item).items()
+            if decision["strategy"] != "auto" and not decision["target"]}
 
 
 def _form_swing_categories(scene):
     """表单里点名过部件类型的行。只对自建摇物链有意义,别的策略不新建骨。"""
-    return {name: item.swing_category
-            for item in getattr(scene, "gmi_bone_map", ())
-            if item.swing_category != "auto"
-            and item.strategy == "integrate" and not item.target.strip()
-            for name in row_bones(item)}
+    return {name: decision["category"]
+            for item in _mapping_rows(scene)
+            for name, decision in _row_member_decisions(item).items()
+            if decision["category"] != "auto"
+            and decision["strategy"] == "integrate" and not decision["target"]}
 
 
 def _form_swing_anchor_bones(scene):
     """勾了「链根自己摆」的那些行覆盖的骨名。空集 = 全按默认（链根是惰性锚）。"""
-    return {name for item in getattr(scene, "gmi_bone_map", ())
-            if getattr(item, "swing_anchor", False)
-            for name in row_bones(item)}
+    return {name for item in _mapping_rows(scene)
+            for name, decision in _row_member_decisions(item).items()
+            if decision["swing_anchor"]}
 
 def _form_driver_bones(scene):
     """{骨名: 部件类型} —— 点名走「原版布料驱动器」的**那几根骨**。
@@ -942,11 +1021,11 @@ def _form_driver_bones(scene):
     收进来只会得到"既没驱动器也没摇物"的哑骨 —— 那种静默洞正是这一版要消灭的。
     """
     bones = {}
-    for item in getattr(scene, "gmi_bone_map", ()):
-        if item.strategy != "native_driver" or item.target.strip():
-            continue
-        for name in row_bones(item):
-            category = (item.swing_category if item.swing_category != "auto"
+    for item in _mapping_rows(scene):
+        for name, decision in _row_member_decisions(item).items():
+            if decision["strategy"] != "native_driver" or decision["target"]:
+                continue
+            category = (decision["category"] if decision["category"] != "auto"
                         else core.swing_category(name))
             if category in core.DRIVER_CATEGORIES:
                 bones[name] = category
@@ -961,11 +1040,11 @@ def _form_driver_gaps(scene):
     也不要静默把它换成摇物 —— 偷偷换求解器等于给作者一个"能动但不是他配的"结果。
     """
     gaps = []
-    for item in getattr(scene, "gmi_bone_map", ()):
-        if item.strategy != "native_driver" or item.target.strip():
-            continue
-        for name in row_bones(item):
-            category = (item.swing_category if item.swing_category != "auto"
+    for item in _mapping_rows(scene):
+        for name, decision in _row_member_decisions(item).items():
+            if decision["strategy"] != "native_driver" or decision["target"]:
+                continue
+            category = (decision["category"] if decision["category"] != "auto"
                         else core.swing_category(name))
             if category not in core.DRIVER_CATEGORIES:
                 gaps.append((name, category))
@@ -1045,8 +1124,11 @@ def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
                 report["accessoryBones"].append(name)
         # 分组按结构（锚点+链+链长），不读骨名——外语/乱码骨名下正则剥 left/right 全废。
         parents = _source_bone_parents(obj)
+        hand_anchors = {source for source, target in report["bones"].items()
+                        if target in ("LeftHand", "RightHand")}
         groups = core.structural_bone_groups(
-            report["accessoryBones"], parents, report["bodyBones"])
+            report["accessoryBones"], parents, report["bodyBones"],
+            separate_chain_anchors=hand_anchors)
         physics_report = core.build_accessory_physics_remap(
             [{"name": name, "position": position}
              for name, position in _source_bone_positions(obj).items()],
@@ -1786,7 +1868,7 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
     _mixed_family_note[0] = core.mixed_family_directive_error(
         core.mixed_family_directive_rows(
             [(_row_label(item), item.strategy, row_bones(item))
-             for item in getattr(scene, "gmi_bone_map", ())]))
+             for item in _mapping_rows(scene)]))
     remap, remap_report = _resolve_source_bone_remap(obj, bone_map, scene, skeleton)
     # 闸门 0.8：并进游戏衣物骨、子骨却还留在 mod 骨架里 → 整支子树被外来物理拽走。
     orphans = core.orphaned_subtree_error(core.orphaned_subtree_merges(
@@ -1811,8 +1893,9 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
     _coverage_soft_note[0] = core.critical_coverage_note(weighted_names, remap, bone_map)
     # 闸门 9（五档）：`reject` = 作者说这根骨处理不了 → 禁止导出；`bake` 没烘就导出等于
     # 把"会跳位"的几何原样出包，所以也拦。两条都点名具体的骨，不给"哪里错了自己找"。
-    rejected = [name for item in getattr(scene, "gmi_bone_map", ())
-                if item.strategy == "reject" for name in row_bones(item)]
+    rejected = [name for item in _mapping_rows(scene)
+                for name, decision in _row_member_decisions(item).items()
+                if decision["strategy"] == "reject"]
     if rejected:
         raise ValueError(
             f"{len(rejected)} 根骨被标成「拒绝导出」：" + "、".join(rejected[:12])
@@ -1821,7 +1904,7 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
               "自建摇物链 / 烘焙），或者先从网格里删掉这些骨的权重")
     # 闸门 9（B 档：默认拦，留一个显式放行开关，且放行必须留痕）。
     undecided_rows = [(_row_label(item), _row_state(item))
-                      for item in getattr(scene, "gmi_bone_map", ())]
+                      for item in _mapping_rows(scene)]
     allow_undecided = bool(getattr(scene, "gmi_allow_undecided", False))
     undecided_error = core.undecided_export_error(undecided_rows, allow_undecided)
     if undecided_error:
@@ -1841,8 +1924,9 @@ def _prepare_bundle_export_data(context, obj, scene, component_id=None):
     empty_error = core.empty_swing_chain_error(new_bone_report.get("emptyChains"))
     if empty_error:
         _empty_chain_note[0] = empty_error      # 空链只是白建，不损坏包，不拦
-    pending_bake = [name for item in getattr(scene, "gmi_bone_map", ())
-                    if item.strategy == "bake" for name in row_bones(item)]
+    pending_bake = [name for item in _mapping_rows(scene)
+                    for name, decision in _row_member_decisions(item).items()
+                    if decision["strategy"] == "bake"]
     if pending_bake and not obj.get("gmi_baked_rest_offset"):
         raise ValueError(
             f"{len(pending_bake)} 根骨标了「烘焙形变+并到父骨」，但还没烘："
@@ -2831,11 +2915,38 @@ class GMI_OT_bake_material_maps(Operator):
     bl_label = "按材质生成 t1/t4 并校准肤色"
     bl_description = (
         "按各材质槽标注的「材质类型」实测预设，从基础色 t0 派生 t1/t4 并自动填入导出贴图栏。"
-        "需要先填 t0 并给材质槽标好类型；对激活的发饰网格执行会写入发饰贴图栏"
+        "需要先填 t0 并给材质槽标好类型；发型包会连配套发饰一起生成，写入发饰贴图栏"
     )
     bl_options = {"REGISTER"}
 
     def execute(self, context):
+        """发型包一次生成两份：发型 + 配套发饰。
+
+        面板上发型和发饰是并排的两栏、共用最下面这一个按钮，所以一次点击必须覆盖两个
+        Renderer —— 否则作者在发饰那栏改了材质类型、点了按钮，只有发型被重烘，
+        发饰仍是上一次的图，而且没有任何提示。
+
+        `_bake_one` 认的是 `_author_mesh(context)`，所以这里临时把作者对象换成发饰再换回来；
+        发饰没填 t0 就跳过（wiki 允许发饰 t1/t4 留空走中性）。
+        """
+        scene = context.scene
+        result = self._bake_one(context)
+        if "FINISHED" not in result:
+            return result
+        prop = getattr(scene, "gmi_hairprop_object", None)
+        if (scene.gmi_component_id != "hair" or prop is None
+                or _object_component_id(_author_mesh(context), scene) != "hair"
+                or not str(scene.gmi_hairprop_base_color_file or "").strip()):
+            return result
+        prop["gmi_component_id"] = "hairprop"
+        saved = scene.gmi_author_object
+        scene.gmi_author_object = prop
+        try:
+            return self._bake_one(context)
+        finally:
+            scene.gmi_author_object = saved
+
+    def _bake_one(self, context):
         import numpy as np
 
         scene = context.scene
@@ -3096,11 +3207,65 @@ class GMI_bone_name(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty()
 
 
+def _group_parent(scene, child):
+    parent_id = getattr(child, "parent_group_id", "")
+    return next((item for item in getattr(scene, "gmi_bone_map", ())
+                 if not getattr(item, "is_group_child", False)
+                 and getattr(item, "group_id", "") == parent_id), None)
+
+
+def _store_child_override(child, context):
+    """把子行的显式设置写回父组。空目标 + auto 就删除覆盖，重新继承父组。"""
+    if getattr(child, "suppress_update", False) or not getattr(child, "is_group_child", False):
+        return
+    parent = _group_parent(context.scene, child)
+    if parent is None:
+        return
+    payload = {
+        "target": child.target.strip(),
+        "strategy": child.strategy,
+        "category": child.swing_category,
+        "swing_anchor": bool(child.swing_anchor),
+    }
+    overrides = _member_overrides(parent)
+    if _override_active(payload):
+        overrides[child.source] = payload
+    else:
+        overrides.pop(child.source, None)
+    parent.member_overrides = json.dumps(
+        overrides, ensure_ascii=False, separators=(",", ":"))
+
+
+def _bone_map_target_updated(item, context):
+    if getattr(item, "suppress_update", False):
+        return
+    item.origin = "manual" if item.target.strip() else ""
+    _store_child_override(item, context)
+
+
+def _bone_map_child_setting_updated(item, context):
+    _store_child_override(item, context)
+
+
 class GMI_bone_map_item(bpy.types.PropertyGroup):
     source: bpy.props.StringProperty(name="源骨")
+    # 纯 UI 组名。`source` 必须仍是一根真实源骨，左右手 15 根指骨这种语义组则显示成
+    # “左手手指”，避免拿权重最大的 Ring_01_L 当标题、让人误以为其余手指都跟着它。
+    group_label: bpy.props.StringProperty(default="", options={"HIDDEN"})
     # 一行 = 一组（结构分组的成员，换行分隔）。留空 = 这行只管 source 那一根骨。
-    # 作者在一行上做的决定落到这一组的每一根骨；要逐根不同就按「拆开这一组」。
+    # 作者在父行上的决定落到整组；展开后的子行只保存相对父组的逐骨覆盖。
     members: bpy.props.StringProperty(options={"HIDDEN"})
+    # UI 折叠状态不参与导出。子行永远留在父组树内；选中不改数据，只有实际修改子行字段
+    # 才写入 member_overrides。清空目标并选回 auto，就删除覆盖、重新继承父组。
+    expanded: bpy.props.BoolProperty(default=False, options={"HIDDEN"})
+    # 组内每根骨各自的自动目标。父行可能显示“逐骨不同”，选择子骨时必须显示该骨自己的
+    # 自动结果，不能把这个 UI 标记当成目标骨名。
+    member_auto_targets: bpy.props.StringProperty(default="", options={"HIDDEN"})
+    member_overrides: bpy.props.StringProperty(default="", options={"HIDDEN"})
+    group_id: bpy.props.StringProperty(default="", options={"HIDDEN"})
+    parent_group_id: bpy.props.StringProperty(default="", options={"HIDDEN"})
+    is_group_child: bpy.props.BoolProperty(default=False, options={"HIDDEN"})
+    suppress_update: bpy.props.BoolProperty(default=False, options={"HIDDEN"})
     # **表单只存作者的覆盖，不存自动判定的结果。**
     #
     # 以前 target 一个字段装三种东西：预设认出来的、位置匹配猜出来的、作者手填的。
@@ -3113,8 +3278,7 @@ class GMI_bone_map_item(bpy.types.PropertyGroup):
     target: bpy.props.StringProperty(
         name="覆盖为",
         description="只在你要推翻自动判定时才填。留空 = 用自动判定的结果",
-        update=lambda self, context: setattr(
-            self, "origin", "manual" if self.target.strip() else ""),
+        update=_bone_map_target_updated,
     )
     # 扫描时按「表单全空」算出来的结果，只读展示。它不进导出优先级 —— 导出永远现算，
     # 所以这里就算过期也只影响显示，不会让包和面板对不上。
@@ -3131,7 +3295,7 @@ class GMI_bone_map_item(bpy.types.PropertyGroup):
         name="链根自己摆",
         description="只对「自建摇物链」有意义。这一组的几何全在链根上时，"
                     "不勾=链根是惰性锚、这条链在游戏里不会动；勾上=链根自己摆",
-        default=False)
+        default=False, update=_bone_map_child_setting_updated)
     strategy: bpy.props.EnumProperty(
         name="装饰物理",
         description="只对没填目标骨的装饰骨有效。自动=跟源父骨（胸/Bust 按 Bust*_S）；"
@@ -3162,6 +3326,7 @@ class GMI_bone_map_item(bpy.types.PropertyGroup):
              "用在「还没想清楚怎么办、但绝不能静默出包」的骨上"),
         ],
         default="auto",
+        update=_bone_map_child_setting_updated,
     )
     swing_category: bpy.props.EnumProperty(
         name="部件类型",
@@ -3177,6 +3342,7 @@ class GMI_bone_map_item(bpy.types.PropertyGroup):
             ("skirt", "裙 / 裤 / 外套下摆", "建链 + 环形碰撞，最重"),
         ],
         default="auto",
+        update=_bone_map_child_setting_updated,
     )
 
 
@@ -3211,13 +3377,16 @@ class GMI_OT_build_bone_map(Operator):
         except Exception as exc:
             self.report({"ERROR"}, _error_text(exc))
             return {"CANCELLED"}
-        # 只保住**作者亲手填过**的覆盖（origin == "manual"）。自动判定的值不再进 target，
-        # 所以扫描天然就能把算法改好后的结果带出来 —— 以前那些填错的值永远压在上面。
-        kept = {name: item.target.strip()
-                for item in scene.gmi_bone_map if item.origin == "manual"
-                for name in row_bones(item) if item.target.strip()}
-        kept_strategy = dict(_form_physics_overrides(scene))
-        kept_category = dict(_form_swing_categories(scene))
+        # 两个按钮只切换**显示范围**。底层集合始终保存完整扫描结果，否则隐藏已处理行时
+        # 会连作者覆盖一起删掉；“列出全部 → 待处理”也会因重建范围不同而来回漂移。
+        scene.gmi_bone_map_only_undecided = bool(self.only_unmapped)
+        # 逐骨保存父组决定 + 子覆盖。展开出来的子行只是视图，真实状态都已写回父组 JSON；
+        # 重扫后按结构重新建树，再把同一结构组内的多数决定作为父设置、少数决定放回子覆盖。
+        kept_decisions = {
+            name: decision
+            for item in _mapping_rows(scene)
+            for name, decision in _row_member_decisions(item).items()
+        }
         scene.gmi_bone_targets.clear()
         for name in sorted(bone_map):
             scene.gmi_bone_targets.add().name = name
@@ -3227,10 +3396,38 @@ class GMI_OT_build_bone_map(Operator):
         mass_by_name = dict(_weighted_group_mass(obj))
         dominant_counts = _dominant_group_counts(obj)
         weighted = [name for name, _mass in _weighted_group_mass(obj)]
-        body = set(preset["bodyBones"]) | set(kept)
-        groups = core.structural_bone_groups(weighted, _source_bone_parents(obj), body)
-        rows = [[name] for name in weighted if name in body]
-        rows += [group["members"] for group in groups]
+        # 手动映射不改变自动分类。以前把 kept 并进 body：给 Hip+23 整组填一次目标后，
+        # 24 个成员下一扫全变成“一行一根”的身体骨，四行瞬间炸成几十行。
+        body = set(preset["bodyBones"])
+        parents = _source_bone_parents(obj)
+        hand_anchors = {source for source, target in preset["bones"].items()
+                        if target in ("LeftHand", "RightHand")}
+        groups = core.structural_bone_groups(
+            weighted, parents, body, separate_chain_anchors=hand_anchors)
+        # 已识别的指骨仍折成“左手手指 / 右手手指”两棵 UI 树，里面每一节保留自己的自动目标。
+        # 这只是批量编辑容器：默认不是 15 根都跟代表骨；只有作者在折叠父行上手填覆盖，才会
+        # 明确把同一决定应用到整手。展开后改任一子骨，仍走逐骨覆盖。
+        finger_targets = {
+            side: {f"{side}Hand{finger}{joint}"
+                   for finger in ("Thumb", "Index", "Middle", "Ring", "Pinky")
+                   for joint in range(1, 4)}
+            for side in ("Left", "Right")
+        }
+        finger_rows = []
+        finger_members = set()
+        group_labels = {}
+        for side, label in (("Left", "左手手指"), ("Right", "右手手指")):
+            members = [name for name in weighted
+                       if preset["bones"].get(name) in finger_targets[side]]
+            if len(members) > 1:
+                finger_rows.append(members)
+                finger_members.update(members)
+                group_labels[tuple(members)] = label
+        rows = [[name] for name in weighted if name in body and name not in finger_members]
+        rows.extend(finger_rows)
+        # 结构组永远保持一棵树，不因某个子骨有覆盖就拆成顶级行。差异写进父行的
+        # member_overrides，展开后仍显示在原父组下面。
+        rows.extend(group["members"] for group in groups)
         rows.sort(key=lambda members: -max(mass_by_name.get(name, 0.0) for name in members)
                   if members else 0.0)
 
@@ -3253,45 +3450,86 @@ class GMI_OT_build_bone_map(Operator):
         for members in rows:
             autos = {preset["bones"].get(name) for name in members}
             auto = autos.pop() if len(autos) == 1 else None
-            # 结构识别（预设认不出骨名时的兜底）猜出来的骨**永远列出来**：它是按骨架形状
-            # 推的，正是作者最该亲眼扫一遍的那批；藏进"已自动决定"里等于又回到静默。
-            guessed = any(preset["methods"].get(name) == "topology" for name in members)
-            touched = any(name in kept or name in kept_strategy for name in members)
-            if self.only_unmapped and auto and not touched and not guessed:
-                continue                            # 预设已认出且作者没改过 → 不占屏
+            # 记录结构识别来源，详情面板仍会明确标出「按骨架结构推断」。列表是否显示只由
+            # UI 的「只看待处理」过滤决定，扫描本身不再删行或偷偷改变数据范围。
+            methods = {preset["methods"].get(name) for name in members}
+            guessed = "topology" in methods
+            finger_chain = "finger_chain" in methods
             item = scene.gmi_bone_map.add()
-            item.source = max(members, key=lambda name: mass_by_name.get(name, 0.0))
+            # 标题必须是真正的链根。以前直接拿组内权重最大成员，整只左手会显示成
+            # `Ring_01_L +14`，视觉上像其余四指都是无名指的子骨，实际并非如此。
+            member_set = set(members)
+            roots = [name for name in members if parents.get(name) not in member_set]
+            item.source = max(roots or members, key=lambda name: mass_by_name.get(name, 0.0))
+            item.group_label = group_labels.get(tuple(members), "")
             item.members = "\n".join(members)
-            override = next((kept[name] for name in members if name in kept), "")
-            item.target = override
+            signatures = {}
+            for name in members:
+                decision = kept_decisions.get(name) or {}
+                signature = (
+                    str(decision.get("target") or ""),
+                    str(decision.get("strategy") or "auto"),
+                    str(decision.get("category") or "auto"),
+                    bool(decision.get("swing_anchor")),
+                )
+                signatures.setdefault(signature, []).append(name)
+            parent_signature = max(
+                signatures,
+                key=lambda signature: (
+                    len(signatures[signature]),
+                    sum(mass_by_name.get(name, 0.0) for name in signatures[signature]),
+                ),
+            )
+            parent_target, parent_strategy, parent_category, parent_anchor = parent_signature
+            item.target = parent_target
+            if parent_strategy != "auto":
+                item.strategy = parent_strategy
+            if parent_category != "auto":
+                item.swing_category = parent_category
+            item.swing_anchor = parent_anchor
+            member_overrides = {}
+            for signature, names in signatures.items():
+                if signature == parent_signature:
+                    continue
+                target, strategy, category, swing_anchor = signature
+                for name in names:
+                    member_overrides[name] = {
+                        "target": target,
+                        "strategy": strategy,
+                        "category": category,
+                        "swing_anchor": swing_anchor,
+                    }
+            item.member_overrides = json.dumps(
+                member_overrides, ensure_ascii=False, separators=(",", ":"))
             # 一行 = 一组，组里各骨的自动判定可能不同（左右成对的骨就是）。
             # 显示成同一个值会骗人，如实标出来。
-            resolved = {auto_targets.get(name) for name in members if auto_targets.get(name)}
+            member_targets = {
+                name: (auto_targets.get(name) or preset["bones"].get(name) or "")
+                for name in members
+            }
+            # 空值也是一种结果：一根已自动匹配、一根仍为空，绝不能把有值的那个冒充整组
+            # 目标。只有所有成员完全相同时才显示单一目标，其余统一标“逐骨不同”。
+            resolved = set(member_targets.values())
             item.auto_target = (resolved.pop() if len(resolved) == 1
-                                else "逐骨不同" if resolved else (auto or ""))
-            item.origin = ("manual" if override
+                                else "逐骨不同" if any(resolved) else (auto or ""))
+            item.member_auto_targets = json.dumps(
+                member_targets, ensure_ascii=False, separators=(",", ":"))
+            item.origin = ("manual" if parent_target
+                           else "finger_chain" if finger_chain
                            else "topology" if guessed
                            else "preset" if auto else "")
             item.mass = sum(mass_by_name.get(name, 0.0) for name in members)
             item.anchor_only = bool(core.anchor_only_roots(
                 members, _source_bone_parents(obj), dominant_counts))
-            strategy = next((kept_strategy[name] for name in members
-                             if name in kept_strategy), None)
-            if strategy:
-                item.strategy = strategy
-            category = next((kept_category[name] for name in members
-                             if name in kept_category), None)
-            if category:
-                item.swing_category = category
+            item.group_id = uuid4().hex if len(members) > 1 else ""
+            item.expanded = False
             listed += 1
         scene.gmi_bone_map_index = 0
-        undecided = sum(1 for item in scene.gmi_bone_map
-                        if core.row_state(row_effective_target(item),
-                                          item.strategy) == "undecided")
-        scope = "未被预设识别的" if self.only_unmapped else "全部"
-        self.report({"INFO"}, f"已列出 {listed} 行{scope}骨（{len(weighted)} 根骨并成 "
-                              f"{len(rows)} 行；预设识别 {len(preset['bones'])} 根，"
-                              f"待决定 {undecided} 行）")
+        undecided = sum(1 for item in _mapping_rows(scene)
+                        if _row_state(item) == "undecided")
+        scope = f"当前只显示 {undecided} 行待处理" if self.only_unmapped else "当前显示全部"
+        self.report({"INFO"}, f"已扫描 {len(weighted)} 根骨并成 {listed} 行（{scope}；"
+                              f"自动识别 {len(preset['bones'])} 根）")
         return {"FINISHED"}
 
 
@@ -3313,9 +3551,8 @@ class GMI_OT_split_bone_group(Operator):
         if len(members) < 2:
             self.report({"INFO"}, "这行只有一根骨，不用拆")
             return {"CANCELLED"}
-        kept = (item.target, item.strategy, item.swing_category, item.origin,
-                item.auto_target)
-        kept_anchor = bool(item.swing_anchor)
+        decisions = _row_member_decisions(item)
+        member_auto_targets = _member_auto_targets(item)
         # remove() 之后 item 是野指针，用到的值必须先取出来
         fallback_mass = item.mass / len(members)
         obj = _author_mesh(context)
@@ -3326,20 +3563,132 @@ class GMI_OT_split_bone_group(Operator):
         if obj and obj.type == "MESH" and obj.vertex_groups:
             anchor_only_roots = set(core.anchor_only_roots(
                 members, _source_bone_parents(obj), _dominant_group_counts(obj)))
+        parent_id = item.group_id
+        for child_index in reversed(range(len(scene.gmi_bone_map))):
+            child = scene.gmi_bone_map[child_index]
+            if (getattr(child, "is_group_child", False)
+                    and child.parent_group_id == parent_id):
+                scene.gmi_bone_map.remove(child_index)
         scene.gmi_bone_map.remove(index)
         for offset, name in enumerate(members):
             new = scene.gmi_bone_map.add()
             new.source = name
             new.members = name
+            decision = decisions[name]
             # target 的 update 回调会改写 origin，所以 origin 必须**在 target 之后**赋
-            (new.target, new.strategy, new.swing_category,
-             new.origin, new.auto_target) = kept
-            new.swing_anchor = kept_anchor
+            new.target = decision["target"]
+            new.strategy = decision["strategy"]
+            new.swing_category = decision["category"]
+            new.origin = "manual" if new.target else ""
+            new.auto_target = str(member_auto_targets.get(name) or "")
+            new.member_auto_targets = json.dumps(
+                {name: new.auto_target}, ensure_ascii=False, separators=(",", ":"))
+            new.swing_anchor = decision["swing_anchor"]
             new.anchor_only = name in anchor_only_roots
             new.mass = mass_by_name.get(name, fallback_mass)
             scene.gmi_bone_map.move(len(scene.gmi_bone_map) - 1, index + offset)
         scene.gmi_bone_map_index = index
         self.report({"INFO"}, f"已拆成 {len(members)} 行")
+        return {"FINISHED"}
+
+
+class GMI_OT_toggle_bone_group(Operator):
+    bl_idname = "gmi.toggle_bone_group"
+    bl_label = "展开 / 折叠骨组"
+    bl_description = "展开查看组内每根骨；折叠状态下的处理决定作用于整组"
+
+    index: bpy.props.IntProperty(default=-1, options={"HIDDEN"})
+
+    def execute(self, context):
+        scene = context.scene
+        if not 0 <= self.index < len(scene.gmi_bone_map):
+            return {"CANCELLED"}
+        item = scene.gmi_bone_map[self.index]
+        if getattr(item, "is_group_child", False):
+            item = _group_parent(scene, item)
+            if item is None:
+                return {"CANCELLED"}
+            self.index = next(index for index, row in enumerate(scene.gmi_bone_map)
+                              if row == item)
+        if len(row_bones(item)) < 2:
+            return {"CANCELLED"}
+        if not item.group_id:
+            item.group_id = uuid4().hex
+        child_indices = [index for index, child in enumerate(scene.gmi_bone_map)
+                         if getattr(child, "is_group_child", False)
+                         and child.parent_group_id == item.group_id]
+        if item.expanded and child_indices:
+            for child_index in reversed(child_indices):
+                scene.gmi_bone_map.remove(child_index)
+            item = scene.gmi_bone_map[self.index]
+            item.expanded = False
+            scene.gmi_bone_map_index = self.index
+            return {"FINISHED"}
+
+        # 展开只创建树形视图子行；不写映射、不拆组。子行字段只存“相对父组的覆盖”。
+        for child_index in reversed(child_indices):
+            scene.gmi_bone_map.remove(child_index)
+        item = scene.gmi_bone_map[self.index]
+        overrides = _member_overrides(item)
+        autos = _member_auto_targets(item)
+        parent_id = item.group_id
+        members = list(row_bones(item))
+        obj = _author_mesh(context)
+        mass_by_name = (dict(_weighted_group_mass(obj))
+                        if obj and obj.type == "MESH" and obj.vertex_groups else {})
+        fallback_mass = item.mass / len(members)
+        anchor_only_roots = set()
+        if obj and obj.type == "MESH" and obj.vertex_groups:
+            anchor_only_roots = set(core.anchor_only_roots(
+                members, _source_bone_parents(obj), _dominant_group_counts(obj)))
+        item.expanded = True
+        for offset, name in enumerate(members):
+            override = overrides.get(name) if isinstance(overrides.get(name), dict) else {}
+            child = scene.gmi_bone_map.add()
+            child.suppress_update = True
+            child.source = name
+            child.members = name
+            child.is_group_child = True
+            child.parent_group_id = parent_id
+            child.target = str(override.get("target") or "")
+            child.strategy = str(override.get("strategy") or "auto")
+            child.swing_category = str(override.get("category") or "auto")
+            child.swing_anchor = bool(override.get("swing_anchor"))
+            child.origin = ("manual" if child.target else item.origin
+                            if item.origin in ("preset", "topology", "finger_chain") else "")
+            child.auto_target = str(autos.get(name) or "")
+            child.member_auto_targets = json.dumps(
+                {name: child.auto_target}, ensure_ascii=False, separators=(",", ":"))
+            child.mass = mass_by_name.get(name, fallback_mass)
+            child.anchor_only = name in anchor_only_roots
+            child.suppress_update = False
+            scene.gmi_bone_map.move(len(scene.gmi_bone_map) - 1, self.index + 1 + offset)
+        scene.gmi_bone_map_index = self.index
+        return {"FINISHED"}
+
+
+class GMI_OT_reset_bone_member_override(Operator):
+    bl_idname = "gmi.reset_bone_member_override"
+    bl_label = "恢复跟随整组"
+    bl_description = "清除这根子骨的单独设置，恢复继承父组"
+
+    index: bpy.props.IntProperty(default=-1, options={"HIDDEN"})
+
+    def execute(self, context):
+        scene = context.scene
+        if not 0 <= self.index < len(scene.gmi_bone_map):
+            return {"CANCELLED"}
+        child = scene.gmi_bone_map[self.index]
+        if not getattr(child, "is_group_child", False):
+            return {"CANCELLED"}
+        child.suppress_update = True
+        child.target = ""
+        child.strategy = "auto"
+        child.swing_category = "auto"
+        child.swing_anchor = False
+        child.origin = ""
+        child.suppress_update = False
+        _store_child_override(child, context)
         return {"FINISHED"}
 
 
@@ -3709,8 +4058,9 @@ class GMI_OT_bake_rest_offset(Operator):
                         "连着烘两次等于把形变叠两遍")
             return {"CANCELLED"}
 
-        bake_bones = [name for item in scene.gmi_bone_map if item.strategy == "bake"
-                      for name in row_bones(item)]
+        bake_bones = [name for item in _mapping_rows(scene)
+                      for name, decision in _row_member_decisions(item).items()
+                      if decision["strategy"] == "bake"]
         if not bake_bones:
             self.report({"ERROR"}, "没有标成「烘焙形变+并到父骨」的骨；先在骨骼映射表里标")
             return {"CANCELLED"}
@@ -3876,13 +4226,16 @@ class GMI_OT_show_bone_weights(Operator):
 
 class GMI_OT_clear_bone_map(Operator):
     bl_idname = "gmi.clear_bone_map"
-    bl_label = "清空映射表"
-    bl_description = "清空表单（不影响外部骨骼映射 JSON）"
+    bl_label = "重置骨骼映射"
+    bl_description = ("丢弃当前表单及其中的手动覆盖，回到未扫描状态；"
+                      "不修改作者模型、权重或外部骨骼映射 JSON")
 
     def execute(self, context):
-        context.scene.gmi_bone_map.clear()
-        context.scene.gmi_bone_targets.clear()
-        self.report({"INFO"}, "已清空骨骼映射表")
+        scene = context.scene
+        scene.gmi_bone_map.clear()
+        scene.gmi_bone_targets.clear()
+        scene.gmi_bone_map_only_undecided = False
+        self.report({"INFO"}, "骨骼映射已重置；模型、权重和外部 JSON 均未修改")
         return {"FINISHED"}
 
 
@@ -3936,7 +4289,7 @@ class GMI_OT_load_bone_map(Operator):
                                  GMI_bone_map_item.bl_rna.properties[prop].enum_items}
         valid, valid_categories = enum_ids("strategy"), enum_ids("swing_category")
         hit = 0
-        for item in scene.gmi_bone_map:
+        for item in _mapping_rows(scene):
             # 一行 = 一组：组里任一成员命中就算这一行命中（组内决定本来就是同一个）
             pick = lambda table: next((table[name] for name in row_bones(item)
                                        if name in table), None)
@@ -3960,6 +4313,8 @@ CLASSES = (
     GMI_bone_map_item,
     GMI_OT_build_bone_map,
     GMI_OT_split_bone_group,
+    GMI_OT_toggle_bone_group,
+    GMI_OT_reset_bone_member_override,
     GMI_OT_report_rig_alignment,
     GMI_OT_split_weight_from_neighbours,
     GMI_OT_bake_rest_offset,

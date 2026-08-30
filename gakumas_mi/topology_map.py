@@ -3,15 +3,13 @@
 八张预设表覆盖 MMD / mixamo / rigify / vrm / biped / auto-rig-pro / scsp / unity —— 名字落在
 这八家之外就全落空。而「骨名混乱、骨架也混乱」恰恰是最需要自动化的那类模型。
 
-结构是骗不了人的：人体只有一种拓扑。从骨架自己量出上/左两个方向，然后
-胯 = 同时挂着两条向下长链和一条向上链的那根骨；腿 = 两条向下的；脊椎 = 向上的；
-手臂 = 从脊椎上段横着分出去的两条；左右 = 沿左轴的正负。
+结构比名字稳定，但 Unity/Cygames 骨架常在躯干根部分叉：Hip 挂两条腿，Waist 与 Hip 是
+Root 下的兄弟，而不一定是 Hip 的子骨。先用腿反算真正的上轴，再从 Hip 的祖先附近寻找
+向上的中央链；手臂取中央链同一节上成对的横向长链，左右沿稳定的局部横轴判断。
 
 只认 15 根必需骨（Unity 建 Humanoid 的下限）+ 肩和脚趾。手指不认：它们对姿势和体检都没有
 影响，而且认错的代价比不认高。
 """
-import math
-
 REQUIRED = ["Hips", "Spine", "Head",
             "LeftArm", "LeftForeArm", "LeftHand", "RightArm", "RightForeArm", "RightHand",
             "LeftUpLeg", "LeftLeg", "LeftFoot", "RightUpLeg", "RightLeg", "RightFoot"]
@@ -47,7 +45,8 @@ def build(armature):
         return {}
     root = max(roots, key=_subtree_size)
 
-    # 上 = 整副骨架最长那条链的方向；左 = 待定，先找到两条腿再说。
+    # 先拿最长链估一个“上”。它只负责找到胯和腿，腿找到以后会用两条腿反算真正的上轴。
+    # 不能一直信最长链：衣物链可能比腿长，手指子树也可能把它拐进胳膊。
     spine_guess = _chain_from(root)
     if len(spine_guess) < 4:
         return {}
@@ -80,13 +79,31 @@ def build(armature):
     legs = sorted(downward_children(hips), key=_subtree_size, reverse=True)[:2]
     if len(legs) < 2:
         return {}
+    # 两条腿的前三节比“根到全树最深叶子”可靠：最深叶子可能是膝盖挂件。大腿到脚的
+    # 平均方向就是下，用它把前面可能斜进手臂的粗略 up 拉正。
+    down = None
+    for leg in legs:
+        chain = _chain_from(leg)
+        probe = chain[min(2, len(chain) - 1)]
+        span = probe.head_local - leg.head_local
+        if span.length > 1e-6:
+            value = span.normalized()
+            down = value if down is None else down + value
+    if down is None or down.length < 1e-6:
+        return {}
+    up = (-down).normalized()
+
     # 左右：沿「两条腿之间」的方向定左轴，再用它给所有部位分边。
     left = (legs[0].head_local - legs[1].head_local)
     if left.length < 1e-6:
         return {}
     left = (left - up * left.dot(up)).normalized()
-    if legs[0].head_local.dot(left) < legs[1].head_local.dot(left):
-        legs = [legs[1], legs[0]]
+    # 仅靠一对镜像点只能得到“左右轴”，得不到正负语义。Blender/FBX 人形约定角色左侧为
+    # 骨架局部横轴的正方向；把 left 的主分量定为正，避免某侧挂件让 subtree 排序把左右翻掉。
+    components = (left.x, left.y, left.z)
+    if components[max(range(3), key=lambda index: abs(components[index]))] < 0.0:
+        left = -left
+    legs = sorted(legs, key=lambda bone: bone.head_local.dot(left), reverse=True)
     # legs[0] 在 +left 一侧 —— 那是角色自己的左。
 
     mapping = {"Hips": hips.name}
@@ -100,43 +117,95 @@ def build(armature):
         if len(chain) > 3:
             mapping[f"{side}ToeBase"] = chain[3].name
 
-    # 脊椎：胯上面那条朝 up 的链。手臂从它中上段横着分出去。
-    spine_root = None
-    for child in hips.children:
-        if child in legs:
-            continue
-        tip = _chain_from(child)[-1]
-        span = tip.head_local - child.head_local
-        if span.length > 1e-6 and span.normalized().dot(up) > 0.5:
-            if spine_root is None or _subtree_size(child) > _subtree_size(spine_root):
-                spine_root = child
-    if spine_root is None:
-        return {}
-    # 这条链会一路走进头发和配饰（`_chain_from` 只认子树大小），所以它不是「脊椎」，
-    # 而是「从脊椎起步的最深链」。真正的胸椎由手臂挂在谁身上决定，见下面。
-    spine = _chain_from(spine_root)
+    def upward_chain(start):
+        """沿中央、向上的子骨走；不用子树大小，避免 Chest 拐进手臂/手指。"""
+        chain = [start]
+        cursor = start
+        for _ in range(16):
+            choices = []
+            for child in cursor.children:
+                delta = child.head_local - cursor.head_local
+                if delta.length < 1e-6:
+                    continue
+                vertical = delta.dot(up)
+                alignment = vertical / delta.length
+                if vertical <= 1e-6 or alignment < 0.25:
+                    continue
+                lateral = (delta - up * vertical).length
+                # 先看实际向上跨度，再罚离中央轴的距离。只按“方向有多直”会把胸前短挂件
+                # （方向很直但只有一小截）压过真正的 Neck。
+                score = vertical - 0.5 * lateral + alignment * 1e-5
+                score += min(_subtree_size(child), 8) * 1e-7
+                choices.append((score, vertical, child))
+            if not choices:
+                break
+            cursor = max(choices, key=lambda item: (item[0], item[1]))[2]
+            chain.append(cursor)
+        return chain
 
-    # 手臂：脊椎上任何一根骨的子骨里，朝向以 ±left 为主的那两条。
-    arms = []
-    for vertebra in spine:
+    # 正常骨架的 Spine 是 Hip 子骨；Cygames/部分 Unity 导出的骨架则是
+    # Root -> {Hip(腿), Waist(躯干)}。沿胯的祖先向上两层找兄弟分支，二者都覆盖。
+    trunk_roots = [child for child in hips.children if child not in legs]
+    branch, ancestor = hips, hips.parent
+    for _ in range(2):
+        if ancestor is None:
+            break
+        trunk_roots.extend(child for child in ancestor.children if child != branch)
+        branch, ancestor = ancestor, ancestor.parent
+
+    spine = None
+    best_score = None
+    for candidate in dict.fromkeys(trunk_roots):
+        chain = upward_chain(candidate)
+        span = chain[-1].head_local - candidate.head_local
+        vertical = span.dot(up)
+        if vertical <= 1e-6:
+            continue
+        start = candidate.head_local - hips.head_local
+        start_vertical = start.dot(up)
+        lateral = (start - up * start_vertical).length
+        score = vertical - lateral * 0.5 + min(len(chain), 8) * 1e-4
+        if best_score is None or score > best_score:
+            best_score, spine = score, chain
+    if not spine:
+        return {}
+
+    # 手臂必须是一对、挂在同一节中央脊柱上并分别朝 ±left。这样不会拿单侧胸饰或
+    # 一条横向飘带凑数；每支只量前四节，手指再深也不参与评分。
+    arms = None
+    chest = None
+    arm_score = None
+    for index, vertebra in enumerate(spine):
+        next_central = spine[index + 1] if index + 1 < len(spine) else None
+        positive, negative = [], []
         for child in vertebra.children:
-            if child in spine:
+            if child == next_central:
                 continue
             chain = _chain_from(child)
             if len(chain) < 3:
                 continue
-            span = chain[-1].head_local - child.head_local
+            probe = chain[min(3, len(chain) - 1)]
+            span = probe.head_local - child.head_local
             if span.length < 1e-6:
                 continue
-            if abs(span.normalized().dot(left)) > 0.6:
-                arms.append(child)
-    arms = sorted(arms, key=_subtree_size, reverse=True)[:2]
-    if len(arms) < 2:
+            lateral = span.dot(left)
+            if abs(lateral) / span.length < 0.6:
+                continue
+            (positive if lateral > 0 else negative).append((abs(lateral), child))
+        if not positive or not negative:
+            continue
+        left_arm = max(positive, key=lambda item: item[0])
+        right_arm = max(negative, key=lambda item: item[0])
+        score = left_arm[0] + right_arm[0] - abs(left_arm[0] - right_arm[0]) * 0.25
+        if arm_score is None or score > arm_score:
+            arm_score = score
+            arms = [left_arm[1], right_arm[1]]
+            chest = vertebra
+    if arms is None or chest is None:
         return {}
-    if arms[0].head_local.dot(left) < arms[1].head_local.dot(left):
-        arms = [arms[1], arms[0]]
-    # 胸椎 = 手臂挂上去的那根。脊椎到此为止，再往上是脖子和头。
-    chest = arms[0].parent if arms[0].parent in spine else spine[min(2, len(spine) - 1)]
+
+    # 胸椎 = 两臂共同挂点。脊椎到此为止，再往上第一节是脖，第二节是头；后面即使继续
+    # 走进头发也不再覆盖 Head。
     vertebrae = spine[:spine.index(chest) + 1] if chest in spine else spine[:3]
     mapping["Spine"] = vertebrae[0].name
     if len(vertebrae) > 1:
@@ -157,37 +226,14 @@ def build(armature):
         mapping[f"{side}ForeArm"] = chain[1].name
         mapping[f"{side}Hand"] = chain[2].name
 
-    # 头：脊椎顶上朝 up 的那一支。别跟着最长链走——头发和配饰挂在头下面，最深的那条会一路
-    # 走进蝴蝶结里（实测就认到了 `Bone_BowknotB02_L`）。头的特征是**直接子骨最多**：
-    # 头发、眼、颌、耳都挂在它下面。
-    # 方向一律用「子骨的位置」量，不用 bone.tail：FBX 按原轴导入时，叶子骨的 tail 全是同一个
-    # 默认长度，实测 `Bip001 Neck` 自身朝向读出来是向下的，而胸骨读出来朝上 dot=+0.98 —— 用
-    # tail 判会把胸骨当成脖子。链尾也不行：头发往下垂，用链尾会把整条脖子滤掉。
-    # 再加一条硬条件：脖子下面一定挂着头，所以叶子骨（胸骨、挂点、AO 代理）直接出局。
-    neck_root = None
-    for child in chest.children:
-        if child in arms or not child.children:
-            continue
-        span = max(child.children, key=_subtree_size).head_local - child.head_local
-        if span.length < 1e-6 or span.normalized().dot(up) < 0.3:
-            continue
-        if neck_root is None or _subtree_size(child) > _subtree_size(neck_root):
-            neck_root = child
-    if neck_root is not None:
-        mapping["Neck"] = neck_root.name
-        cursor, head = neck_root, neck_root
-        for _ in range(6):
-            children = [c for c in cursor.children]
-            if not children:
-                break
-            if len(children) > len(head.children):
-                head = cursor
-            cursor = max(children, key=_subtree_size)
-        if len(cursor.children) > len(head.children):
-            head = cursor
-        mapping["Head"] = head.name
+    above = spine[spine.index(chest) + 1:]
+    if not above:
+        return {}
+    if len(above) >= 2:
+        mapping["Neck"] = above[0].name
+        mapping["Head"] = above[1].name
     else:
-        mapping["Head"] = chest.name
+        mapping["Head"] = above[0].name
 
     if any(bone not in mapping for bone in REQUIRED):
         return {}

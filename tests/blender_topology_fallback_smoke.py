@@ -61,6 +61,16 @@ SKELETON = [
     ("b_24", (0.00, -0.04, 1.62), (0.00, -0.08, 1.60), "b_20"),
 ]
 
+# 学马原版身体常见的分叉：Position -> Root -> {Hip（腿）, Waist（躯干）}。
+# 这正是 md_body1203_hq 的关键结构；旧兜底只从 Hip.children 找 Spine，会整条躯干落空。
+SIBLING_TORSO_SKELETON = [
+    ("g_position", (0.00, 0.0, 0.90), (0.00, 0.0, 0.95), None),
+    ("g_root", (0.00, 0.0, 0.95), (0.00, 0.0, 1.00), "g_position"),
+] + [
+    (name, head, tail, "g_root" if name in {"b_00", "b_09"} else parent)
+    for name, head, tail, parent in SKELETON
+]
+
 EXPECTED = {
     "b_00": "Hips", "b_09": "Spine", "b_10": "Spine1", "b_11": "Spine2",
     "b_19": "Neck", "b_20": "Head",
@@ -71,7 +81,7 @@ EXPECTED = {
 }
 
 
-def build_rig(rename=None):
+def build_rig(rename=None, skeleton=None):
     """废名人形骨架 + 每根骨一个顶点组的作者网格。`rename` 改写个别骨名。"""
     for existing in list(bpy.data.objects):
         bpy.data.objects.remove(existing, do_unlink=True)
@@ -81,14 +91,15 @@ def build_rig(rename=None):
     bpy.context.collection.objects.link(rig)
     bpy.context.view_layer.objects.active = rig
     bpy.ops.object.mode_set(mode="EDIT")
-    for name, head, tail, parent in SKELETON:
+    skeleton = skeleton or SKELETON
+    for name, head, tail, parent in skeleton:
         bone = data.edit_bones.new(rename.get(name, name))
         bone.head, bone.tail = head, tail
         if parent:
             bone.parent = data.edit_bones[rename.get(parent, parent)]
     bpy.ops.object.mode_set(mode="OBJECT")
 
-    names = [rename.get(name, name) for name, *_rest in SKELETON]
+    names = [rename.get(name, name) for name, *_rest in skeleton]
     mesh = bpy.data.meshes.new("AuthorMesh")
     mesh.from_pydata([(0.0, 0.0, index * 0.01) for index in range(len(names))], [], [])
     obj = bpy.data.objects.new("AuthorMesh", mesh)
@@ -125,5 +136,11 @@ assert report["bones"]["LeftForeArm"] == "LeftForeArm"
 assert report["methods"]["LeftForeArm"] == "direct"
 assert "b_12" not in report["bones"]
 
+# ④ Root 下 Hip / Waist 分叉时也必须得到同一份人体映射；包装根不能混进结果。
+obj = build_rig(skeleton=SIBLING_TORSO_SKELETON)
+report = operators._preset_bone_remap(obj, GAME_BONES, scene)
+assert report["bones"] == EXPECTED, report["bones"]
+assert set(report["methods"].values()) == {"topology"}, report["methods"]
+
 print(f"GMI_TOPOLOGY_FALLBACK_OK {bpy.app.version_string} "
-      f"{len(EXPECTED)} 根废名骨全部按结构认出")
+      f"标准/分叉两种拓扑均认出 {len(EXPECTED)} 根废名骨")

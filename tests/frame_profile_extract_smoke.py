@@ -422,3 +422,50 @@ if __name__ == "__main__":
     test_extract_uses_actor_vertex_hints_to_avoid_wrong_body()
     test_records_first_index_tails_and_all_vs()
     test_extracts_secondary_material_section_with_own_textures()
+
+
+def test_extract_finds_sub_1000_vertex_hairprop():
+    """发饰只有 954 顶点时，别被「≥1000 顶点」那道 body 时代的闸门砍掉。
+
+    实测 hski 的 Geo_HairProp 是 954 顶点（0082/0083/hair-0027 更是 872），
+    修复前 `_select_main_candidate` 先按 ≥1000 过滤，954 那个候选进不了池子，
+    于是发饰被选成同帧的 Geo_Hair（16345 顶点），配置档整份作废。
+    """
+    core = load_core()
+    with tempfile.TemporaryDirectory() as temp:
+        capture = Path(temp) / "FrameAnalysis-2026-08-29-221046"
+        output = Path(temp) / "generated-profile"
+        capture.mkdir()
+
+        lines = []
+        # 同帧的发型（16345 顶点，够大）
+        for draw in (139, 141, 143):
+            lines.extend([
+                f"{draw:06d} VSSetShader(hash=fe50b7a82b0f37be)",
+                f"{draw:06d} PSSetShader(hash=f872756c910a6eb7)",
+                f"{draw:06d} IASetIndexBuffer(format=R16_UINT, hash=548ce056)",
+                f"{draw:06d} DrawIndexedInstanced(IndexCountPerInstance:67410, InstanceCount:1, StartIndexLocation:0, BaseVertexLocation:0, StartInstanceLocation:0)",
+            ])
+            write_resource(capture, draw, "ib", "548ce056", "fe50b7a82b0f37be", "f872756c910a6eb7", 67410 * 2)
+            write_resource(capture, draw, "vb0", "1f2a3b4c", "fe50b7a82b0f37be", "f872756c910a6eb7", 16345 * 40)
+            write_resource(capture, draw, "vb1", "5d6e7f80", "fe50b7a82b0f37be", "f872756c910a6eb7", 16345 * 12)
+        # 同帧的发饰（954 顶点，比闸门小）
+        for draw in (137, 138, 140):
+            lines.extend([
+                f"{draw:06d} VSSetShader(hash=fe50b7a82b0f37be)",
+                f"{draw:06d} PSSetShader(hash=f872756c910a6eb7)",
+                f"{draw:06d} IASetIndexBuffer(format=R16_UINT, hash=e755a4de)",
+                f"{draw:06d} DrawIndexedInstanced(IndexCountPerInstance:2670, InstanceCount:1, StartIndexLocation:0, BaseVertexLocation:0, StartInstanceLocation:0)",
+            ])
+            write_resource(capture, draw, "ib", "e755a4de", "fe50b7a82b0f37be", "f872756c910a6eb7", 2670 * 2)
+            write_resource(capture, draw, "vb0", "90a1b2c3", "fe50b7a82b0f37be", "f872756c910a6eb7", 954 * 40)
+            write_resource(capture, draw, "vb1", "d4e5f607", "fe50b7a82b0f37be", "f872756c910a6eb7", 954 * 12)
+        write_texture_resource(capture, 137, 0, "aabbccdd", "fe50b7a82b0f37be", "f872756c910a6eb7")
+
+        (capture / "log.txt").write_text("\n".join(lines), encoding="utf-8")
+
+        report = core.extract_profile_from_frame_dump(
+            capture, output, component_id="hairprop", expected_vertex_count=954,
+        )
+        assert report["selected"]["vertices"] == 954, report["selected"]
+        assert report["selected"]["ibHash"] == "e755a4de", report["selected"]

@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (1, 6, 0),
+    "version": (1, 7, 0),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "学园偶像大师换装/换发 mod 制作：目标参照 → 作者模型 → 材质 → 骨架物理 → 检查并导出 AB bundle",

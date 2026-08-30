@@ -18,6 +18,7 @@ class FakeLayout:
     def __init__(self):
         self.properties = []
         self.operators = []
+        self.lists = []
 
     def box(self):
         return self
@@ -47,8 +48,8 @@ class FakeLayout:
         assert hasattr(data, name), name
         self.properties.append(name)
 
-    def template_list(self, *_args, **_kwargs):
-        return None
+    def template_list(self, _ui_class, list_id, data, _prop, *_args, **_kwargs):
+        self.lists.append((list_id, getattr(data, "name", data)))
 
     def column(self, **_kwargs):
         return self
@@ -124,6 +125,25 @@ try:
     assert "gmi_hairprop_base_color_file" in hair_layout.properties
     assert "gmi_hair_use_base_alpha" in hair_layout.properties
     assert "gmi_opacity_texture_file" not in hair_layout.properties
+
+    # 发型包第三步：发型和发饰是并排的两栏，各有自己的材质槽列表。
+    # 发饰以前只有三个贴图路径、没有材质槽，作者在面板里改不了发饰的材质类型
+    # （而它决定发饰描边常量），只能去 Scripting 里切 gmi_author_object。
+    prop_mesh = bpy.data.meshes.new("GMI_UI_SmokeProp")
+    prop_mesh.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
+    prop_mesh.uv_layers.new(name="UVMap")
+    prop_mesh.materials.append(bpy.data.materials.new("GMI_UI_SmokePropMaterial"))
+    prop_obj = bpy.data.objects.new("GMI_UI_SmokeProp", prop_mesh)
+    scene.collection.objects.link(prop_obj)
+    scene.gmi_hairprop_object = prop_obj
+    hairprop_layout = FakeLayout()
+    ui.draw_texture_step(hairprop_layout, scene, bpy.context)
+    list_ids = [list_id for list_id, _data in hairprop_layout.lists]
+    assert "GMI_materials" in list_ids, list_ids
+    assert "GMI_hairprop_materials" in list_ids, list_ids
+    # 发饰那一栏画的必须是发饰对象，不能跟着作者模型走
+    assert dict(hairprop_layout.lists)["GMI_hairprop_materials"] == prop_obj.name
+    scene.gmi_hairprop_object = None
 
     scene.gmi_component_id = "body"
     body_layout = FakeLayout()
@@ -273,12 +293,207 @@ try:
         name: "Hips" for name in ("スカート0", "スカート1", "スカート2")}
     assert ui._row_state(group) == "merge", "三根骨指到同一根目标骨 = 多对一"
 
+    # 真树形组：展开只插入子视图，点击/选中不改映射；只有修改子字段才写逐骨覆盖。
+    group.member_auto_targets = json.dumps({
+        "スカート0": "Hips", "スカート1": "Spine", "スカート2": "Hips"})
+    assert bpy.ops.gmi.toggle_bone_group(index=0) == {"FINISHED"}
+    assert len(scene.gmi_bone_map) == 4
+    assert len(operators._mapping_rows(scene)) == 1
+    assert operators.row_bones(scene.gmi_bone_map[0]) == [
+        "スカート0", "スカート1", "スカート2"]
+    children = list(scene.gmi_bone_map)[1:]
+    assert all(child.is_group_child for child in children)
+    child = next(child for child in children if child.source == "スカート1")
+    scene.gmi_bone_map_index = next(
+        index for index, row in enumerate(scene.gmi_bone_map) if row.source == "スカート1")
+    selected_layout = FakeLayout()
+    ui.draw_rig_step(selected_layout, scene, bpy.context)
+    assert not json.loads(scene.gmi_bone_map[0].member_overrides or "{}")
+    assert operators._form_bone_map(scene) == {
+        name: "Hips" for name in ("スカート0", "スカート1", "スカート2")}
+
+    child.target = "Head"
+    assert child.is_group_child and len(operators.row_bones(scene.gmi_bone_map[0])) == 3
+    assert operators._form_bone_map(scene) == {
+        "スカート0": "Hips", "スカート2": "Hips", "スカート1": "Head"}
+    child.target = ""
+    assert operators._form_bone_map(scene) == {
+        name: "Hips" for name in ("スカート0", "スカート1", "スカート2")}
+    assert not json.loads(scene.gmi_bone_map[0].member_overrides or "{}")
+
+    child.strategy = "rigid"
+    assert "スカート1" not in operators._form_bone_map(scene)
+    assert operators._form_physics_overrides(scene)["スカート1"] == "rigid"
+    child.strategy = "auto"
+    assert operators._form_bone_map(scene)["スカート1"] == "Hips"
+    assert "スカート1" not in operators._form_physics_overrides(scene)
+
+    child.target = "Head"
+    assert bpy.ops.gmi.reset_bone_member_override(
+        index=scene.gmi_bone_map_index) == {"FINISHED"}
+    assert not json.loads(scene.gmi_bone_map[0].member_overrides or "{}")
+    assert child.is_group_child
+    assert bpy.ops.gmi.toggle_bone_group(index=0) == {"FINISHED"}
+    assert len(scene.gmi_bone_map) == 1 and not scene.gmi_bone_map[0].expanded
+
     # 拆开这一组 → 一行一根骨，组里的决定原样带过去
     assert bpy.ops.gmi.split_bone_group(index=0) == {"FINISHED"}
     assert [row.source for row in scene.gmi_bone_map] == ["スカート0", "スカート1", "スカート2"]
     assert all(row.target == "Hips" for row in scene.gmi_bone_map)
     assert ui._row_state(scene.gmi_bone_map[0]) == "direct"
     scene.gmi_bone_map.clear()
+
+    # 1.7.0：扫描始终保存完整集合；「待处理 / 全部」只是 UI 过滤。手动处理一个折叠组后，
+    # 它应从待处理视图消失，但不能丢失，也不能在下一扫炸成一行一根。
+    weighted = [
+        ("VanillaHips", 25.0), ("VanillaHead", 20.0),
+        ("Hip +23", 15.0), ("Hip.001", 5.0), ("Hip.002", 3.0),
+        ("Bust_L +8", 12.0), ("Sp_Hi_Skirt0_B_01 +5", 9.0), ("Arm_R +33", 11.0),
+    ]
+    structural_groups = [
+        {"members": ["Hip +23", "Hip.001", "Hip.002"]},
+        {"members": ["Bust_L +8"]},
+        {"members": ["Sp_Hi_Skirt0_B_01 +5"]},
+        {"members": ["Arm_R +33"]},
+    ]
+    preset = {
+        "bones": {"VanillaHips": "Hips", "VanillaHead": "Head"},
+        "bodyBones": {"VanillaHips", "VanillaHead"},
+        "methods": {"VanillaHips": "preset", "VanillaHead": "preset"},
+    }
+    auto_targets = {"VanillaHips": "Hips", "VanillaHead": "Head"}
+
+    class FilterProbe:
+        bitflag_filter_item = 1
+        filter_name = ""
+
+    def visible_count():
+        flags, _order = ui.GMI_UL_bone_map.filter_items(
+            FilterProbe(), bpy.context, scene, "gmi_bone_map")
+        return sum(bool(flag) for flag in flags)
+
+    with (
+        patch.object(operators, "_bone_map_context",
+                     return_value=(author_obj, {"Hips": 0, "Head": 1}, preset)),
+        patch.object(operators, "_weighted_group_mass", return_value=weighted),
+        patch.object(operators, "_dominant_group_counts", return_value={}),
+        patch.object(operators, "_source_bone_parents", return_value={}),
+        patch.object(core, "structural_bone_groups", return_value=structural_groups),
+        patch.object(operators, "_resolve_body_json_library", return_value={}),
+        patch.object(operators, "_resolve_source_bone_remap",
+                     return_value=(auto_targets, None)),
+    ):
+        assert bpy.ops.gmi.build_bone_map(only_unmapped=True) == {"FINISHED"}
+        assert len(scene.gmi_bone_map) == 6
+        assert scene.gmi_bone_map_only_undecided
+        assert visible_count() == 4
+
+        folded = next(row for row in scene.gmi_bone_map if row.source == "Hip +23")
+        folded.target = "Hips"
+        assert folded.origin == "manual"
+        assert bpy.ops.gmi.build_bone_map(only_unmapped=True) == {"FINISHED"}
+        assert len(scene.gmi_bone_map) == 6
+        folded = next(row for row in scene.gmi_bone_map if row.source == "Hip +23")
+        assert operators.row_bones(folded) == ["Hip +23", "Hip.001", "Hip.002"]
+        assert visible_count() == 3
+
+        # 子覆盖始终留在父树内，并能穿过重扫；清空子目标 + auto 后恢复父组。
+        folded_index = next(index for index, row in enumerate(scene.gmi_bone_map)
+                            if row.source == "Hip +23")
+        assert bpy.ops.gmi.toggle_bone_group(index=folded_index) == {"FINISHED"}
+        child = next(row for row in scene.gmi_bone_map
+                     if row.is_group_child and row.source == "Hip.001")
+        child.target = "Head"
+        assert len(operators._mapping_rows(scene)) == 6
+        assert operators._form_bone_map(scene) == {
+            "Hip +23": "Hips", "Hip.001": "Head", "Hip.002": "Hips"}
+        assert bpy.ops.gmi.toggle_bone_group(index=folded_index) == {"FINISHED"}
+        assert len(scene.gmi_bone_map) == 6
+        assert bpy.ops.gmi.build_bone_map(only_unmapped=True) == {"FINISHED"}
+        folded = next(row for row in scene.gmi_bone_map if row.source == "Hip +23")
+        assert json.loads(folded.member_overrides)["Hip.001"]["target"] == "Head"
+        folded_index = next(index for index, row in enumerate(scene.gmi_bone_map)
+                            if row.source == "Hip +23")
+        assert bpy.ops.gmi.toggle_bone_group(index=folded_index) == {"FINISHED"}
+        child = next(row for row in scene.gmi_bone_map
+                     if row.is_group_child and row.source == "Hip.001")
+        assert child.target == "Head"
+        child.target = ""
+        assert not json.loads(scene.gmi_bone_map[folded_index].member_overrides or "{}")
+        assert operators._form_bone_map(scene) == {
+            name: "Hips" for name in ("Hip +23", "Hip.001", "Hip.002")}
+        assert bpy.ops.gmi.toggle_bone_group(index=folded_index) == {"FINISHED"}
+        assert len(scene.gmi_bone_map) == 6
+
+        assert bpy.ops.gmi.build_bone_map(only_unmapped=False) == {"FINISHED"}
+        assert not scene.gmi_bone_map_only_undecided
+        assert len(scene.gmi_bone_map) == visible_count() == 6
+        all_layout = FakeLayout()
+        ui.draw_rig_step(all_layout, scene, bpy.context)
+        assert "wm.context_set_boolean" in all_layout.operators
+        assert "gmi_bone_map_only_undecided" not in all_layout.properties
+        assert bpy.ops.gmi.build_bone_map(only_unmapped=True) == {"FINISHED"}
+        assert scene.gmi_bone_map_only_undecided
+        assert len(scene.gmi_bone_map) == 6 and visible_count() == 3
+        pending_layout = FakeLayout()
+        ui.draw_rig_step(pending_layout, scene, bpy.context)
+        assert "wm.context_set_boolean" not in pending_layout.operators
+        assert "gmi_bone_map_only_undecided" not in pending_layout.properties
+
+    mixed = next(row for row in scene.gmi_bone_map if row.source == "Bust_L +8")
+    mixed.auto_target = "逐骨不同"
+    assert operators.row_effective_target(mixed) == ""
+    assert ui._row_state(mixed) == "undecided"
+    assert bpy.ops.gmi.clear_bone_map() == {"FINISHED"}
+    assert not scene.gmi_bone_map and not scene.gmi_bone_map_only_undecided
+
+    # 已自动识别的 15 根左手指骨仍折成一棵语义树，但每节保留自己的自动目标；展开不能
+    # 凭空写出 15 个“单独设置”，父行标题也不能再冒充成 Ring_01_L。
+    finger_names = [f"{finger}_{joint:02d}_L"
+                    for finger in ("Thumb", "Index", "Middle", "Ring", "Pinky")
+                    for joint in range(1, 4)]
+    finger_targets = {
+        name: f"LeftHand{name.split('_')[0]}{int(name.split('_')[1])}"
+        for name in finger_names
+    }
+    finger_preset = {
+        "bones": finger_targets,
+        "bodyBones": set(finger_names),
+        "methods": {name: "finger_chain" for name in finger_names},
+    }
+    finger_weighted = [(name, 1.0 - index * 0.01)
+                       for index, name in enumerate(finger_names)]
+    finger_parents = {}
+    for finger in ("Thumb", "Index", "Middle", "Ring", "Pinky"):
+        finger_parents[f"{finger}_01_L"] = "Wrist_L"
+        finger_parents[f"{finger}_02_L"] = f"{finger}_01_L"
+        finger_parents[f"{finger}_03_L"] = f"{finger}_02_L"
+    target_map = {name: index for index, name in enumerate(finger_targets.values())}
+    with (
+        patch.object(operators, "_bone_map_context",
+                     return_value=(author_obj, target_map, finger_preset)),
+        patch.object(operators, "_weighted_group_mass", return_value=finger_weighted),
+        patch.object(operators, "_dominant_group_counts", return_value={}),
+        patch.object(operators, "_source_bone_parents", return_value=finger_parents),
+        patch.object(core, "structural_bone_groups", return_value=[]),
+        patch.object(operators, "_resolve_body_json_library", return_value={}),
+        patch.object(operators, "_resolve_source_bone_remap",
+                     return_value=(finger_targets, None)),
+    ):
+        assert bpy.ops.gmi.build_bone_map(only_unmapped=False) == {"FINISHED"}
+        assert len(scene.gmi_bone_map) == 1
+        hand = scene.gmi_bone_map[0]
+        assert hand.group_label == "左手手指"
+        assert operators.row_bones(hand) == finger_names
+        assert hand.auto_target == "逐骨不同" and ui._row_state(hand) == "direct"
+        assert bpy.ops.gmi.toggle_bone_group(index=0) == {"FINISHED"}
+        assert len(scene.gmi_bone_map) == 16
+        assert not json.loads(scene.gmi_bone_map[0].member_overrides or "{}")
+        assert all(not operators._override_active({
+            "target": child.target, "strategy": child.strategy,
+            "category": child.swing_category, "swing_anchor": child.swing_anchor,
+        }) for child in list(scene.gmi_bone_map)[1:])
+    assert bpy.ops.gmi.clear_bone_map() == {"FINISHED"}
 
     # 尺子和会改模型的修复工具属于骨架阶段，导出页不再重复塞整张映射表。
     ruler_layout = FakeLayout()

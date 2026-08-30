@@ -108,17 +108,33 @@ def _model_problems(obj):
     return problems
 
 
-def _bone_problem(item):
-    state = _row_state(item)
+def _bone_problem(item, scene=None):
+    target = _row_effective_target(item)
+    strategy = item.strategy
+    category = item.swing_category
+    swing_anchor = item.swing_anchor
+    if scene is not None and getattr(item, "is_group_child", False):
+        from . import operators
+        parent = operators._group_parent(scene, item)
+        if parent is not None:
+            decision = operators._row_member_decisions(parent).get(item.source) or {}
+            target = decision.get("target") or decision.get("auto_target") or ""
+            strategy = decision.get("strategy") or "auto"
+            category = decision.get("category") or "auto"
+            swing_anchor = bool(decision.get("swing_anchor"))
+            state = core.row_state(target, strategy)
+        else:
+            state = _row_state(item)
+    else:
+        state = _row_state(item)
     if state == "undecided":
         return "这组骨还没决定：映射到游戏骨，或选择一种装饰骨处理。"
     if state == "reject":
         return "这组骨被标记为拒绝导出：删除相关权重或改成可执行的处理方式。"
-    if (not _row_effective_target(item) and item.strategy == "integrate"
-            and item.anchor_only and not item.swing_anchor):
+    if not target and strategy == "integrate" and item.anchor_only and not swing_anchor:
         return "权重全在链根但链根不会摆：打开“链根参与摆动”，否则游戏里不会动。"
-    if not _row_effective_target(item) and item.strategy == "native_driver":
-        resolved = item.swing_category if item.swing_category != "auto" else core.swing_category(item.source)
+    if not target and strategy == "native_driver":
+        resolved = category if category != "auto" else core.swing_category(item.source)
         if resolved not in core.DRIVER_CATEGORIES:
             return "所选部件类型没有原版布料驱动器：改为裙、披挂或袖，或换一种处理。"
     return ""
@@ -158,7 +174,8 @@ def _stage_problems(scene, context, stage):
         if not scene.gmi_bone_map:
             problems.append("还没有扫描源骨骼：用本页主按钮建立处理队列。")
         else:
-            problems.extend(filter(None, (_bone_problem(item) for item in scene.gmi_bone_map)))
+            problems.extend(filter(None, (_bone_problem(item, scene) for item in scene.gmi_bone_map
+                                           if not getattr(item, "is_group_child", False))))
             if not scene.gmi_rig_report:
                 problems.append("尚未量对齐和跨关节权重带：处理完队列后运行体检。")
         return problems
@@ -175,10 +192,16 @@ def _stage_problems(scene, context, stage):
     if not str(scene.gmi_bundle_template or "").strip():
         problems.append("没有模板目录：选择网盘素材包里的 templates 目录。")
     for item in scene.gmi_bone_map:
-        problem = _bone_problem(item)
+        if getattr(item, "is_group_child", False):
+            continue
+        problem = _bone_problem(item, scene)
         if problem and not (scene.gmi_allow_undecided and _row_state(item) == "undecided"):
             problems.append(problem)
-    pending_bake = any(item.strategy == "bake" for item in scene.gmi_bone_map)
+    from . import operators
+    pending_bake = any(
+        decision["strategy"] == "bake"
+        for item in operators._mapping_rows(scene)
+        for decision in operators._row_member_decisions(item).values())
     if pending_bake and obj and not obj.get("gmi_baked_rest_offset"):
         problems.append("存在“烘焙形变”骨但尚未烘焙：回到阶段 4 执行烘焙。")
     return problems
@@ -264,49 +287,130 @@ def draw_model_step(layout, scene, context):
         icon="MESH_DATA", enabled=obj is not None)
 
 
+def _draw_material_slots(layout, obj, is_hair, list_id, title, empty_hint):
+    """一个部件的材质槽列表 + 选中槽的详情。发型和发饰各画一份，互不影响。
+
+    `active_material_index` 是对象自己的属性，所以拿发饰对象画列表不需要动
+    `gmi_author_object` —— 那一栏一改，整个第三步的上下文都跟着切过去了。
+    """
+    column = _group(layout, title)
+    if not (obj and obj.type == "MESH" and obj.material_slots):
+        row = column.row()
+        row.alert = True
+        row.label(text=empty_hint, icon="ERROR")
+        return
+    column.template_list("MATERIAL_UL_matslots", list_id, obj, "material_slots",
+                         obj, "active_material_index", rows=5)
+    material = obj.active_material
+    if material is None:
+        row = column.row()
+        row.alert = True
+        row.label(text="选中的材质槽为空：先指定 Blender 材质", icon="ERROR")
+        return
+    detail = column.box()
+    detail.label(text=material.name)
+    detail.prop(material, "gmi_material_class", text="材质类型")
+    if not is_hair:
+        detail.prop(material, "gmi_alpha_mode", text="渲染方式")
+    detail.prop(material, "gmi_material_toon", text="明暗范围")
+    if not is_hair and material.gmi_alpha_mode == "GMI_TRANSPARENT":
+        detail.prop(material, "gmi_transparent_alpha")
+        detail.prop(material, "gmi_transparent_toon")
+        detail.prop(material, "gmi_transparent_proxy")
+        detail.prop(material, "gmi_transparent_co_atlas")
+
+
+def _draw_hair_texture_step(layout, scene, context):
+    """发型包的第三步：发型一栏、发饰一栏、生成按钮压在最后。
+
+    发饰以前是个折叠区，而且只有三个贴图路径、没有材质槽 —— 它和发型是同等的两个
+    Renderer，进的是同一个 bundle，折叠起来等于把一半工作藏了。描边只在发型那一栏：
+    发饰不从参考网格拷描边，按材质槽的材质类型写常量（`_hairprop_export_colors`）。
+    """
+    obj = _author_object(scene, context)
+    prop_obj = getattr(scene, "gmi_hairprop_object", None)
+    has_slots = bool(obj and obj.type == "MESH" and obj.material_slots)
+
+    box = layout.box()
+    box.label(text="发型 Geo_Hair", icon="OUTLINER_OB_MESH")
+    column = _group(box, "游戏贴图（正方形）")
+    _need(column, scene, "gmi_base_color_file", text="基础色 t0")
+    column.prop(scene, "gmi_hair_use_base_alpha")
+    column.prop(scene, "gmi_packed_mask_file", text="混合遮罩 t1")
+    column.prop(scene, "gmi_shade_color_file", text="暗面材质 t4")
+    column.prop(scene, "gmi_neutral_material")
+    _note(box, "t0 必填；t1 / t4 留空时，最下面的主按钮会按材质类型生成")
+    _draw_material_slots(box, obj, True, "GMI_materials", "材质槽",
+                         "作者模型没有有效材质槽：回到阶段 2 分好材质")
+    column = _group(box, "描边")
+    column.prop(scene, "gmi_hair_outline_tier")
+    column.prop(scene, "gmi_outline_width_mode")
+    _note(box, "发型描边使用常量档；进游戏偏亮就换更暗一档")
+
+    box = layout.box()
+    box.label(text="发饰 Geo_HairProp", icon="OUTLINER_OB_MESH")
+    column = _group(box, "游戏贴图（正方形）")
+    # 没选发饰时不标红：不替换发饰是完全正常的选择（原版 Geo_HairProp 保留）。
+    if prop_obj is None:
+        column.prop(scene, "gmi_hairprop_base_color_file", text="基础色 t0")
+    else:
+        _need(column, scene, "gmi_hairprop_base_color_file", text="基础色 t0")
+    column.prop(scene, "gmi_hairprop_packed_mask_file", text="混合遮罩 t1")
+    column.prop(scene, "gmi_hairprop_shade_color_file", text="暗面材质 t4/sdw")
+    _note(box, "发饰用自己的 UV，不能借发型图集")
+    if prop_obj is None:
+        _note(box, "阶段 2 没选「配套发饰」——发饰保持原版，这一栏留空即可")
+    else:
+        _draw_material_slots(box, prop_obj, True, "GMI_hairprop_materials", "材质槽",
+                             "发饰模型没有有效材质槽：回到阶段 2 分好材质")
+        _note(box, "发饰描边按材质类型写常量：金属发夹标金属，布花缎带按布料")
+
+    column = _group(layout, "生成选项")
+    column.prop(scene, "gmi_form_shading")
+    if scene.gmi_form_shading:
+        column.prop(scene, "gmi_form_strength")
+    _go(layout, "gmi.bake_material_maps", "生成游戏材质贴图", icon="NODE_MATERIAL",
+        enabled=bool(str(scene.gmi_base_color_file or "").strip()) and has_slots)
+    _note(layout, "一次生成发型和发饰两份；发饰没填 t0 就只生成发型")
+
+    body = _section(layout, "GMI_step3_preview", "在 Blender 里预览游戏材质")
+    if body:
+        body.operator("gmi.create_body_material_template", text="创建预览材质模板", icon="MATERIAL")
+
+    body = _section(layout, "GMI_generate_material_advanced", "高级：t1 单通道覆盖")
+    if body:
+        body.prop(scene, "gmi_t1_r_file")
+        body.prop(scene, "gmi_t1_g_file")
+        body.prop(scene, "gmi_t1_b_file")
+        body.prop(scene, "gmi_t1_a_file", text="t1.A HHL / 镜面可见性")
+        _note(body, "填四张=整图合成；只填部分=生成后覆盖对应通道。只作用于发型")
+
+
 def draw_texture_step(layout, scene, context):
-    is_hair = _is_hair_package(scene)
+    if _is_hair_package(scene):
+        _draw_hair_texture_step(layout, scene, context)
+        return
+    _draw_body_texture_step(layout, scene, context)
+
+
+def _draw_body_texture_step(layout, scene, context):
     obj = _author_object(scene, context)
     has_slots = bool(obj and obj.type == "MESH" and obj.material_slots)
-    needs_co = not is_hair and has_slots and any(
+    needs_co = has_slots and any(
         slot.material and getattr(slot.material, "gmi_alpha_mode", "") == "NATIVE_CO"
         for slot in obj.material_slots)
 
     column = _group(layout, "游戏贴图（正方形）")
     _need(column, scene, "gmi_base_color_file", text="基础色 t0")
-    if is_hair:
-        column.prop(scene, "gmi_hair_use_base_alpha")
     column.prop(scene, "gmi_packed_mask_file", text="混合遮罩 t1")
     column.prop(scene, "gmi_shade_color_file", text="暗面材质 t4")
     column.prop(scene, "gmi_neutral_material")
     _note(layout, "t0 必填；t1 / t4 留空时，主按钮会根据下面选定的材质类型生成")
 
-    column = _group(layout, "材质槽")
+    _draw_material_slots(layout, obj, False, "GMI_materials", "材质槽",
+                         "作者模型没有有效材质槽：回到阶段 2 分好材质")
     if has_slots:
-        column.template_list("MATERIAL_UL_matslots", "GMI_materials", obj, "material_slots",
-                             obj, "active_material_index", rows=5)
-        material = obj.active_material
-        if material is not None:
-            detail = column.box()
-            detail.label(text=material.name)
-            detail.prop(material, "gmi_material_class", text="材质类型")
-            if not is_hair:
-                detail.prop(material, "gmi_alpha_mode", text="渲染方式")
-            detail.prop(material, "gmi_material_toon", text="明暗范围")
-            if not is_hair and material.gmi_alpha_mode == "GMI_TRANSPARENT":
-                detail.prop(material, "gmi_transparent_alpha")
-                detail.prop(material, "gmi_transparent_toon")
-                detail.prop(material, "gmi_transparent_proxy")
-                detail.prop(material, "gmi_transparent_co_atlas")
-        else:
-            row = column.row()
-            row.alert = True
-            row.label(text="选中的材质槽为空：先指定 Blender 材质", icon="ERROR")
         _note(layout, "一次只编辑选中的材质；金属件务必标为金属，透明方式只在确实需要时改变")
-    else:
-        row = column.row()
-        row.alert = True
-        row.label(text="作者模型没有有效材质槽：回到阶段 2 分好材质", icon="ERROR")
 
     if needs_co:
         column = _group(layout, "原生 co 贴图")
@@ -324,23 +428,12 @@ def draw_texture_step(layout, scene, context):
         enabled=bool(str(scene.gmi_base_color_file or "").strip()) and has_slots)
 
     column = _group(layout, "描边")
-    if is_hair:
-        column.prop(scene, "gmi_hair_outline_tier")
-        _note(layout, "发型描边使用常量档；进游戏偏亮就换更暗一档")
-    else:
-        column.prop(scene, "gmi_vertex_color_mode")
-        if scene.gmi_vertex_color_mode == "BASECOLOR":
-            _note(layout, "“取自基础色”会在导出时从本页 t0 采样")
+    column.prop(scene, "gmi_vertex_color_mode")
+    if scene.gmi_vertex_color_mode == "BASECOLOR":
+        _note(layout, "“取自基础色”会在导出时从本页 t0 采样")
     column.prop(scene, "gmi_outline_width_mode")
 
-    if is_hair:
-        body = _section(layout, "GMI_step3_hairprop", "发饰贴图（只在制作发饰时填）")
-        if body:
-            body.prop(scene, "gmi_hairprop_base_color_file")
-            body.prop(scene, "gmi_hairprop_packed_mask_file")
-            body.prop(scene, "gmi_hairprop_shade_color_file")
-
-    if not is_hair and not needs_co:
+    if not needs_co:
         body = _section(layout, "GMI_step3_co", "原生 co 贴图")
         if body:
             body.prop(scene, "gmi_opacity_texture_file")
@@ -368,8 +461,11 @@ def draw_texture_step(layout, scene, context):
 
 
 def draw_rig_step(layout, scene, context):
+    from . import operators
     obj = _author_object(scene, context)
-    undecided = [item for item in scene.gmi_bone_map if _row_state(item) == "undecided"]
+    undecided = [item for item in scene.gmi_bone_map
+                 if not getattr(item, "is_group_child", False)
+                 and _row_state(item) == "undecided"]
 
     column = _group(layout, "骨骼处理队列")
     if not scene.gmi_bone_map:
@@ -383,12 +479,20 @@ def draw_rig_step(layout, scene, context):
         op.only_unmapped = True
         op = row.operator("gmi.build_bone_map", text="列出全部", icon="OUTLINER")
         op.only_unmapped = False
-        row.operator("gmi.clear_bone_map", text="清空", icon="X")
+        row.operator("gmi.clear_bone_map", text="重置映射", icon="LOOP_BACK")
         if undecided:
             todo = column.row(align=True)
             todo.alert = True
             todo.label(text=f"{len(undecided)} 组还没决定处理方式", icon="ERROR")
-            todo.prop(scene, "gmi_bone_map_only_undecided", text="只看这些", toggle=True)
+            # 单向进入待处理视图。不能画成可取消的 toggle：取消后的效果与「列出全部」
+            # 完全相同，却绕过了那个按钮的重新扫描，用户无法判断自己看到的是新结果还是旧列表。
+            # 退出待处理视图统一走上面的「列出全部」。
+            if not scene.gmi_bone_map_only_undecided:
+                op = todo.operator("wm.context_set_boolean", text="只看这些")
+                op.data_path = "scene.gmi_bone_map_only_undecided"
+                op.value = True
+            else:
+                todo.label(text="当前仅显示待处理")
         column.template_list("GMI_UL_bone_map", "GMI_bones", scene, "gmi_bone_map",
                              scene, "gmi_bone_map_index", rows=7)
 
@@ -396,8 +500,32 @@ def draw_rig_step(layout, scene, context):
         item = scene.gmi_bone_map[index]
         detail = _group(layout, "选中骨组的处理方式")
         members = _row_bones(item)
-        detail.label(text=item.source + (f"（同组 {len(members)} 根）" if len(members) > 1 else ""))
-        problem = _bone_problem(item)
+        header = detail.row(align=True)
+        is_child = bool(getattr(item, "is_group_child", False))
+        parent = operators._group_parent(scene, item) if is_child else None
+        if is_child and parent is not None:
+            override = operators._override_active({
+                "target": item.target,
+                "strategy": item.strategy,
+                "category": item.swing_category,
+                "swing_anchor": item.swing_anchor,
+            })
+            header.label(text=f"↳ {item.source}（{'单独设置' if override else '继承整组'}）")
+            if override:
+                reset = header.operator(
+                    "gmi.reset_bone_member_override", text="恢复跟随整组", icon="LOOP_BACK")
+                reset.index = index
+            else:
+                _note(detail, "当前只是选中查看，没有修改映射。实际改下面任一字段后，"
+                              "这根骨才使用单独设置；保持空白 / 自动就继续继承父组。")
+            parent_target = parent.target.strip()
+            parent_summary = (f"映射到 {parent_target}" if parent_target
+                              else f"装饰处理：{parent.strategy}")
+            _note(detail, f"父组当前设置：{parent_summary}")
+        else:
+            header.label(text=(item.group_label or item.source) +
+                         (f"（整组 {len(members)} 根）" if len(members) > 1 else ""))
+        problem = _bone_problem(item, scene)
         if problem:
             _draw_problems(detail, [problem])
         auto = item.auto_target.strip()
@@ -406,27 +534,31 @@ def draw_rig_step(layout, scene, context):
         origin = "" if item.target else item.origin      # 填了覆盖就不必再说自动判定的来路
         row.label(text=f"自动判定：{auto or '（无，需要你指定）'}"
                        + ("　来自预设" if origin == "preset"
+                          else "　按手腕与指链识别" if origin == "finger_chain"
                           else "　按骨架结构推断（骨名不认识）" if origin == "topology"
                           else "　按位置匹配" if auto and not item.target else ""))
+        if origin == "finger_chain":
+            _note(detail, "这根骨沿父链归属于已识别的左手 / 右手，并由指型与节号匹配目标指骨。")
         if origin == "topology":
             _note(detail, "这一行的骨名不在已知骨架预设里，目标骨是按骨架形状推出来的——"
                           "请核对一遍，不对就在下面填覆盖")
-        detail.prop_search(item, "target", scene, "gmi_bone_targets", text="覆盖为")
+        detail.prop_search(item, "target", scene, "gmi_bone_targets",
+                           text="单独覆盖为" if is_child else "覆盖为")
         if item.target:
             _note(detail, "手填的覆盖压过自动判定，装饰处理选项已隐藏；点右边 ✕ 回到自动判定")
         else:
-            _note(detail, "不属于身体骨时，在下面选择一种装饰骨处理")
-            detail.prop(item, "strategy", text="装饰处理")
+            _note(detail, ("选择非自动值后只覆盖这根子骨；自动 = 继续继承父组"
+                           if is_child else "不属于身体骨时，在下面选择一种装饰骨处理"))
+            detail.prop(item, "strategy", text="单独装饰处理" if is_child else "装饰处理")
             if item.strategy in {"integrate", "native_driver"}:
                 detail.prop(item, "swing_category", text="部件类型")
             if item.strategy == "integrate":
                 detail.prop(item, "swing_anchor")
         row = detail.row(align=True)
-        inspect = row.operator("gmi.show_bone_weights", text="查看这组权重", icon="BRUSH_DATA")
+        inspect = row.operator(
+            "gmi.show_bone_weights", text="查看这根权重" if is_child else "查看这组权重",
+            icon="BRUSH_DATA")
         inspect.source = item.source
-        if len(members) > 1:
-            split = row.operator("gmi.split_bone_group", text="拆成逐根处理", icon="MOD_EXPLODE")
-            split.index = index
 
         _go(layout, "gmi.report_rig_alignment", "量对齐与跨关节权重带", icon="DRIVER_DISTANCE")
         draw_rig_report(layout, scene, context, show_action=False)
@@ -511,14 +643,16 @@ def _row_effective_target(item):
     """这一行**实际生效**的目标骨：作者覆盖优先，没覆盖就用扫描时算出的自动判定。
     面板判档必须用它 —— 只看覆盖的话，自动判定已经给出结果的行会全被标成「未决定」。
     """
-    return item.target.strip() or item.auto_target.strip()
+    manual = item.target.strip()
+    automatic = item.auto_target.strip()
+    if manual:
+        return manual
+    return "" if automatic == "逐骨不同" else automatic
 
 
 def _row_state(item):
-    members = _row_bones(item)
-    # 一组多根骨指到同一根目标骨,那就是多对一=合并,不是 direct
-    return core.row_state(_row_effective_target(item), item.strategy,
-                          shared_target=len(members) > 1)
+    from . import operators
+    return operators._row_state(item)
 
 
 def draw_rig_report(layout, scene, context=None, show_action=True):
@@ -633,23 +767,56 @@ class GMI_UL_bone_map(bpy.types.UIList):
         """「只看未决定」过滤：未决定的组通常散在几十行里，靠搜索框手打骨名找不现实。"""
         items = getattr(data, propname)
         flags = [self.bitflag_filter_item] * len(items)
+        parents = {item.group_id: item for item in items
+                   if not getattr(item, "is_group_child", False) and item.group_id}
         if getattr(context.scene, "gmi_bone_map_only_undecided", False):
             for index, item in enumerate(items):
-                if _row_state(item) != "undecided":
+                parent = parents.get(item.parent_group_id) if getattr(
+                    item, "is_group_child", False) else item
+                if parent is None or _row_state(parent) != "undecided":
+                    flags[index] = 0
+        for index, item in enumerate(items):
+            if getattr(item, "is_group_child", False):
+                parent = parents.get(item.parent_group_id)
+                if parent is None or not parent.expanded:
                     flags[index] = 0
         if self.filter_name:
             needle = self.filter_name.lower()
             for index, item in enumerate(items):
-                if needle not in item.source.lower() and needle not in (item.members or "").lower():
+                if (needle not in item.source.lower()
+                        and needle not in (item.group_label or "").lower()
+                        and needle not in (item.members or "").lower()):
                     flags[index] = 0
         return flags, []
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_prop, index):
         row = layout.row(align=True)
         members = _row_bones(item)
-        state = _row_state(item)
-        problem = _bone_problem(item)
-        label = item.source + (f"  +{len(members) - 1}" if len(members) > 1 else "")
+        is_child = bool(getattr(item, "is_group_child", False))
+        if is_child:
+            from . import operators
+            parent = operators._group_parent(context.scene, item)
+            decision = (operators._row_member_decisions(parent).get(item.source)
+                        if parent is not None else None) or {}
+            state = core.row_state(
+                decision.get("target") or decision.get("auto_target") or "",
+                decision.get("strategy") or "auto")
+        else:
+            state = _row_state(item)
+        problem = _bone_problem(item, context.scene)
+        if len(members) > 1 and not is_child:
+            toggle = row.operator(
+                "gmi.toggle_bone_group", text="",
+                icon="TRIA_DOWN" if item.expanded else "TRIA_RIGHT", emboss=False)
+            toggle.index = index
+        if is_child:
+            override = operators._override_active({
+                "target": item.target, "strategy": item.strategy,
+                "category": item.swing_category, "swing_anchor": item.swing_anchor})
+            label = f"    ↳ {item.source}" + ("  [单独]" if override else "")
+        else:
+            label = (item.group_label or item.source) + (
+                f"  +{len(members) - 1}" if len(members) > 1 else "")
         row.alert = bool(problem)
         row.label(text=label, icon=_STATE_ICONS.get(state, "NONE") if problem else "NONE")
         if problem:

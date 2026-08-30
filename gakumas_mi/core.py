@@ -904,6 +904,16 @@ def _select_main_candidate(candidates, requested_draw=None, expected_vertex_coun
             item for item in pool
             if int(item.get("vertices") or 0) in expected_counts
         ]
+        if not expected_pool:
+            # 上面那道「≥1000 顶点」是 body 时代的假设：发饰常在 900 上下
+            # （hski 的 Geo_HairProp 954 / 872），会被整支砍掉，于是发饰误选成发型本体
+            # （实测 16345 顶点的 Geo_Hair）。调用方既然给了确切顶点数，就该在**全部**
+            # 候选里找 —— 顶点数是比"够不够大"强得多的判据。
+            expected_pool = [
+                item for item in candidates
+                if int(item.get("vertices") or 0) in expected_counts
+                and item.get("vb1ByteWidth")
+            ]
         if expected_pool:
             pool = expected_pool
     best = pool[0]
@@ -2671,6 +2681,50 @@ def classify_source_bones(source_bones, target_bones, remap=None, accessory_pref
     return {"body": body, "accessory": accessory}
 
 
+_FINGER_NAME_RE = re.compile(
+    r"(?:^|[^a-z])(?P<finger>i?index|middle|ring|pinky|little|thumb)"
+    r"[^0-9]*(?P<joint>0?[1-3])(?:[^a-z0-9]*(?:l|r|left|right))?[^a-z0-9]*$",
+    re.IGNORECASE,
+)
+_FINGER_TARGET_PART = {
+    "index": "Index",
+    "iindex": "Index",       # Cygames 一批 FBX 的食指根确实拼成 Iindex_01_[LR]
+    "middle": "Middle",
+    "ring": "Ring",
+    "pinky": "Pinky",
+    "little": "Pinky",
+    "thumb": "Thumb",
+}
+
+
+def _finger_chain_target(name, parent_by_name, mappings, target_bones):
+    """认常见 ``Finger_01_L`` 命名，但只在已确认的 Hand 子树内生效。
+
+    只靠 ``Ring_01_L`` 这类名字就映射风险太高：袖口、道具也可能碰巧同名。这里必须沿源
+    父链找到一根已经可靠映射为 LeftHand / RightHand 的骨，才把三节指骨接到对应目标。
+    这不是给某个模型追加整张预设，而是「名字确定手指种类、结构确定左右手」的受限兜底。
+    """
+    match = _FINGER_NAME_RE.search(str(name))
+    if not match:
+        return None
+    parent = (parent_by_name or {}).get(name)
+    visited = {name}
+    hand = None
+    while parent and parent not in visited:
+        visited.add(parent)
+        candidate = mappings.get(parent)
+        if candidate in ("LeftHand", "RightHand"):
+            hand = candidate
+            break
+        parent = (parent_by_name or {}).get(parent)
+    if hand is None:
+        return None
+    part = _FINGER_TARGET_PART[match.group("finger").lower()]
+    joint = int(match.group("joint"))
+    target = f"{hand}{part}{joint}"
+    return target if target in target_bones else None
+
+
 def build_bone_remap(source_bones, target_bones, parent_by_name=None,
                      preset_name="auto", presets=None, structural=None):
     """Build deterministic Track A mappings and diagnose Track B bones.
@@ -2713,6 +2767,17 @@ def build_bone_remap(source_bones, target_bones, parent_by_name=None,
         if candidate:
             mappings[name] = candidate
             methods[name] = method
+
+    # 预设 / 拓扑先把手腕认稳，再补手指。手指不能塞回 topology_map 的纯几何必需骨流程：
+    # 五条三节分支单看拓扑完全同构，食指、无名指互换也能“结构正确”，却会在动作里串指。
+    # 这里用手腕祖先定左右、用常见词根定指型，二者少一个都不猜。
+    for name in source:
+        if name in mappings:
+            continue
+        candidate = _finger_chain_target(name, parent_by_name, mappings, target)
+        if candidate:
+            mappings[name] = candidate
+            methods[name] = "finger_chain"
 
     parents = parent_by_name or {}
     parent_fallback = {}
@@ -3338,10 +3403,16 @@ def resolve_chains(bones, parent_of, body_bones=()):
     return chains, anchor
 
 
-def structural_bone_groups(bones, parent_of, body_bones=()):
-    """把装饰骨按结构并成组，返回 [{key, anchor, chains, depth, members}]（成员保持输入顺序）。"""
+def structural_bone_groups(bones, parent_of, body_bones=(), separate_chain_anchors=()):
+    """把装饰骨按结构并成组，返回 [{key, anchor, chains, depth, members}]（成员保持输入顺序）。
+
+    ``separate_chain_anchors`` 用于手这类铰接末端：同一手腕下的五条手指链虽然锚点和链长
+    完全相同，却绝不能像 12 片裙摆那样合成一个统一处理组。这里仍不读待分组骨的名字；
+    调用方只需把已经可靠识别为 Hand 的源锚点传进来。
+    """
     order = [str(name) for name in bones if str(name)]
     chains, anchor = resolve_chains(bones, parent_of, body_bones)
+    separate = {str(name) for name in separate_chain_anchors if str(name)}
 
     by_anchor = {}
     for root, members in chains.items():
@@ -3349,22 +3420,28 @@ def structural_bone_groups(bones, parent_of, body_bones=()):
 
     groups = []
     for anchor_name, items in sorted(by_anchor.items()):
-        buckets = []
-        for length, root in sorted(items):
-            # 跟**桶里第一条**比，不是跟上一条比：跟上一条比会像多米诺一样串起来，
-            # 长度 1,2,3,4,5 的链全并成一组（chs-sucu 实测 12 条链 → 24 根一组，
-            # 裙摆和尾巴、飘带混在一起）。规矩本来就是"链长相同 ±1"。
-            if buckets and length - buckets[-1][0][0] <= 1:
-                buckets[-1].append((length, root))
-            else:
-                buckets.append([(length, root)])
-        for bucket in buckets:
+        if anchor_name in separate:
+            buckets = [[item] for item in sorted(items)]
+        else:
+            buckets = []
+            for length, root in sorted(items):
+                # 跟**桶里第一条**比，不是跟上一条比：跟上一条比会像多米诺一样串起来，
+                # 长度 1,2,3,4,5 的链全并成一组（chs-sucu 实测 12 条链 → 24 根一组，
+                # 裙摆和尾巴、飘带混在一起）。规矩本来就是"链长相同 ±1"。
+                if buckets and length - buckets[-1][0][0] <= 1:
+                    buckets[-1].append((length, root))
+                else:
+                    buckets.append([(length, root)])
+        for bucket_index, bucket in enumerate(buckets):
             members = {name for _length, root in bucket for name in chains[root]}
             groups.append({
-                "key": f"{anchor_name or 'root'}|L{bucket[0][0]}",
+                "key": (f"{anchor_name or 'root'}|L{bucket[0][0]}|C{bucket_index}"
+                        if anchor_name in separate
+                        else f"{anchor_name or 'root'}|L{bucket[0][0]}"),
                 "anchor": anchor_name,
                 "chains": len(bucket),
                 "depth": max(length for length, _root in bucket),
+                "roots": [root for _length, root in bucket],
                 "members": [name for name in order if name in members],
             })
     return groups

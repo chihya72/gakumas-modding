@@ -189,6 +189,27 @@ def test_anchor_separates_skirt_from_sleeve():
     assert groups["LeftForeArm"]["chains"] == 1
 
 
+def test_hand_anchor_keeps_parallel_finger_chains_separate():
+    """五根手指不能套用裙摆的并行片合组规则，否则整手会跟一根代表骨走。"""
+    bones = []
+    parents = {"Wrist_L": "ForeArm_L"}
+    for finger in ("Thumb", "Index", "Middle", "Ring", "Pinky"):
+        previous = "Wrist_L"
+        for joint in range(1, 4):
+            name = f"{finger}_{joint:02d}_L"
+            parents[name] = previous
+            bones.append(name)
+            previous = name
+    merged = core.structural_bone_groups(bones, parents, ["Wrist_L"])
+    assert len(merged) == 1 and len(merged[0]["members"]) == 15
+    separated = core.structural_bone_groups(
+        bones, parents, ["Wrist_L"], separate_chain_anchors={"Wrist_L"})
+    assert len(separated) == 5
+    assert all(group["chains"] == 1 and len(group["members"]) == 3
+               for group in separated)
+    assert len({group["key"] for group in separated}) == 5
+
+
 def test_a_fork_breaks_the_chain():
     """分叉即断（与"不建分叉链"的规矩对齐）：分叉后的两支各算一条链。"""
     parents = {"Hips": None, "Belt": "Hips", "Left": "Belt", "Right": "Belt",

@@ -114,3 +114,30 @@ forced_t0 = Path(operators._png_to_dds(str(png_path), alpha_override=0))
 assert set(forced_t0.read_bytes()[151::4]) == {0}
 
 print("material_bake_blender_smoke OK:", t1_path, t4_path, co_t1_path, co_t4_path)
+
+# 一次点击生成发型 + 发饰两份。面板上发型和发饰是并排两栏、共用最下面一个按钮，
+# 所以点一次必须覆盖两个 Renderer；否则作者改了发饰材质类型点按钮，只有发型被重烘，
+# 发饰还是上一次的图，而且没有任何提示。
+prop_obj = obj.copy()
+prop_obj.data = obj.data.copy()
+bpy.context.scene.collection.objects.link(prop_obj)
+prop_obj.name = "GMI_bake_smoke_prop"
+obj["gmi_component_id"] = "hair"
+scene.gmi_component_id = "hair"
+scene.gmi_author_object = obj
+scene.gmi_hairprop_object = prop_obj
+scene.gmi_hairprop_base_color_file = str(co_png_path)
+for path in (Path(scene.gmi_packed_mask_file), Path(scene.gmi_hairprop_packed_mask_file)):
+    if path.is_file():
+        path.unlink()
+assert bpy.ops.gmi.bake_material_maps() == {"FINISHED"}
+assert Path(scene.gmi_packed_mask_file).is_file(), "一次点击没生成发型 t1"
+assert Path(scene.gmi_hairprop_packed_mask_file).is_file(), "一次点击没生成发饰 t1"
+assert prop_obj.get("gmi_component_id") == "hairprop"
+# 作者对象是临时借用的，必须还回去 —— 否则面板整个第三步会停在发饰上下文
+assert scene.gmi_author_object is obj, scene.gmi_author_object
+
+# 没填发饰 t0 就只烘发型（wiki 允许发饰 t1/t4 留空走中性），不能报错
+scene.gmi_hairprop_base_color_file = ""
+assert bpy.ops.gmi.bake_material_maps() == {"FINISHED"}
+assert scene.gmi_author_object is obj
