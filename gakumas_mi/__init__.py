@@ -361,9 +361,9 @@ def register():
             ("OPAQUE", "不透明", "普通身体路径；投影/遮挡/描边最稳定，默认选这个"),
             ("NATIVE_CO", "原生co", "borrow 游戏原生 m_bdyco 的 shader/state 画镂空半透明。"
              "判断标准：该材质贴图的实际 UV 足迹里透明像素多才需要；需要配置档含第二材质段"),
-            ("GMI_TRANSPARENT", "自建半透明", "用插件自带的 Gmi/Transparent（URP 透明队列）画真半透明。"
-             "游戏自己没有半透明服装材质，这一档是新增的独立材质段，由 runtime 在替换时创建；"
-             "代价：没有描边、不参与 SSAO、透明件之间按包围盒排序"),
+            ("GMI_TRANSPARENT", "自建半透明", "runtime 每帧烘出当前姿态，在景深之后补画真半透明，"
+             "镜子里也会画；遮挡用原生深度，光照跟随场景灯光和阴影色。"
+             "边界：没有阴影贴图和环境高光、多层纱重叠处透明度会叠加、角色出现后最多约 1 秒才显示"),
         ],
         default="OPAQUE",
     )
@@ -375,12 +375,6 @@ def register():
     bpy.types.Material.gmi_transparent_toon = FloatProperty(
         name="半透明 toon 强度", default=1.0, min=0.0, max=1.0,
         description="只在「自建半透明」档生效：1=按 t1/t4 做卡通明暗，0=纯平涂（不打光）",
-    )
-    bpy.types.Material.gmi_transparent_proxy = BoolProperty(
-        name="G-buffer 深度代理段", default=False,
-        description="只在「自建半透明」档生效：这一段不画颜色，只把深度和角色材质 ID 写进"
-                    "原生 G-buffer，让景深/合成把半透明部件当成角色处理（否则压在背景上会被虚化）。"
-                    "几何应当是颜色段的副本",
     )
     bpy.types.Material.gmi_transparent_co_atlas = BoolProperty(
         name="半透明段用 co 图集", default=False,

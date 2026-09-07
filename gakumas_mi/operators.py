@@ -2661,9 +2661,10 @@ class GMI_OT_export_bundle_source(Operator):
                 # 对象是已知的 Unity6 加载崩溃源，别碰。）
                 co_atlas = bool(getattr(material, "gmi_transparent_co_atlas", False))
                 atlas = 1 if co_atlas else 0
-                is_proxy = bool(getattr(material, "gmi_transparent_proxy", False))
-                # 代理段进不透明区间末尾（原生角色 MRT 那一趟只收 <=2500），颜色段留在透明队列；
-                # 两段共用同一个 shader，靠开关分工。
+                # 2026-09-07 实机定案的「烘焙半透明」：runtime 每帧 BakeMesh，在景深之后、bloom 之前
+                # 用 GmiBakedAfterDof pass 补画主画面，镜面接在 RenderPlanarReflection 之后补画；
+                # 遮挡用原生编码深度，光照读角色灯表和场景 ramp。作者只管透明度。
+                # 材质上只需声明 _GmiBakedAfterDof；旧前向/原生透明那几趟由 runtime 自动关掉。
                 transparent_materials.append({
                     "rendererName": core.RENDERER_NAMES[component_id],
                     "materialSlot": group,
@@ -2674,15 +2675,9 @@ class GMI_OT_export_bundle_source(Operator):
                     "alpha": float(getattr(material, "gmi_transparent_alpha", 0.5)),
                     "toonStrength": float(getattr(material, "gmi_transparent_toon", 1.0)),
                     "cull": 0.0,
-                    "zwrite": 1.0 if is_proxy else 0.0,
-                    "renderQueue": 2500 if is_proxy else 3000,
-                    "props": {
-                        "_ProxyEnable": 1.0 if is_proxy else 0.0,
-                        "_ForwardEnable": 0.0 if is_proxy else 1.0,
-                        "_MaterialId": 256.0,
-                        # 代理段跨两个图集，别按贴图 alpha 裁：几何在哪就认领到哪
-                        "_AlphaFromTexture": 0.0 if is_proxy else 1.0,
-                    },
+                    "zwrite": 0.0,
+                    "renderQueue": 3000,
+                    "props": {"_GmiBakedAfterDof": 1.0},
                 })
             # 贴图只出【作者网格真的用到的段】。目标资源的段数可能多于用到的段——
             # cstm-0119 全系列原版就是 3 段(主体 + 腰上一圈 128 顶点 + 胸前 179 顶点的

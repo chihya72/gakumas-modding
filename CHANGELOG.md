@@ -1,6 +1,16 @@
 # GakumasMI Blender 插件更新日志
 
 版本号见 [`gakumas_mi/__init__.py`](gakumas_mi/__init__.py) 的 `bl_info["version"]`。
+
+## 未发布 — 自建半透明改走烘焙路线（2026-09-07 实机验收）
+
+- `渲染方式 = 自建半透明` 的槽导出时只声明 `props._GmiBakedAfterDof = 1`，`zwrite 0`、`renderQueue 3000`；
+  不再写 `_ProxyEnable / _ForwardEnable / _MaterialId / _AlphaFromTexture`（那几趟由 runtime 关掉）。
+- 删掉「G-buffer 深度代理段」选项：烘焙路线自己用原版编码深度做遮挡，不需要作者复制几何。
+- 档位说明改为实际情况（景深后补画、镜子里也画、光照跟随场景），边界改为
+  无阴影贴图/环境高光、多层纱叠加、出现后约 1 秒才显示。
+- 需要配合带烘焙半透明的 runtime（`gmi_shaders.bundle` 含 `GmiBakedAfterDof` pass）。
+
 发布包用 `python tools/package_blender_addon.py` 生成（代码版不含 Body JSON 资源库；
 加 `--with-body-lib` 可一并打包）。本地包不提交到公开仓库。
 

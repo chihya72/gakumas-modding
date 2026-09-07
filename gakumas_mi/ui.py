@@ -316,7 +316,6 @@ def _draw_material_slots(layout, obj, is_hair, list_id, title, empty_hint):
     if not is_hair and material.gmi_alpha_mode == "GMI_TRANSPARENT":
         detail.prop(material, "gmi_transparent_alpha")
         detail.prop(material, "gmi_transparent_toon")
-        detail.prop(material, "gmi_transparent_proxy")
         detail.prop(material, "gmi_transparent_co_atlas")
 
 
