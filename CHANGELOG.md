@@ -2,7 +2,7 @@
 
 版本号见 [`gakumas_mi/__init__.py`](gakumas_mi/__init__.py) 的 `bl_info["version"]`。
 
-## 未发布 — 自建半透明改走烘焙路线（2026-09-07 实机验收）
+## 1.8.0 — 自建半透明改走烘焙路线（2026-09-07 实机验收）
 
 - `渲染方式 = 自建半透明` 的槽导出时只声明 `props._GmiBakedAfterDof = 1`，`zwrite 0`、`renderQueue 3000`；
   不再写 `_ProxyEnable / _ForwardEnable / _MaterialId / _AlphaFromTexture`（那几趟由 runtime 关掉）。
