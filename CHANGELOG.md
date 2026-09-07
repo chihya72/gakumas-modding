@@ -8,7 +8,7 @@
   不再写 `_ProxyEnable / _ForwardEnable / _MaterialId / _AlphaFromTexture`（那几趟由 runtime 关掉）。
 - 删掉「G-buffer 深度代理段」选项：烘焙路线自己用原版编码深度做遮挡，不需要作者复制几何。
 - 档位说明改为实际情况（景深后补画、镜子里也画、光照跟随场景），边界改为
-  无阴影贴图/环境高光、多层纱叠加、出现后约 1 秒才显示。
+  无阴影贴图/环境高光、多层纱叠加。
 - 需要配合带烘焙半透明的 runtime（`gmi_shaders.bundle` 含 `GmiBakedAfterDof` pass）。
 
 发布包用 `python tools/package_blender_addon.py` 生成（代码版不含 Body JSON 资源库；
