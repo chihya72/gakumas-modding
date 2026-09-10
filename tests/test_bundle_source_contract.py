@@ -400,6 +400,10 @@ def test_accessory_physics_remap():
             {"name": "Far_Ribbon", "position": [1.0, 0.0, 0.0]},
         ],
         [
+            # Production target lists contain the weighted body root as well as
+            # swing bones.  Without Hips this fixture makes the fallback choose
+            # LeftSkirt1_S, which is a swing bone rather than a rigid root.
+            {"name": "Hips", "position": [0.0, 0.0, 0.0]},
             {"name": "LeftSkirt1_S", "position": [0.0, 0.0, 0.0]},
             {"name": "CenterRibbon_S", "position": [0.1, 0.0, 0.01]},
         ],
