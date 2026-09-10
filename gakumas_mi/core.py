@@ -3659,6 +3659,12 @@ def build_accessory_physics_remap(
         )
         return name, distance_sq
 
+    # 兜底根必须是**可导出**的加权骨。hume-cstm-0010 这类服装 Hips 没有权重，不在目标表里，
+    # 写死 "Hips" 会让面板显示一个填不进去的自动判定、导出时报「顶点没有可导出的配置档兼容权重」
+    # —— 作者只好手填 Spine2 顶上，裙子整条钉到胸椎（2026-09-10 婚纱）。原版盆骨区权重在 Spine 上。
+    rigid_root = next((name for name in ("Hips", "Spine") if name in target),
+                      next(iter(target), "Hips"))
+
     def rigid_parent(name):
         parent = parents.get(name)
         visited = set()
@@ -3667,7 +3673,7 @@ def build_accessory_physics_remap(
             if parent in body:
                 return body[parent]
             parent = parents.get(parent)
-        return "Hips"
+        return rigid_root
 
     def group_key(name):
         if name in explicit_groups:

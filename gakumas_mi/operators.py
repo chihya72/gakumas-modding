@@ -1101,6 +1101,14 @@ def _resolve_source_bone_remap(obj, bone_map, scene, skeleton=None):
     report = _preset_bone_remap(obj, bone_map, scene)
     remap = dict(report["bones"])
     remap.update(explicit)
+    # 作者手填了目标骨的骨就是身体骨，不能再留在装饰骨集合里：装饰链的根是"往上第一个非装饰骨"，
+    # 手填过的 Hips_1 若仍算装饰骨，它下面 13 条裙链 + 2 条飘带会并成一条链、指令互相吞
+    # （2026-09-10 婚纱：飘带的刚性吞掉裙子的跟裙摆，整条裙子钉在 Spine2 上）。
+    for name in explicit:
+        if name in report["accessoryBones"] and explicit[name] in bone_map:
+            report["accessoryBones"].remove(name)
+            if name not in report["bodyBones"]:
+                report["bodyBones"].append(name)
     if skeleton is not None:
         physics_overrides, override_data = {}, {}
         if getattr(scene, "gmi_physics_override_file", ""):
