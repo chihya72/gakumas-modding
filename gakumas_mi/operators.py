@@ -1461,29 +1461,51 @@ def _hair_export_colors(reference, data, tier, outline_width_mode, no_outline_ve
     if reference.data.color_attributes.get("COLOR") is None:
         raise ValueError("参考网格没有 COLOR 属性,无法拷贝 hair 的 LUT 行/描边宽度/rim mask(请重新导入带权重参考模型)")
     ref_colors = _vertex_colors(reference.data)
+    # 原版在同一坐标上常有多个顶点、COLOR.A（rim 遮罩）各不相同（hume-base-0000 是 2327 组）。
+    # 按最近点取色会随机挑到别的副本，10% 顶点 rim 错位。作者网格就是参照的副本（顶点数相等、
+    # 逐顶点坐标一致）时直接按索引抄，一个都不会错；不是副本才退回最近点。
+    same_topology = False
+    author_mesh = _author_mesh(bpy.context)
+    if author_mesh is not None and len(author_mesh.data.vertices) == len(reference.data.vertices):
+        import numpy as np
+        a = np.empty(len(author_mesh.data.vertices) * 3, dtype=np.float32)
+        b = np.empty(len(reference.data.vertices) * 3, dtype=np.float32)
+        author_mesh.data.vertices.foreach_get("co", a)
+        reference.data.vertices.foreach_get("co", b)
+        same_topology = bool(np.abs(a - b).max() < 1e-5)
     tree = KDTree(len(reference.data.vertices))
     for index, vertex in enumerate(reference.data.vertices):
         tree.insert(core._to_unity(reference.matrix_world @ vertex.co), index)
     tree.balance()
-    r_high, r_low, g_high = HAIR_OUTLINE_TIERS[tier]
+    # R 字节和 G 高位不只是描边色：它们选发型着色的 LUT 行。hume-base-0000 原版是 (2,0,0)，
+    # 四个常量档里没有这一行，套「深色发」(0,0,1) 整头发就从浅棕变深红。发型本身不换色时
+    # 选「沿用参照」，整套按最近参照顶点拷，一个字节都不改。
+    use_reference = tier == "REFERENCE"
+    r_high, r_low, g_high = (0, 0, 0) if use_reference else HAIR_OUTLINE_TIERS[tier]
     r_byte = r_high * 16 + r_low
     colors = []
     for index, position in enumerate(data["vertices"]):
-        _, nearest, _ = tree.find(position)
-        _, ref_g, ref_b, ref_a = ref_colors[nearest]
+        if same_topology:
+            nearest = data["vertexIndices"][index]
+        else:
+            _, nearest, _ = tree.find(position)
+        ref_r, ref_g, ref_b, ref_a = ref_colors[nearest]
         b8 = core._safe_unorm8(ref_b)
         if outline_width_mode == "DISABLE_ALL" or data["vertexIndices"][index] in no_outline_vertices:
             b8 &= 0xF0
+        g8 = core._safe_unorm8(ref_g)
         colors.append((
-            r_byte / 255.0,
-            (g_high * 16 + (core._safe_unorm8(ref_g) & 0x0F)) / 255.0,
+            (core._safe_unorm8(ref_r) if use_reference else r_byte) / 255.0,
+            (g8 if use_reference else g_high * 16 + (g8 & 0x0F)) / 255.0,
             b8 / 255.0,
             core._safe_unorm8(ref_a) / 255.0,
         ))
     return colors, {
-        "method": "hair_outline_constant_plus_reference_nn",
+        "method": ("hair_reference_index" if same_topology else "hair_reference_nn") if use_reference
+                  else "hair_outline_constant_plus_reference_nn",
+        "sameTopology": same_topology,
         "outlineTier": tier,
-        "outlineNibbles": [r_high, r_low, g_high],
+        "outlineNibbles": None if use_reference else [r_high, r_low, g_high],
         "referenceVertices": len(reference.data.vertices),
         "totalVertices": len(colors),
     }
@@ -1717,6 +1739,18 @@ def _inverse_skin_export_data(
     world = obj.matrix_world
     normal_matrix = world.to_3x3().inverted().transposed()
     tangent_matrix = world.to_3x3()
+    # 参照导入时把原版 TANGENT 存成 GMI_TANGENT / GMI_TANGENT_W（POINT）。作者网格是参照副本时
+    # 这两项还在，直接用原版值：下面按位置平均出来的"平滑法线"与原版差 >5° 的顶点占 44%
+    # （分组算法不同），描边挤出方向随之变。有原版就抄原版。
+    source_tangent = None
+    if "GMI_TANGENT" in mesh.attributes and "GMI_TANGENT_W" in mesh.attributes \
+            and mesh.attributes["GMI_TANGENT"].domain == "POINT":
+        import numpy as np
+        xyz = np.empty(len(mesh.vertices) * 3, dtype=np.float32)
+        mesh.attributes["GMI_TANGENT"].data.foreach_get("vector", xyz)
+        w = np.empty(len(mesh.vertices), dtype=np.float32)
+        mesh.attributes["GMI_TANGENT_W"].data.foreach_get("value", w)
+        source_tangent = (xyz.reshape(-1, 3), w)
     tangents_ready = False
     if uv0_layer is not None:
         try:
@@ -1743,7 +1777,11 @@ def _inverse_skin_export_data(
             source_vertex = mesh.vertices[loop.vertex_index]
             position = core._to_unity(world @ source_vertex.co)
             normal = core._to_unity((normal_matrix @ loop.normal).normalized())
-            if tangents_ready:
+            if source_tangent is not None:
+                sx, sy, sz = (float(v) for v in source_tangent[0][loop.vertex_index])
+                tangent_xyz = core._to_unity((tangent_matrix @ Vector((sx, sy, sz))).normalized())
+                tangent = (*tangent_xyz, float(source_tangent[1][loop.vertex_index]))
+            elif tangents_ready:
                 tangent_xyz = core._to_unity((tangent_matrix @ loop.tangent).normalized())
                 tangent = (*tangent_xyz, float(loop.bitangent_sign))
             else:
@@ -1807,7 +1845,7 @@ def _inverse_skin_export_data(
     # 且原版 TANGENT 并非 UV 切线,而是逐顶点"平滑法线"(同坐标顶点法线平均,cos≈0.6)。
     # 自定义网格若把 UV 切线写进 TANGENT,描边会沿表面方向挤出 → 整圈不可见。
     # 故这里按位置+材质合并法线得到平滑法线,写入 TANGENT.xyz(w=1,与原版一致),让描边外扩。
-    if vertices:
+    if vertices and source_tangent is None:
         smoothed_tangents = list(tangents)
         for indices in tangent_groups.values():
             if len(indices) == 1:
@@ -2612,6 +2650,63 @@ class GMI_OT_activate_author_object(Operator):
         return {"FINISHED"}
 
 
+def _transparent_segments(obj, component_id, target_n, materials):
+    """自建半透明段：归并材质槽 + 生成 mod.json 的 transparentMaterials 条目。
+
+    body 的槽分三类：不透明→段 0(bdy)，原生co→段 1(bdyco)，自建半透明→目标段数之后各占一段。
+    hair/hairprop 没有 bdyco，只有不透明和自建半透明两类；原生co 直接报错而不是静默当不透明。
+    半透明段不另出贴图：它复用 body/co(或 hairprop 自己)图集已导出的 t0/t1/t4（模板里没有
+    多余的 Texture2D 对象，UnityPy 现造对象是已知的 Unity6 加载崩溃源，别碰）。
+    2026-09-07 实机定案的「烘焙半透明」：runtime 每帧 BakeMesh，在景深之后、bloom 之前用
+    GmiBakedAfterDof pass 补画，遮挡用原生编码深度，光照读角色灯表和场景 ramp。
+
+    返回 (归并后的 materials, transparent 条目, co 槽集合, 需要出贴图的原生段号列表)。
+    """
+    modes = _material_slot_alpha_modes(obj)
+    if component_id != "body":
+        native = sorted(slot for slot, mode in modes.items() if mode == "NATIVE_CO")
+        if native:
+            names = "、".join(obj.material_slots[s].material.name for s in native)
+            raise ValueError(f"{names}：发型/发饰没有 bdyco 段，「原生co」不可用，请改成不透明或自建半透明")
+    co_slots = {slot for slot, mode in modes.items() if mode == "NATIVE_CO"}
+    transparent_slots = {slot for slot, mode in modes.items() if mode == "GMI_TRANSPARENT"}
+    merged = core.merge_material_groups(co_slots, target_n, materials, transparent_slots)
+    groups = core.transparent_group_map(co_slots, target_n, transparent_slots)
+    used = set(merged)
+    entries = []
+    for slot, group in sorted(groups.items(), key=lambda item: item[1]):
+        if group not in used:
+            continue  # 标了半透明但没有面用到这个槽
+        material = obj.material_slots[slot].material
+        co_atlas = component_id == "body" and bool(getattr(material, "gmi_transparent_co_atlas", False))
+        atlas = 1 if co_atlas else 0
+        entries.append({
+            "rendererName": core.RENDERER_NAMES[component_id],
+            "materialSlot": group,
+            "filename": f"{component_id}_slot{atlas}_t0.png",
+            # toon 用同一套图集的 t1/t4（r=阴影阈值、a=AO；rgb=暗面色、a=分支）
+            "defMap": f"{component_id}_slot{atlas}_t1.png",
+            "shadeMap": f"{component_id}_slot{atlas}_t4.png",
+            "alpha": float(getattr(material, "gmi_transparent_alpha", 0.5)),
+            "toonStrength": float(getattr(material, "gmi_transparent_toon", 1.0)),
+            "cull": 0.0,
+            "zwrite": 0.0,
+            "renderQueue": 3000,
+            "props": {"_GmiBakedAfterDof": 1.0},
+        })
+    # 贴图只出【作者网格真的用到的原生段】：目标资源的段数可能多于用到的段，空段照样会被
+    # _bundle_submeshes 造出来但 0 面片不可见，不出条目就保留原版材质。
+    transparent_ids = {item["materialSlot"] for item in entries}
+    used_groups = set(used - transparent_ids) or {0}
+    # 勾了「co 图集」的半透明段引用段 1 的贴图，段 1 必须一起导出——否则 runtime 找不到
+    # body_slot1_t0.png，整条拒绝（实机日志 Transparent materials refused），半透明段直接消失。
+    if any(item["filename"].startswith(f"{component_id}_slot1_") for item in entries):
+        if target_n < 2:
+            raise ValueError("有半透明槽勾了「半透明段用 co 图集」，但目标 body 没有 bdyco 段；取消勾选或换目标服装")
+        used_groups.add(1)
+    return merged, entries, co_slots, sorted(used_groups)
+
+
 class GMI_OT_export_bundle_source(Operator):
     bl_idname = "gmi.export_bundle_source"
     bl_label = "导出 bundle 源"
@@ -2640,54 +2735,8 @@ class GMI_OT_export_bundle_source(Operator):
             # 多槽切分，不归并就会带着 3 个 submesh 撞进模板补丁，报一句看不懂的
             # “submesh count changed”。co 只对 body 有意义。
             target_n = _resolve_target_scheme(resolved)
-            slot_modes = _material_slot_alpha_modes(obj) if component_id == "body" else {}
-            co_slots = {slot for slot, mode in slot_modes.items() if mode == "NATIVE_CO"}
-            transparent_slots = {slot for slot, mode in slot_modes.items()
-                                 if mode == "GMI_TRANSPARENT"}
-            data["materials"] = core.merge_material_groups(
-                co_slots, target_n, data.get("materials") or [], transparent_slots
-            )
-            # 自建半透明段：原版 renderer 没有这些槽，runtime 按 mod.json 的
-            # transparentMaterials 扩容 sharedMaterials 并新建 Gmi/Transparent 材质。
-            transparent_groups = core.transparent_group_map(co_slots, target_n, transparent_slots)
-            used_material_groups = set(data["materials"])
-            transparent_materials = []
-            for slot, group in sorted(transparent_groups.items(), key=lambda item: item[1]):
-                if group not in used_material_groups:
-                    continue  # 标了半透明但没有面用到这个槽
-                material = obj.material_slots[slot].material
-                # 贴图不另出一张：半透明段的 UV 就落在已有的 body/co 图集里，直接引用
-                # 那两张已经导出的 t0。（模板里没有多余的 Texture2D 对象，UnityPy 现造
-                # 对象是已知的 Unity6 加载崩溃源，别碰。）
-                co_atlas = bool(getattr(material, "gmi_transparent_co_atlas", False))
-                atlas = 1 if co_atlas else 0
-                # 2026-09-07 实机定案的「烘焙半透明」：runtime 每帧 BakeMesh，在景深之后、bloom 之前
-                # 用 GmiBakedAfterDof pass 补画主画面，镜面接在 RenderPlanarReflection 之后补画；
-                # 遮挡用原生编码深度，光照读角色灯表和场景 ramp。作者只管透明度。
-                # 材质上只需声明 _GmiBakedAfterDof；旧前向/原生透明那几趟由 runtime 自动关掉。
-                transparent_materials.append({
-                    "rendererName": core.RENDERER_NAMES[component_id],
-                    "materialSlot": group,
-                    "filename": f"{component_id}_slot{atlas}_t0.png",
-                    # toon 用同一套图集的 t1/t4（r=阴影阈值、a=AO；rgb=暗面色、a=分支）
-                    "defMap": f"{component_id}_slot{atlas}_t1.png",
-                    "shadeMap": f"{component_id}_slot{atlas}_t4.png",
-                    "alpha": float(getattr(material, "gmi_transparent_alpha", 0.5)),
-                    "toonStrength": float(getattr(material, "gmi_transparent_toon", 1.0)),
-                    "cull": 0.0,
-                    "zwrite": 0.0,
-                    "renderQueue": 3000,
-                    "props": {"_GmiBakedAfterDof": 1.0},
-                })
-            # 贴图只出【作者网格真的用到的段】。目标资源的段数可能多于用到的段——
-            # cstm-0119 全系列原版就是 3 段(主体 + 腰上一圈 128 顶点 + 胸前 179 顶点的
-            # 小件)。空段照样会被 _bundle_submeshes 造出来，但 0 面片、不可见，贴图给
-            # 什么都无所谓;不出条目就保留原版材质。按 range(target_n) 出的话，没做 co
-            # 部件的工程会被段 1 拽去要「原生 co 基础色」，空着就报“缺少 t0”。
-            # 半透明段不进贴图导出：它复用 body/co 已有的那两张 t0（同一套 UV），
-            # 模板里也没有多余的 Texture2D 对象可以承载新图。
-            transparent_group_ids = {item["materialSlot"] for item in transparent_materials}
-            used_groups = sorted((set(data["materials"]) - transparent_group_ids) or {0})
+            data["materials"], transparent_materials, co_slots, used_groups = _transparent_segments(
+                obj, component_id, target_n, data.get("materials") or [])
             group_alpha = {group: ("NATIVE_CO" if (component_id == "body" and group == 1) else None)
                            for group in used_groups}
             material_slot_count = target_n
@@ -2706,12 +2755,11 @@ class GMI_OT_export_bundle_source(Operator):
                     context, prop_obj, scene, "hairprop"
                 )
                 prop_slots = _resolve_target_scheme(prop_resolved)
-                prop_data["materials"] = core.merge_material_groups(
-                    set(), prop_slots, prop_data.get("materials") or []
-                )
+                prop_data["materials"], prop_transparent, _, prop_used = _transparent_segments(
+                    prop_obj, "hairprop", prop_slots, prop_data.get("materials") or [])
+                transparent_materials = list(transparent_materials) + prop_transparent
                 prop_textures = _bundle_texture_sources(
-                    prop_obj, scene, "hairprop",
-                    {group: None for group in sorted(set(prop_data["materials"]) or {0})}
+                    prop_obj, scene, "hairprop", {group: None for group in prop_used}
                 )
                 for item in prop_textures:
                     item["rendererName"] = core.RENDERER_NAMES["hairprop"]
@@ -3021,7 +3069,14 @@ class GMI_OT_bake_material_maps(Operator):
             idx for idx, slot in enumerate(obj.material_slots)
             if slot.material is not None and alpha_modes.get(idx) != "NATIVE_CO"
         ]
-        native_co_slots = sorted(alpha_modes)
+        # 落在 co 图集里的只有原生co槽和勾了「co 图集」的自建半透明槽；其余自建半透明槽用
+        # body t0，已在 opaque_slots 里。以前把全部透明槽都算进来，纯自建半透明的工程也被
+        # 要求填 co 基础色，hairprop 更是没有 co 这一说。
+        native_co_slots = sorted(
+            idx for idx, mode in alpha_modes.items()
+            if mode == "NATIVE_CO" or (
+                mode == "GMI_TRANSPARENT" and component_id == "body"
+                and bool(getattr(obj.material_slots[idx].material, "gmi_transparent_co_atlas", False))))
 
         def _slot_triangle_mask(slots):
             if not slots:

@@ -287,7 +287,7 @@ def draw_model_step(layout, scene, context):
         icon="MESH_DATA", enabled=obj is not None)
 
 
-def _draw_material_slots(layout, obj, is_hair, list_id, title, empty_hint):
+def _draw_material_slots(layout, obj, component, list_id, title, empty_hint):
     """一个部件的材质槽列表 + 选中槽的详情。发型和发饰各画一份，互不影响。
 
     `active_material_index` 是对象自己的属性，所以拿发饰对象画列表不需要动
@@ -310,13 +310,20 @@ def _draw_material_slots(layout, obj, is_hair, list_id, title, empty_hint):
     detail = column.box()
     detail.label(text=material.name)
     detail.prop(material, "gmi_material_class", text="材质类型")
-    if not is_hair:
+    # 发型主体没有透明路线（t0.A 是刘海覆盖率，不是半透明）；发饰可以走自建半透明，
+    # 但没有 bdyco 段：原生co 和「co 图集」对它都不存在。
+    if component != "hair":
         detail.prop(material, "gmi_alpha_mode", text="渲染方式")
     detail.prop(material, "gmi_material_toon", text="明暗范围")
-    if not is_hair and material.gmi_alpha_mode == "GMI_TRANSPARENT":
+    if component != "hair" and material.gmi_alpha_mode == "GMI_TRANSPARENT":
         detail.prop(material, "gmi_transparent_alpha")
         detail.prop(material, "gmi_transparent_toon")
-        detail.prop(material, "gmi_transparent_co_atlas")
+        if component == "body":
+            detail.prop(material, "gmi_transparent_co_atlas")
+    if component == "hairprop" and material.gmi_alpha_mode == "NATIVE_CO":
+        row = detail.row()
+        row.alert = True
+        row.label(text="发饰没有 bdyco 段：请改成不透明或自建半透明", icon="ERROR")
 
 
 def _draw_hair_texture_step(layout, scene, context):
@@ -339,7 +346,7 @@ def _draw_hair_texture_step(layout, scene, context):
     column.prop(scene, "gmi_shade_color_file", text="暗面材质 t4")
     column.prop(scene, "gmi_neutral_material")
     _note(box, "t0 必填；t1 / t4 留空时，最下面的主按钮会按材质类型生成")
-    _draw_material_slots(box, obj, True, "GMI_materials", "材质槽",
+    _draw_material_slots(box, obj, "hair", "GMI_materials", "材质槽",
                          "作者模型没有有效材质槽：回到阶段 2 分好材质")
     column = _group(box, "描边")
     column.prop(scene, "gmi_hair_outline_tier")
@@ -360,7 +367,7 @@ def _draw_hair_texture_step(layout, scene, context):
     if prop_obj is None:
         _note(box, "阶段 2 没选「配套发饰」——发饰保持原版，这一栏留空即可")
     else:
-        _draw_material_slots(box, prop_obj, True, "GMI_hairprop_materials", "材质槽",
+        _draw_material_slots(box, prop_obj, "hairprop", "GMI_hairprop_materials", "材质槽",
                              "发饰模型没有有效材质槽：回到阶段 2 分好材质")
         _note(box, "发饰描边按材质类型写常量：金属发夹标金属，布花缎带按布料")
 
@@ -406,7 +413,7 @@ def _draw_body_texture_step(layout, scene, context):
     column.prop(scene, "gmi_neutral_material")
     _note(layout, "t0 必填；t1 / t4 留空时，主按钮会根据下面选定的材质类型生成")
 
-    _draw_material_slots(layout, obj, False, "GMI_materials", "材质槽",
+    _draw_material_slots(layout, obj, "body", "GMI_materials", "材质槽",
                          "作者模型没有有效材质槽：回到阶段 2 分好材质")
     if has_slots:
         _note(layout, "一次只编辑选中的材质；金属件务必标为金属，透明方式只在确实需要时改变")

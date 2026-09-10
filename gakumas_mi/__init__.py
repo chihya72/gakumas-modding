@@ -1,7 +1,7 @@
 bl_info = {
     "name": "GakumasMI",
     "author": "GakumasMI",
-    "version": (1, 8, 0),
+    "version": (1, 8, 1),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧边栏 > GakumasMI",
     "description": "学园偶像大师换装/换发 mod 制作：目标参照 → 作者模型 → 材质 → 骨架物理 → 检查并导出 AB bundle",
@@ -320,16 +320,17 @@ def register():
     )
     bpy.types.Scene.gmi_hair_outline_tier = EnumProperty(
         name="发型描边色档",
-        description="安全导出模式把描边色写成全网格常量档；原版可按发片逐顶点变化。"
-                    "请按发色明度选档；"
-                    "进游戏后描边偏亮就换更暗一档，宁小勿大",
+        description="COLOR 的 R 字节和 G 高位既是描边色也选发型着色的 LUT 行。"
+                    "发型不换色、或只是在原版发型上加发饰时选「沿用参照」；"
+                    "换成别的发色才按明度选常量档，进游戏后描边偏亮就换更暗一档，宁小勿大",
         items=[
+            ("REFERENCE", "沿用参照(推荐)", "整套 COLOR 按最近参照顶点拷贝，原版发型的着色行和描边一个字节都不改"),
             ("DARK", "深色发(蓝紫/黑褐)", "nibble (0,0,1)，实测自蓝紫发"),
             ("PINK", "粉/红发", "nibble (1,0,0)，实测自粉发"),
             ("BLONDE", "金/浅色发", "nibble (4,2,1)，实测自金发"),
             ("BLACK", "纯黑描边", "nibble (0,0,0)，最保守"),
         ],
-        default="DARK",
+        default="REFERENCE",
     )
     bpy.types.Scene.gmi_skin_calibrate = BoolProperty(
         name="肤色对齐原版", default=True,

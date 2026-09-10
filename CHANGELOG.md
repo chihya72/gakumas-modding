@@ -2,6 +2,29 @@
 
 版本号见 [`gakumas_mi/__init__.py`](gakumas_mi/__init__.py) 的 `bl_info["version"]`。
 
+## 1.8.1 — 发饰也能自建半透明（2026-09-10 实机验收）
+
+- `Geo_HairProp` 的材质槽现在可选 `渲染方式 = 自建半透明`：导出器为发饰生成 `transparentMaterials`
+  条目（`rendererName = Geo_HairProp`，贴图指向 `hairprop_slot0_*`），runtime 侧本来就按 rendererName
+  找渲染器、按需扩容材质数组，不用改。body 和 hairprop 共用同一段归并/条目逻辑（`_transparent_segments`）。
+- 发饰没有 bdyco：`原生co` 在发饰槽上直接报错而不是静默当不透明；面板对发饰不再显示「co 图集」勾选。
+- 修一个 body 侧的坑：半透明槽勾了 `半透明段用 co 图集`、但没有任何原生co 槽时，段 1 的贴图不会
+  导出，runtime 找不到 `body_slot1_t0.png` 整条拒绝（实机日志 `Transparent materials refused`），
+  半透明段直接消失。现在勾了就一并导出段 1 贴图；目标没有 bdyco 段则报错。
+- 修「生成游戏材质贴图」把所有自建半透明槽都当成 co 槽、纯自建半透明工程也被要求填 co 基础色：
+  现在只有原生co 槽和勾了 co 图集的半透明槽进 co 烘焙。
+- 用途：SCSP 婚纱头纱做成发饰 mod 测头部半透明。
+- `发型描边色档` 新增并默认「沿用参照」：整套 COLOR 按参照顶点拷贝。R 字节和 G 高位选的是发型着色 LUT 行，
+  不只是描边；hume-base-0000 原版是 (2,0,0)，四个常量档都没有。原样导出发型、只加发饰时用这一档，
+  原版发型的顶点色一个字节都不改。
+- 作者网格是参照副本（顶点数相等、坐标一致）时，hair 顶点色按索引照抄而不是最近点：原版同坐标
+  的多个顶点 COLOR.A（rim 遮罩）不同，最近点会挑错副本（hume 10% 顶点）。导入参照时存下的
+  `GMI_TANGENT`/`GMI_TANGENT_W` 还在就直接写进 TANGENT，不再按位置平均法线重算（44% 顶点差 >5°）。
+- 实机验收记录：头纱半透明、花饰、耳环第二次实机即正确。发型「浅棕变深红」与本版无关，根因是当时
+  换进包里的发型 t0/t1/t4 取自抓帧 dump，相对 Unity 资源上下颠倒；换回 AssetStudio 从解密 bundle
+  导出的原图即恢复。上面两条顶点色/切线改动是在追这个假症状时加的，本身无害但没有独立验证。
+  发型贴图真值只从解密 bundle 导，抓帧贴图不进包。
+
 ## 1.8.0 — 自建半透明改走烘焙路线（2026-09-07 实机验收）
 
 - `渲染方式 = 自建半透明` 的槽导出时只声明 `props._GmiBakedAfterDof = 1`，`zwrite 0`、`renderQueue 3000`；
